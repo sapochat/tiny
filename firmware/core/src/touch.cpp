@@ -28,7 +28,8 @@ void TouchGestures::tick(uint32_t now_ms) {
 void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
   if (!touching) {
     if (state_ == State::Talk) release(Button::Talk);  // normal push-to-talk release only
-    else if (state_ == State::Pending && !moved_ && epoch_ == app_.touch_epoch())
+    else if (state_ == State::Pending && !moved_ && epoch_ == app_.touch_epoch() &&
+             (control_ != TouchControl::Reply || reply_epoch_ == app_.reply_epoch()))
       app_.touch_tap(owner_, control_, t0_);
     state_ = State::Idle;
     return;
@@ -37,6 +38,7 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
     if (app_.wake_display()) { state_ = State::Ignored; return; }
     owner_ = app_.touch_view();
     epoch_ = app_.touch_epoch();
+    reply_epoch_ = app_.reply_epoch();
     control_ = app_.touch_hit(x, y);
     moved_ = false;
     state_ = owner_ == TouchView::Recording ? State::Ignored :

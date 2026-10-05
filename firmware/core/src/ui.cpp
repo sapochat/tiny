@@ -5,11 +5,11 @@
 #include <vector>
 
 #include "hg/font.hpp"
+#include "hg/expression_assets.hpp"
 
 namespace hg {
 namespace {
 
-constexpr uint16_t kBg = rgb565(10, 14, 20);
 constexpr uint16_t kBar = rgb565(24, 31, 42);
 constexpr uint16_t kText = rgb565(232, 238, 242);
 constexpr uint16_t kDim = rgb565(132, 146, 160);
@@ -163,9 +163,14 @@ Ui::Ui(Display& display) : display_(display), panel_(display.info()), info_(pane
 
   // Hero layout: the mascot is sized per screen (see hero_geom).
   layout_.hero_cols = cols_for(w - 4 * s, s);
+  if (round_companion()) {
+    // Shared wrapping/scrolling contract, including legacy cards/settings.
+    layout_.body_cols = cols_for(w - 16, 3);
+    layout_.body_rows = 8;
+  }
 }
 
-void Ui::invalidate() { valid_ = false; }
+void Ui::invalidate() { valid_ = false; face_visible_ = false; }
 
 Canvas Ui::canvas() {
   return Canvas(display_.framebuffer() + oy_ * panel_.width + ox_, info_.width, info_.height, info_.swap_bytes,
@@ -176,12 +181,184 @@ void Ui::flush(int y0, int y1) {
   display_.flush(static_cast<uint16_t>(y0 + oy_), static_cast<uint16_t>(y1 + oy_));
 }
 
+bool Ui::companion_model(const UiModel& m) const {
+  return round_companion() && (m.quick_controls || m.touch_prompt ||
+      m.screen == Screen::Ready || m.screen == Screen::Listening ||
+      m.screen == Screen::Thinking || m.screen == Screen::Responding);
+}
+
+void Ui::render_companion(const UiModel& m) {
+  // Expression entries blend from the LAST DRAWN pose. A target change always
+  // renders the identical boundary frame, including reversal during a blend.
+  using namespace expression;
+  const bool visible = m.hero && !m.quick_controls && !m.touch_prompt;
+  int target = m.screen == Screen::Listening ? 1 :
+      m.speaking ? 0 : m.screen == Screen::Thinking ? 2 : m.reply_ready ? 3 : 0;
+  // Retain a quiet periodic blink only at idle; never fake speech lip-sync.
+  if (target == 0 && !m.speaking && m.screen == Screen::Ready && m.frame % 60 >= 44 && m.frame % 60 < 52)
+    target = 4;
+  bool face_changed = false;
+  if (face_current_.empty()) {
+    face_current_.assign(idle,idle+count);
+    face_start_ = face_current_;
+    face_target_ = 0;
+    face_frame_ = m.frame;
+  }
+  if (visible) {
+    if (target != face_target_) {
+      face_start_ = face_current_;
+      face_target_ = target;
+      face_step_ = 0;
+      face_frame_ = m.frame;
+    } else if (face_visible_ && face_step_ < 8 && m.frame != face_frame_) {
+      // Do not catch up skipped/sleep ticks in one frame: bounded visible delta.
+      ++face_step_;
+      const auto* dest = poses[target];
+      for (int i=0;i<count;++i)
+        face_current_[i] = (face_start_[i]*(8-face_step_) + dest[i]*face_step_ + 4)/8;
+      face_changed = true;
+    }
+  }
+  face_frame_ = m.frame;
+  face_visible_ = visible;
+  const uint32_t key = Hash().val(m.screen).val(m.link).val(m.hero)
+      .add(m.headline).add(m.detail).add(m.body).add(m.hint).val(m.scroll)
+      .val(m.quick_controls).val(m.touch_prompt).val(m.unread_reply).val(m.reply_ready)
+      .val(m.volume).val(m.brightness).val(m.speaking).get();
+  Canvas c(display_.framebuffer(), panel_.width, panel_.height, panel_.swap_bytes);
+  const int level = (m.level/5)*5;
+  auto draw_mascot = [&](bool patch_only = false) {
+    const int y0 = patch_only ? expression::y : 0, y1 = patch_only ? expression::y+h : 192;
+    const int x0 = patch_only ? expression::x : 0, x1 = patch_only ? expression::x+w : 192;
+    for (int yy=y0;yy<y1;++yy) for (int xx=x0;xx<x1;++xx) {
+      const bool patch = xx>=expression::x && xx<expression::x+w && yy>=expression::y && yy<expression::y+h;
+      const uint8_t v = patch ? face_current_[(yy-expression::y)*w+xx-expression::x] : base[yy*192+xx];
+      // One fixed neutral palette in every state, including idle and ready.
+      c.pixel(137+xx,112+yy,rgb565(v,v,v));
+    }
+  };
+  auto draw_level = [&]() {
+    c.fill_rect(183,58,100,5,0);
+    if (level) c.fill_round_rect(183,58,level,5,2,kAccent);
+  };
+  if (valid_ && companion_valid_ && key == companion_hash_) {
+    // Static perimeter / typography are not redrawn for animation. No wrapping,
+    // temporary strings, large arc rasterization or full-frame flush here.
+    if (visible && face_changed) {
+      draw_mascot(true);  // opaque patch writes erase every prior facial pixel
+      display_.flush(112+expression::y,112+expression::y+h);
+    }
+    if (m.screen == Screen::Listening && level != companion_level_) {
+      draw_level();
+      display_.flush(58,63);
+    }
+    companion_level_ = level;
+    return;
+  }
+  c.fill_rect(0, 0, 466, 466, 0);
+  auto center = [&](int y, std::string_view text, int scale, uint16_t color) {
+    c.text((466 - Canvas::text_width(text, scale))/2, y, text, scale, color);
+  };
+  // All marks lie inside radius 222. They are status, not touch targets.
+  if (m.screen == Screen::Listening) {
+    c.arc(233,233,218,3,-1,kAccentDim);
+    c.arc(233,233,218,3, 1,kAccentDim);
+    // Actual App::on_mic_samples level, quantized to reduce redraw churn.
+    draw_level();
+  } else if (m.speaking) {
+    for (int r : {211,218}) {
+      c.arc(233,233,r,2,-1,kAccentDim);
+      c.arc(233,233,r,2, 1,kAccentDim);
+    }
+  } else if (m.screen == Screen::Thinking) {
+    for (int x : {185,233,281}) c.fill_circle(x, x == 233 ? 19 : 25, 4, kAccentDim);
+  }
+  if (m.unread_reply) c.fill_round_rect(213,440,40,4,2,kAccentDim);
+
+  if (m.hero) {
+    center(72, m.link == Link::Online ? "HERMES" : "OFFLINE", 2, kDim);
+    draw_mascot();
+    center(310, fit(m.headline, 19), 3, kText);
+    center(343, fit(m.detail, 28), 2, kDim);
+    if (m.unread_reply) {
+      const auto r = control_rect(TouchControl::Reply,m);
+      c.fill_round_rect(r.x,r.y,r.w,r.h,16,kBar);
+      const char* label = m.hint.find("Reply ready") == 0 ? "Reply ready" :
+          m.hint.find("Reply stopped") == 0 ? "Reply stopped" : "New text";
+      center(r.y+9,label,2,kText);
+      center(r.y+32,"Tap to read",2,kDim);
+    } else if (m.screen == Screen::Listening) {
+      center(386,"Recording",2,kDim);
+    } else if (m.hint.find("Up: Reply") == 0) {
+      center(380,"Up: Reply",2,kDim);
+      center(409,"Down: Controls",2,kDim);
+    } else {
+      center(386, fit(m.hint, 25), 2, kDim);
+      if (m.screen == Screen::Ready) center(415,"Down: Controls",2,kDim);
+    }
+  } else {
+    center(83, m.quick_controls ? "Controls" : fit(m.headline,19),3,kText);
+    if (!m.quick_controls) {
+      const int rows = body_rows(m), lh = Canvas::line_height(3);
+      auto lines = wrap_text(m.body,layout_.body_cols);
+      const int total = static_cast<int>(lines.size());
+      const int last = std::max(0,total-rows);
+      const int first = m.scroll < 0 ? last : std::min(m.scroll,last);
+      int y = 126;
+      if (!m.detail.empty()) {
+        auto detail = wrap_text(m.detail,layout_.body_cols);
+        const int count = std::min<int>(layout_.body_rows-rows,detail.size());
+        for (int i=0; i<count; ++i, y+=lh) c.text(80,y,detail[i],3,kDim);
+      }
+      for (int i=0; i<rows && first+i<total; ++i)
+        c.text(80,y+i*lh,lines[first+i],3,kText);
+      if (total > rows) {
+        const int height = rows*lh;
+        const int thumb = std::max(8,height*rows/total);
+        c.fill_rect(395,y,3,height,kFaint);
+        c.fill_rect(395,y+(height-thumb)*first/std::max(1,last),3,thumb,kDim);
+      }
+    }
+    // Use the exact same geometry as hit testing; this canvas is panel-local.
+    for (unsigned i=1;i<=5;++i) {
+      auto control = static_cast<TouchControl>(i);
+      const auto r = control_rect(control,m);
+      if (!r.w) continue;
+      if (control == TouchControl::Volume || control == TouchControl::Brightness) {
+        const int value = control == TouchControl::Volume ? m.volume : m.brightness;
+        const char* label = control == TouchControl::Volume ? "Volume" : "Screen";
+        c.text(r.x+(r.w-Canvas::text_width(label,2))/2,r.y-28,label,2,kText);
+        c.fill_round_rect(r.x,r.y,r.w,r.h,14,kBar);
+        const int travel = r.h-28;
+        const int yy = r.y+14+travel*(100-value)/100;
+        c.fill_rect(r.x+r.w/2-2,r.y+14,4,travel,kFaint);
+        c.fill_round_rect(r.x+8,yy-5,r.w-16,10,5,kAccent);
+        const auto pct = std::to_string(value);
+        c.text(r.x+(r.w-Canvas::text_width(pct,2))/2,r.y+r.h+8,pct,2,kDim);
+      } else {
+        const char* label = control == TouchControl::Stop ? "Stop turn" : control == TouchControl::Yes ? "Yes" : "No";
+        c.fill_round_rect(r.x,r.y,r.w,r.h,14,control == TouchControl::Yes ? kAccentDim : kBar);
+        c.text(r.x+(r.w-Canvas::text_width(label,3))/2,r.y+(r.h-21)/2,label,3,kText);
+      }
+    }
+    center(409,m.touch_prompt ? "Tap Yes or No" : "Right: Home",2,kDim);
+  }
+  display_.flush(0,panel_.height);
+  companion_hash_ = key;
+  companion_level_ = level;
+  companion_valid_ = valid_ = true;
+  hero_valid_ = false;
+}
+
 void Ui::render(const UiModel& m) {
+  if (companion_model(m)) { render_companion(m); return; }
+  face_visible_ = false;
+  if (companion_valid_) { valid_ = false; companion_valid_ = false; }
   const int h = info_.height;
   if (!valid_ && (ox_ || oy_)) {
     // Round panel: everything outside the UI area stays the background colour.
     Canvas panel(display_.framebuffer(), panel_.width, panel_.height, panel_.swap_bytes);
-    panel.fill_rect(0, 0, panel_.width, panel_.height, kBg);
+    panel.fill_rect(0, 0, panel_.width, panel_.height, background());
     display_.flush(0, panel_.height);
   }
   Canvas c = canvas();
@@ -200,7 +377,7 @@ void Ui::render(const UiModel& m) {
                   .get();
   hashes[2] = Hash().val(m.screen).add(m.detail).add(m.body).add(m.code).val(m.scroll).val(m.color_test)
       .val(m.quick_controls).val(m.touch_prompt).val(m.volume).val(m.brightness).get();
-  hashes[3] = Hash().add(m.hint).get();
+  hashes[3] = Hash().add(m.hint).val(m.unread_reply).get();
 
   if (m.hero) {
     // Hero mode: top bar, one mascot band, bottom bar.
@@ -263,7 +440,7 @@ void Ui::render(const UiModel& m) {
 void Ui::draw_top(Canvas& c, const UiModel& m) {
   const int s = layout_.scale;
   const int w = info_.width;
-  c.fill_rect(0, 0, w, layout_.top_h, panel_.round ? kBg : kBar);
+  c.fill_rect(0, 0, w, layout_.top_h, panel_.round ? background() : kBar);
   uint16_t dot = kRed;
   const char* label = "OFFLINE";
   switch (m.link) {
@@ -328,7 +505,7 @@ void Ui::draw_indicator(Canvas& c, const UiModel& m, int cx, int cy, int r) {
     case Screen::Error: {
       c.fill_circle(cx, cy, r, kRed);
       int tw = Canvas::text_width("!", s);
-      c.text(cx - tw / 2, cy - (7 * s) / 2, "!", s, kBg);
+      c.text(cx - tw / 2, cy - (7 * s) / 2, "!", s, background());
       break;
     }
     case Screen::Pairing:
@@ -356,7 +533,7 @@ void Ui::draw_indicator(Canvas& c, const UiModel& m, int cx, int cy, int r) {
     case Screen::Prompt: {
       c.fill_circle(cx, cy, r, kAccent);
       int tw = Canvas::text_width("?", s);
-      c.text(cx - tw / 2, cy - (7 * s) / 2, "?", s, kBg);
+      c.text(cx - tw / 2, cy - (7 * s) / 2, "?", s, background());
       break;
     }
     case Screen::Image:
@@ -370,7 +547,7 @@ void Ui::draw_header(Canvas& c, const UiModel& m) {
   const int s = layout_.scale;
   const int y0 = layout_.top_h;
   const int hh = layout_.header_h;
-  c.fill_rect(0, y0, info_.width, hh, kBg);
+  c.fill_rect(0, y0, info_.width, hh, background());
   int r = hh / 2 - 2 * s;
   int cx = 4 * s + r;
   int cy = y0 + hh / 2;
@@ -384,7 +561,7 @@ void Ui::draw_header(Canvas& c, const UiModel& m) {
 
 int Ui::body_rows(const UiModel& m) const {
   int rows = layout_.body_rows;
-  if (m.touch_prompt) rows = std::max(1, rows - 3);
+  if (m.touch_prompt) rows = std::max(1, rows - (round_companion() ? 2 : 3));
   if (m.detail.empty()) return rows;
   int detail = static_cast<int>(wrap_text(m.detail, layout_.body_cols).size());
   int max_detail = m.body.empty() ? rows : std::min(2, rows - 1);
@@ -392,13 +569,13 @@ int Ui::body_rows(const UiModel& m) const {
 }
 
 void Ui::draw_content(Canvas& c, const UiModel& m) {
-  const int s = layout_.scale;
+  const int s = round_companion() ? 3 : layout_.scale;
   const int w = info_.width;
   const int y0 = layout_.top_h + layout_.header_h;
   const int y1 = info_.height - layout_.bottom_h;
   const int margin = 4 * s;
   const int lh = Canvas::line_height(s);
-  c.fill_rect(0, y0, w, y1 - y0, kBg);
+  c.fill_rect(0, y0, w, y1 - y0, background());
   int y = y0 + margin;
 
   if (m.quick_controls || m.touch_prompt) draw_touch_controls(c, m);
@@ -529,7 +706,7 @@ void Ui::draw_hero(Canvas& c, const UiModel& m) {
   const int y0 = layout_.top_h;
   const int y1 = info_.height - layout_.bottom_h;
   const int lh = Canvas::line_height(s);
-  c.fill_rect(0, y0, w, y1 - y0, kBg);
+  c.fill_rect(0, y0, w, y1 - y0, background());
 
   const HeroGeom g = hero_geom(m);
   const int size = g.size, mx = g.x, my = g.y;
@@ -600,9 +777,24 @@ void Ui::draw_hero(Canvas& c, const UiModel& m) {
 }
 
 UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
+  if (round_companion()) {
+    if (control == TouchControl::Reply && m.unread_reply) return {117,370,232,56};
+    if (m.quick_controls) {
+      if (control == TouchControl::Volume && m.volume >= 0) return {121,170,68,136};
+      if (control == TouchControl::Brightness && m.brightness >= 0) return {277,170,68,136};
+      if (control == TouchControl::Stop) return {145,340,176,56};
+    }
+    if (m.touch_prompt) {
+      if (control == TouchControl::Yes) return {83,322,144,64};
+      if (control == TouchControl::No) return {239,322,144,64};
+    }
+    return {};
+  }
   const int s = layout_.scale, w = info_.width;
   const int bottom = info_.height - layout_.bottom_h;
   const int bh = Canvas::line_height(s) + 8*s, margin = 4*s;
+  if (control == TouchControl::Reply && m.unread_reply)
+    return {ox_, oy_+bottom, w, layout_.bottom_h};
   if (m.quick_controls) {
     if ((control == TouchControl::Volume && m.volume >= 0) ||
         (control == TouchControl::Brightness && m.brightness >= 0)) {
@@ -620,7 +812,7 @@ UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
 }
 
 TouchControl Ui::control_hit(int x, int y, const UiModel& m) const {
-  for (unsigned i = 1; i <= 5; ++i) {
+  for (unsigned i = 1; i <= 6; ++i) {
     auto control = static_cast<TouchControl>(i);
     if (control_rect(control, m).contains(x,y)) return control;
   }
@@ -655,9 +847,9 @@ void Ui::draw_touch_controls(Canvas& c, const UiModel& m) {
 void Ui::draw_bottom(Canvas& c, const UiModel& m) {
   const int s = layout_.scale;
   const int y0 = info_.height - layout_.bottom_h;
-  c.fill_rect(0, y0, info_.width, layout_.bottom_h, panel_.round ? kBg : kBar);
+  c.fill_rect(0, y0, info_.width, layout_.bottom_h, m.unread_reply ? kBar : panel_.round ? background() : kBar);
   std::string hint = fit(m.hint, cols_for(info_.width - 4 * s, s));
-  c.text((info_.width - Canvas::text_width(hint, s)) / 2, y0 + s, hint, s, kDim);
+  c.text((info_.width - Canvas::text_width(hint, s)) / 2, y0 + s, hint, s, m.unread_reply ? kText : kDim);
 }
 
 }  // namespace hg

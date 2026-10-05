@@ -127,11 +127,15 @@ def test_response_scroll_bounds_return_and_stream_follow(rig):
     swipe(s, dy=-100)
     assert ui(s)['view'] == 'response'
     assert ui(s)['scroll'] == held
-    for _ in range(30): swipe(s, dy=100)
+    for _ in range(len(LONG.splitlines()) * 2):
+        if ui(s)['scroll'] == 0: break
+        swipe(s, dy=100)
     assert ui(s)['scroll'] == 0
     swipe(s, dy=100)
     assert ui(s)['view'] == 'response'
-    for _ in range(30): swipe(s, dy=-100)
+    for _ in range(len(LONG.splitlines()) * 2):
+        if ui(s)['scroll'] == -1: break
+        swipe(s, dy=-100)
     assert ui(s)['scroll'] == -1
     s.send_fixture('reply.delta', text=LONG+'\nANOTHER TAIL')
     assert ui(s)['scroll'] == -1
@@ -220,7 +224,7 @@ def test_controls_explicit_stop_and_release_outside(rig):
     swipe(s, dy=100)
     x,y = control(s, 'stop')
     s.touch(True,x,y)
-    s.touch(True,600,600)
+    s.touch(True,x+400,y+400)  # unambiguous diagonal, outside regardless of target position
     s.touch(False)
     assert not any(m['type'] == 'cancel' for m in s.sent)
     tap(s,x,y)

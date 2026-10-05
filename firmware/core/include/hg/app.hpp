@@ -95,6 +95,7 @@ class App {
   // Navigation never synthesizes Cancel or changes the activity state.
   TouchView touch_view() const;
   uint32_t touch_epoch() const { return touch_epoch_; }
+  uint32_t reply_epoch() const { return reply_epoch_; }
   TouchControl touch_hit(int x, int y) const;
   void touch_swipe(TouchView owner, int dx, int dy, TouchControl control);
   void touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at);
@@ -221,8 +222,10 @@ class App {
   UiModel model_;
   enum class Navigation : uint8_t { Auto, Home, Response, Controls };
   Navigation navigation_ = Navigation::Auto;
-  uint32_t touch_epoch_ = 0;
+  uint32_t touch_epoch_ = 0, reply_epoch_ = 0;
   int prompt_scroll_ = 0;
+  bool unread_reply_ = false;
+  bool reply_completed_ = false, reply_stopped_ = false;
   bool awaiting_reply_ = false;  // keep latest text readable until the next reply begins
 
   // identity & settings

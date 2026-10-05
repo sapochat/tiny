@@ -94,6 +94,7 @@ BoardConfig make() {
   b.amoled.rst = 1;
   b.touch.rst = 2;
   b.codec.mclk = 16;
+  b.codec.mic_gain_db = 30.0f;  // ES7210 input gain; other boards retain 24 dB.
   b.pwr_key = {};  // This model has no TCA9554. PWR retains its hardware role.
   b.axp_audio_supply = true;  // ALDO1 supplies the analog audio circuit.
 #endif
