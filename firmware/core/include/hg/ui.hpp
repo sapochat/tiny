@@ -37,7 +37,7 @@ enum class Screen : uint8_t {
 enum class Link : uint8_t { Offline, Network, Connecting, Online };
 
 enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, Other };
-enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No };
+enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No, Reply };
 struct UiRect {
   int x = 0, y = 0, w = 0, h = 0;
   bool contains(int px, int py) const { return px >= x && py >= y && px < x+w && py < y+h; }
@@ -58,6 +58,8 @@ struct UiModel {
   bool speaking = false;
   bool color_test = false;
   bool quick_controls = false, touch_prompt = false;
+  bool unread_reply = false;
+  bool reply_ready = false;  // success-only completed text; never inferred from a label
   int volume = 0, brightness = 0;
   uint32_t frame = 0;    // animation frame, advanced by the app
   std::string hint;      // bottom bar
@@ -85,8 +87,8 @@ class Ui {
   // Forces a full redraw on the next render (after something else drew).
   void invalidate();
   const UiLayout& layout() const { return layout_; }
-  // The area the UI draws in: the whole panel, or on a round panel the square
-  // inscribed in it. Layout coordinates are relative to this area.
+  // The legacy/image safe area: whole rectangular panel, or inscribed square.
+  // The 466px round companion face additionally draws in the safe perimeter.
   const DisplayInfo& area() const { return info_; }
   // A canvas over that area, and a flush of its rows [y0, y1).
   Canvas canvas();
@@ -100,6 +102,10 @@ class Ui {
   }
 
  private:
+  bool round_companion() const { return panel_.round && panel_.width == 466 && panel_.height == 466; }
+  uint16_t background() const { return panel_.round ? 0 : rgb565(10, 14, 20); }
+  bool companion_model(const UiModel& m) const;
+  void render_companion(const UiModel& m);
   void draw_top(Canvas& c, const UiModel& m);
   void draw_header(Canvas& c, const UiModel& m);
   void draw_content(Canvas& c, const UiModel& m);
@@ -124,6 +130,16 @@ class Ui {
   uint32_t hash_[4] = {0, 0, 0, 0};
   uint32_t hero_static_ = 0, hero_anim_ = 0;
   bool hero_valid_ = false;
+  bool companion_valid_ = false;
+  // Allocated only for the 466px companion. Current pose survives invalidation,
+  // overlays and target reversal; no hot-path allocations.
+  std::vector<uint8_t> face_current_, face_start_;
+  int face_target_ = -1, face_step_ = 8;
+  uint32_t face_frame_ = 0;
+  bool face_visible_ = false;
+  uint32_t companion_hash_ = 0;
+  mascot::Frame companion_frame_ = mascot::Frame::Idle;
+  int companion_level_ = -1;
   bool valid_ = false;
 };
 

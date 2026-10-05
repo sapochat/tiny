@@ -74,6 +74,8 @@ void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) 
       answer_prompt(control == TouchControl::Yes);
   } else if (owner == TouchView::Controls && control == TouchControl::Stop) {
     if (mode_ == Mode::Thinking || mode_ == Mode::Responding || speaking()) cancel_turn();
+  } else if (owner == TouchView::Home && control == TouchControl::Reply && model_.unread_reply) {
+    navigation_ = Navigation::Response;
   } else if (owner == TouchView::Home && mode_ == Mode::Idle && talk_mode_ == TalkMode::Tap) {
     on_button(Button::Talk, true);
     on_button(Button::Talk, false);

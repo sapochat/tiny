@@ -142,6 +142,8 @@ References: [M5Stack hardware and recovery instructions](https://docs.m5stack.co
 
 Use `esp32s3-touch-amoled-175c` for SKUs 33691/33692, the enclosed model with 32 MB flash and 8 MB octal PSRAM. This is an experimental port. Use its exact image; the 1.75 model's image has different pins.
 
+This local Tiny trial sets ES7210 microphone codec gain to 30 dB on the 1.75C only (shared default remains 24 dB). The local PlatformIO build reports `0.2.0-tiny-mic30`; speaker gain and voice processing are unchanged. Physical microphone level, noise, clipping and transcription validation remain pending.
+
 | Part | Connection |
 |---|---|
 | CO5300 466×466 AMOLED | QSPI CS 12, clock 38, D0–D3 4/5/6/7, reset 1; column offset 6 |

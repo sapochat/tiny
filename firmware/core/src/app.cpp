@@ -433,6 +433,7 @@ bool App::can_talk() const { return phase_ == Phase::Online && paired_ && ota_ !
 void App::h_turn_start(const json::Value& m) {
   ++touch_epoch_;  // an old Stop contact must not stop a new turn
   awaiting_reply_ = true;
+  reply_completed_ = reply_stopped_ = false;
   wake_display();
   active_turn_ = m["turn"].as_string();
   turn_done_ = false;
@@ -453,6 +454,8 @@ void App::h_turn_end(const json::Value& m) {
   const std::string& turn = m["turn"].as_string();
   if (!active_turn_.empty() && !turn.empty() && turn != active_turn_) return;
   turn_done_ = true;
+  reply_completed_ = !awaiting_reply_ && !reply_.empty() && m["outcome"].as_string() == "success";
+  reply_stopped_ = !awaiting_reply_ && !reply_.empty() && m["outcome"].as_string() != "success";
   last_turn_rx_ = now();
   if (m["outcome"].as_string() == "failure" && reply_.empty()) {
     notice_ = "Hermes could not complete that request";
@@ -479,6 +482,10 @@ void App::h_transcript(const json::Value& m) {
 void App::h_reply_delta(const json::Value& m) {
   wake_display();
   if (mode_ == Mode::Listening) return;
+  if (reply_ != m["text"].as_string() || awaiting_reply_) {
+    unread_reply_ = true;
+    ++reply_epoch_;  // never open replacement text with a stale contact
+  }
   reply_ = m["text"].as_string();
   if (!profile_.touch_screen || awaiting_reply_) scroll_ = -1;
   awaiting_reply_ = false;
@@ -498,6 +505,10 @@ void App::h_reply(const json::Value& m) {
     return;
   }
   if (mode_ == Mode::Listening) return;
+  if (reply_ != text || awaiting_reply_) {
+    unread_reply_ = true;
+    ++reply_epoch_;
+  }
   reply_ = text;
   reply_final_ = true;
   if (!profile_.touch_screen) scroll_ = 0;  // touch keeps the reader's position
@@ -855,6 +866,7 @@ void App::start_listening(bool hands_free) {
   mode_ = Mode::Listening;
   mode_since_ = now();
   awaiting_reply_ = true;
+  reply_completed_ = reply_stopped_ = false;
   if (!profile_.touch_screen) { reply_.clear(); scroll_ = -1; }
   status_.clear();
   user_echo_.clear();
@@ -957,6 +969,7 @@ void App::submit_text(std::string_view text) {
   send(msg);
   user_echo_ = t;
   awaiting_reply_ = true;
+  reply_completed_ = reply_stopped_ = false;
   if (!profile_.touch_screen) { reply_.clear(); scroll_ = -1; }
   status_ = "Sending...";
   mode_ = Mode::Thinking;
@@ -1359,6 +1372,8 @@ void App::update_model() {
   m.color_test = false;
   m.quick_controls = false;
   m.touch_prompt = false;
+  m.unread_reply = false;
+  m.reply_ready = reply_completed_ && unread_reply_;
 
   switch (phase_) {
     case Phase::NoNetwork:
@@ -1540,7 +1555,8 @@ void App::update_model() {
       m.body.clear();
       if (mode_ == Mode::Thinking) m.headline = "Thinking";
       else if (speaking()) m.headline = "Speaking";
-      else if (mode_ == Mode::Responding) m.headline = "Receiving reply";
+      else if (mode_ == Mode::Responding) m.headline = reply_stopped_ ? "Reply stopped" :
+          reply_completed_ ? "Reply ready" : "Receiving reply";
       m.hint = "Up: Reply | Down: Controls";
     } else if (navigation_ == Navigation::Response && !reply_.empty()) {
       m.hero = false;
@@ -1551,6 +1567,15 @@ void App::update_model() {
       m.hero = false;
       m.hint = "Scroll | Right: Home";
     }
+  }
+  // "Unread" means text updated while its response view was not visible.
+  // A successful turn.end, not a final text snapshot, establishes completion.
+  if (profile_.touch_screen && touch_view() == TouchView::Response) unread_reply_ = false;
+  if (profile_.touch_screen && touch_view() == TouchView::Home && m.hero &&
+      unread_reply_ && !reply_.empty()) {
+    m.unread_reply = true;
+    m.hint = reply_completed_ ? "Reply ready - tap to read" :
+             reply_stopped_ ? "Reply stopped - tap to read" : "New text - tap to read";
   }
   bool keeps_detail = m.screen == Screen::Pairing || m.screen == Screen::Boot || m.screen == Screen::Prompt;
   if (!notice_.empty() && !keeps_detail) m.detail = notice_;
@@ -1593,8 +1618,8 @@ json::Value App::status_value() const {
       .set("activity", mode_ == Mode::Listening ? "recording" : speaking() ? "speaking" :
            mode_ == Mode::Thinking ? "thinking" : mode_ == Mode::Responding && !reply_final_ ? "streaming" : "idle")
       .set("scroll", model_.scroll).set("headline", model_.headline).set("hint", model_.hint).set("speaking", speaking());
-    const char* names[] = {"none", "volume", "brightness", "stop", "yes", "no"};
-    if (ui_) for (unsigned i = 1; i <= 5; ++i) {
+    const char* names[] = {"none", "volume", "brightness", "stop", "yes", "no", "reply"};
+    if (ui_) for (unsigned i = 1; i <= 6; ++i) {
       auto r = ui_->control_rect(static_cast<TouchControl>(i), model_);
       if (!r.w || !r.h) continue;
       json::Value rect = json::Value::array();

@@ -41,7 +41,7 @@ class TouchGestures {
   uint32_t t0_ = 0;
   TouchView owner_ = TouchView::Other;
   TouchControl control_ = TouchControl::None;
-  uint32_t epoch_ = 0;
+  uint32_t epoch_ = 0, reply_epoch_ = 0;
   bool moved_ = false;
 };
 
