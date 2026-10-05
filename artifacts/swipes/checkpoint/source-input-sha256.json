@@ -1,0 +1,19 @@
+{
+  "docs/hardware.md": "570a55a917ddda447ebe93768275b8122f9881ac94e7249f1bee699902ea2a95",
+  "docs/linux.md": "2b96905d0e941e70a501de301ae93b2792a9f92ee409fead72a389179f69067f",
+  "docs/porting.md": "ba2cda71e1cf1bf7ea8e02f176db9691024d6bf1fcfe5cd4c7fea6da6222bf12",
+  "docs/setup-board.md": "29aec768eb94093a31e35cacc1d897482b1a0e67252b3d182c3a97e11011948f",
+  "docs/simulator.md": "24b9f33dd65b99ec6dc6c6a7c75535cbeeb283cb6d599cfb99a7bffd737684cd",
+  "docs/using-gadget.md": "e252f6256a52b5b54461837eb9b4fc5e33629a80078113bd6142e4efe9ca21ff",
+  "firmware/core/include/hg/app.hpp": "06bf57baf613947bd72aa25e60e8bfd0f84a6da794de587aa5297a36c751fd44",
+  "firmware/core/include/hg/touch.hpp": "15d60abd2a611763fc22660d776664fe793f45aac60059eb10717ffdc52e99f5",
+  "firmware/core/include/hg/ui.hpp": "b6852d0b38cf3e16505eabf9e79530fbf373b318aad2561349696206de349f55",
+  "firmware/core/src/app.cpp": "fdf6f41e660c2769d50f2e14f8f811d82786201b5ffc66e5aded261b93db9d89",
+  "firmware/core/src/app_settings.cpp": "5de5045ec421921ca9e5aac3002c73040e3b2d9bd0cd4edb23a80e0f027b1bee",
+  "firmware/core/src/touch.cpp": "4ecd1afcdfd4f327d2c4657b8d3994e640b0e250de8dc2dd50e3dfa733a5d7d2",
+  "firmware/core/src/ui.cpp": "ebfeb7acee7b7542f7fa2e8a9e39c98908cd58f80744e6406ddc1dd8d7bf9b5b",
+  "firmware/tests/test_app.cpp": "822c1536c37c4be23b0b67cab13a5ef68c33b376eb39c111b62ffe3135b8d683",
+  "python/hermes_gadget/sim/runner.py": "546b06c8888c7cd7d507110fdff2d9ff81d9825a42dc4c5f32940bc727786cb7",
+  "tests/test_touch_navigation.py": "612266fd311681a8568fd2458b9eeea38a3934c14bd4f496183f8129cfed1884",
+  "tools/collect_swipe_evidence.py": "2919524cd4c7543dce756eb52aeaf1cead8257284081a35e8a04f1860c3e7e83"
+}

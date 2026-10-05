@@ -198,7 +198,8 @@ void Ui::render(const UiModel& m) {
                   .val(m.screen == Screen::Listening ? m.level : uint8_t(0))
                   .val(m.speaking)
                   .get();
-  hashes[2] = Hash().val(m.screen).add(m.detail).add(m.body).add(m.code).val(m.scroll).val(m.color_test).get();
+  hashes[2] = Hash().val(m.screen).add(m.detail).add(m.body).add(m.code).val(m.scroll).val(m.color_test)
+      .val(m.quick_controls).val(m.touch_prompt).val(m.volume).val(m.brightness).get();
   hashes[3] = Hash().add(m.hint).get();
 
   if (m.hero) {
@@ -383,6 +384,7 @@ void Ui::draw_header(Canvas& c, const UiModel& m) {
 
 int Ui::body_rows(const UiModel& m) const {
   int rows = layout_.body_rows;
+  if (m.touch_prompt) rows = std::max(1, rows - 3);
   if (m.detail.empty()) return rows;
   int detail = static_cast<int>(wrap_text(m.detail, layout_.body_cols).size());
   int max_detail = m.body.empty() ? rows : std::min(2, rows - 1);
@@ -398,6 +400,9 @@ void Ui::draw_content(Canvas& c, const UiModel& m) {
   const int lh = Canvas::line_height(s);
   c.fill_rect(0, y0, w, y1 - y0, kBg);
   int y = y0 + margin;
+
+  if (m.quick_controls || m.touch_prompt) draw_touch_controls(c, m);
+  if (m.quick_controls) return;
 
   if (m.color_test) {
     const uint16_t colors[] = {rgb565(255, 0, 0), rgb565(0, 255, 0), rgb565(0, 0, 255),
@@ -591,6 +596,59 @@ void Ui::draw_hero(Canvas& c, const UiModel& m) {
     };
     if (!m.yes.empty()) button(margin, m.yes, kGreenDim);
     if (!m.no.empty()) button(margin + bw + gap, m.no, kRedDim);
+  }
+}
+
+UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
+  const int s = layout_.scale, w = info_.width;
+  const int bottom = info_.height - layout_.bottom_h;
+  const int bh = Canvas::line_height(s) + 8*s, margin = 4*s;
+  if (m.quick_controls) {
+    if ((control == TouchControl::Volume && m.volume >= 0) ||
+        (control == TouchControl::Brightness && m.brightness >= 0)) {
+      const int x = control == TouchControl::Volume ? w/4 : w*3/4;
+      const int top = layout_.top_h + layout_.header_h + 18*s;
+      return {ox_+x-12*s, oy_+top, 24*s, std::max(12*s, bottom-bh-10*s-top)};
+    }
+    if (control == TouchControl::Stop) return {ox_+w/4, oy_+bottom-bh-2*s, w/2, bh};
+  }
+  if (m.touch_prompt && (control == TouchControl::Yes || control == TouchControl::No)) {
+    const int bw = (w-3*margin)/2;
+    return {ox_+margin+(control == TouchControl::No ? bw+margin : 0), oy_+bottom-bh-2*s, bw, bh};
+  }
+  return {};
+}
+
+TouchControl Ui::control_hit(int x, int y, const UiModel& m) const {
+  for (unsigned i = 1; i <= 5; ++i) {
+    auto control = static_cast<TouchControl>(i);
+    if (control_rect(control, m).contains(x,y)) return control;
+  }
+  return TouchControl::None;
+}
+
+void Ui::draw_touch_controls(Canvas& c, const UiModel& m) {
+  const int s = layout_.scale;
+  for (unsigned i = 1; i <= 5; ++i) {
+    auto control = static_cast<TouchControl>(i);
+    auto r = control_rect(control, m);
+    if (!r.w || !r.h) continue;
+    r.x -= ox_; r.y -= oy_;
+    if (control == TouchControl::Volume || control == TouchControl::Brightness) {
+      int value = control == TouchControl::Volume ? m.volume : m.brightness;
+      const char* label = control == TouchControl::Volume ? "Volume" : "Light";
+      c.text(r.x+(r.w-Canvas::text_width(label,s))/2, r.y-14*s, label, s, kText);
+      c.fill_round_rect(r.x,r.y,r.w,r.h,3*s,kFaint);
+      int fill = std::max(2, r.h*value/100);
+      c.fill_rect(r.x+2*s,r.y+r.h-fill,r.w-4*s,fill,kAccentDim);
+      c.fill_rect(r.x+2*s,r.y+r.h-fill,r.w-4*s,2*s,kAccent);
+      std::string pct = std::to_string(value);
+      c.text(r.x+(r.w-Canvas::text_width(pct,s))/2,r.y+r.h/2-4*s,pct,s,kText);
+    } else {
+      const char* label = control == TouchControl::Stop ? "Stop" : control == TouchControl::Yes ? "Yes" : "No";
+      c.fill_round_rect(r.x,r.y,r.w,r.h,3*s,control == TouchControl::Yes ? kGreenDim : kRedDim);
+      c.text(r.x+(r.w-Canvas::text_width(label,s))/2,r.y+(r.h-7*s)/2,label,s,kText);
+    }
   }
 }
 

@@ -1,13 +1,5 @@
-// Touchscreen gestures mapped onto the gadget's buttons, for boards whose
-// screen is the main input:
-//
-//   hold the title     local settings after one second
-//   hold elsewhere     TALK, held for as long as the finger stays down
-//   quick tap          a TALK press and release (answers "yes" to a question)
-//   swipe down         a CANCEL press and release (discard, close, stop, "no")
-//
-// Feed it raw touch samples; it calls App::on_button. Portable and clock-free,
-// so the simulator and the tests drive it exactly like the firmware does.
+// State-aware touch navigation shared by firmware and simulator. A contact
+// belongs to its starting view; movement never synthesizes Cancel or a decision.
 #pragma once
 
 #include <cstdint>
@@ -47,6 +39,10 @@ class TouchGestures {
   State state_ = State::Idle;
   int x0_ = 0, y0_ = 0;
   uint32_t t0_ = 0;
+  TouchView owner_ = TouchView::Other;
+  TouchControl control_ = TouchControl::None;
+  uint32_t epoch_ = 0;
+  bool moved_ = false;
 };
 
 }  // namespace hg

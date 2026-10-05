@@ -5,8 +5,85 @@
 
 namespace hg {
 
+TouchView App::touch_view() const {
+  if (mode_ == Mode::Listening) return TouchView::Recording;
+  if (prompt_showing()) return TouchView::Approval;
+  if (settings_open() || wifi_setup_open() || !can_talk() || ota_busy() ||
+      ota_ == Ota::Restarting || !fatal_.empty()) return TouchView::Other;
+  if (overlay_ != Overlay::None) return TouchView::Other;
+  if (navigation_ == Navigation::Controls) return TouchView::Controls;
+  if (navigation_ == Navigation::Home) return TouchView::Home;
+  if (navigation_ == Navigation::Response || (!model_.hero &&
+      (model_.screen == Screen::Responding || model_.screen == Screen::Ready))) return TouchView::Response;
+  return TouchView::Home;
+}
+
+TouchControl App::touch_hit(int x, int y) const {
+  return ui_ ? ui_->control_hit(x, y, model_) : TouchControl::None;
+}
+
+void App::touch_swipe(TouchView owner, int dx, int dy, TouchControl control) {
+  if (mode_ == Mode::Listening || !ui_) return;
+  // Preserve the separate, explicit legacy setup/check workflow. Quick controls
+  // never enter this menu and never use its Cancel/new-session button path.
+  if (owner == TouchView::Other && wifi_setup_open()) {
+    if (dy > 0) close_wifi_setup();
+    return;
+  }
+  if (owner == TouchView::Other && settings_open()) {
+    if (dy) settings_input(dy > 0 ? Button::Down : Button::Up, true);
+    update_model();
+    return;
+  }
+  if (owner == TouchView::Other && overlay_ != Overlay::None && !prompt_showing()) {
+    if (dy > 0) dismiss_overlay();
+    update_model();
+    return;
+  }
+  if (prompt_showing()) {
+    if (owner != TouchView::Approval || !dy) return;
+    int total = static_cast<int>(wrap_text(prompt_text_, ui_->layout().body_cols).size());
+    int last = std::max(0, total - ui_->body_rows(model_));
+    prompt_scroll_ = std::clamp(prompt_scroll_ + (dy < 0 ? 3 : -3), 0, last);
+  } else if (!can_talk() || ota_busy() || ota_ == Ota::Restarting) return;
+  else if (owner == TouchView::Home) {
+    if (dy > 0) navigation_ = Navigation::Controls;
+    else if (dy < 0 && !reply_.empty()) navigation_ = Navigation::Response;
+  } else if (owner == TouchView::Response) {
+    if (dx > 0) navigation_ = Navigation::Home;
+    else if (dy) {
+      navigation_ = Navigation::Response;
+      scroll_body(dy < 0 ? 3 : -3);
+    }
+  } else if (owner == TouchView::Controls && navigation_ == Navigation::Controls) {
+    if (dx > 0) navigation_ = Navigation::Home;
+    else if (dy && control == TouchControl::Volume && hal_.speaker)
+      console("set volume " + std::to_string(std::clamp(int(volume_) - dy / 4, 0, 100)));
+    else if (dy && control == TouchControl::Brightness && hal_.display && hal_.display->info().has_backlight)
+      console("set brightness " + std::to_string(std::clamp(int(brightness_) - dy / 4, 10, 100)));
+  }
+  update_model();
+}
+
+void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) {
+  if (owner != touch_view()) return;
+  if (owner == TouchView::Other && settings_open()) {
+    settings_input(Button::Talk, false);
+  } else if (owner == TouchView::Approval && prompt_armed(pressed_at)) {
+    if (control == TouchControl::Yes || control == TouchControl::No)
+      answer_prompt(control == TouchControl::Yes);
+  } else if (owner == TouchView::Controls && control == TouchControl::Stop) {
+    if (mode_ == Mode::Thinking || mode_ == Mode::Responding || speaking()) cancel_turn();
+  } else if (owner == TouchView::Home && mode_ == Mode::Idle && talk_mode_ == TalkMode::Tap) {
+    on_button(Button::Talk, true);
+    on_button(Button::Talk, false);
+  }
+  update_model();
+}
+
 bool App::settings_title_hit(int x, int y) const {
-  return ui_ && !prompt_showing() && !ota_busy() && !wifi_setup_open() && ui_->title_hit(x, y);
+  return ui_ && mode_ == Mode::Idle && !speaking() && !prompt_showing() && !ota_busy() &&
+         !wifi_setup_open() && navigation_ != Navigation::Controls && ui_->title_hit(x, y);
 }
 
 bool App::open_settings() {

@@ -96,7 +96,7 @@ Use `esp32-s3-box-3` for Espressif's BOX-3 with 16 MB flash and 16 MB octal PSRA
 
 The driver identifies the display revision through the touch controller, following Espressif's board definitions. TT21100 selects ST7789; GT911 selects the ILI9342 initialization sequence through the ILI9341 driver. An unknown controller leaves the display unavailable and records an error. The display resets the shared line once before touch initialization.
 
-Hold the screen or BOOT to talk, swipe down to cancel, and hold the title for one second to open settings. The top mute button keeps its hardware function; it is not a CANCEL button. The front home key is unused. Dock sensors, expansion outputs and storage are not exposed by this profile.
+Hold the screen or BOOT to talk, swipe down from Home for quick controls, and hold the title for one second to open settings. The top mute button keeps its hardware function; it is not a CANCEL button. The front home key is unused. Dock sensors, expansion outputs and storage are not exposed by this profile.
 
 ```bash
 cd firmware/esp32
@@ -123,7 +123,7 @@ Use `m5stack-cores3` for the CoreS3 K128 with 16 MB flash and 8 MB **quad** PSRA
 
 The display selects ILI9342C for touch firmware ID 0x10 and ILI9342E for 0x12. An unrecognized ID leaves the display unavailable and logs an error. M5Stack changed the LCD to ILI9342E in August 2026, so record the panel revision with test results.
 
-Hold the screen to talk, swipe down to cancel, and hold the title for one second to open settings. GPIO 0 carries the audio clock and is not a TALK button. The hardware power and reset buttons retain their functions. Camera, IMU, RTC, SD storage and expansion outputs are not exposed.
+Hold the screen to talk, swipe down from Home for quick controls, and hold the title for one second to open settings. GPIO 0 carries the audio clock and is not a TALK button. The hardware power and reset buttons retain their functions. Camera, IMU, RTC, SD storage and expansion outputs are not exposed.
 
 The power adapter enables the audio supplies (ALDO1 at 1.8 V and ALDO2 at 3.3 V), the onboard boost, and peripheral reset lines. Brightness controls the DLDO1 backlight supply between 2.5 and 3.3 V; zero disables that rail. It preserves charger settings, other rail settings and USB/bus output-enable bits. Settings provide battery readings, local power-off, screen timeout and hardware checks.
 
@@ -151,7 +151,7 @@ Use `esp32s3-touch-amoled-175c` for SKUs 33691/33692, the enclosed model with 32
 | AXP2101 | I2C 0x34; ALDO1 at 3.3 V supplies analog audio |
 | BOOT | GPIO 0, TALK |
 
-Hold the screen or BOOT to talk. Swipe down to cancel. Hold the screen's title for one second to open settings. PWR retains its hardware power function; firmware does not map it to CANCEL on this model. There is no TCA9554 expander. The IMU and RTC are not exposed.
+Hold the screen or BOOT to talk. Swipe down from Home for quick controls; tap Stop there to stop a turn. Hold the screen's title for one second to open settings. PWR retains its hardware power function; firmware does not map it to CANCEL on this model. There is no TCA9554 expander. The IMU and RTC are not exposed.
 
 The firmware enables ALDO1 for audio while preserving the other rails and charging settings. Battery readings and local power-off use the existing AXP2101 driver. An unavailable ADC or gauge reading remains absent. Use the settings menu for microphone, speaker, display, touch, volume, brightness and power checks.
 
@@ -226,12 +226,13 @@ Board option `esp32s3-touch-amoled-175`, for Waveshare's all-in-one board: an ES
 | Do this | Does |
 |---|---|
 | Hold the screen | TALK: speak while holding, lift to send |
-| Tap the screen | Answer "yes" to a question |
-| Swipe down | CANCEL: discard a recording, close a card, stop a turn, answer "no" |
+| Tap Yes / No | Explicitly answer a question |
+| Swipe down on Home | Open quick controls without stopping activity |
+| Swipe vertically on a reply | Scroll; right returns Home with reading position retained |
 | Press the side PWR key | CANCEL as well; hold it 2 s for a new conversation |
 | Hold BOOT | TALK, like holding the screen |
 
-`set touch_cancel swipe` keeps only the swipe as CANCEL, `set touch_cancel pwr` only the PWR key, and `set touch_cancel both` restores the default. The same gestures work on the `sim-466x466-round` simulator board with the mouse.
+The legacy `touch_cancel` setting still selects whether the non-C board's PWR key acts as CANCEL (`pwr` or `both`). Navigation swipes no longer act as CANCEL in any setting; use the explicit Stop control. This does not add a CANCEL key to the separate 1.75C model. The same gestures work on the `sim-466x466-round` simulator board with the mouse.
 
 The [device settings menu](using-gadget.md#device-settings-and-hardware-checks) shows battery voltage, the PMIC's estimated percentage, charging and USB power. Readings refresh every five seconds and appear in `status`, `diag` and Hermes sensor telemetry. Failed reads become unavailable; they do not retain a stale percentage. A low gauge estimate, 10 percent or less without USB, adds a reminder on the idle screen.
 
@@ -255,7 +256,7 @@ This port is written from Waveshare's published pinout and drivers. On the first
 1. **Boot log:** `CO5300 466x466 ready`, `codecs: speaker ready, microphones ready` and `touch ready, key ready`. A `did not answer` or `missing` line names the part to look at. The `hg.diag` lines sum it up: reset reason, memory, and `parts: display co5300, microphone es7210, speaker es8311, touch yes, key yes`. In the `diag` report, `i2c` should include `0x18` (ES8311), `0x20` (TCA9554), `0x34` (AXP2101), `0x40` (ES7210) and `0x5a` (CST9217).
 2. **Console:** `hermes-gadget console --port COMx` on the USB-C port answers `status`. If the log shows but commands get no answer, the console is still on UART0.
 3. **Screen:** the mascot is centred, upright and not mirrored, and the colours are right (amber accents, not blue). A thin stripe at one edge means the column offset is off.
-4. **Touch:** hold the screen and the listening waves appear; a swipe *down* (not up) cancels. A reversed swipe means the touch mirroring needs flipping.
+4. **Touch:** hold the screen and the listening waves appear. From Home, swipe down to open quick controls and right to return. On a reply, vertical gestures scroll; during recording, movement must not navigate or cancel. See [touch navigation](using-gadget.md#touch-navigation).
 5. **PWR key:** a short press cancels and holding 2 s starts a new conversation without powering the board off.
 6. **Microphone:** say something; the waves move with your voice, and Hermes's transcript is right.
 7. **Speaker:** replies are clear and loud enough (`set volume 80`); no hiss between replies.

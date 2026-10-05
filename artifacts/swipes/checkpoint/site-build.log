@@ -1,0 +1,5 @@
+npm notice run build
+npm notice run node scripts/build.mjs
+build: 19 documentation pages
+build: no firmware release given; the page says none is published yet
+build: <checkout>/site/_site

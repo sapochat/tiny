@@ -1,0 +1,31 @@
+sssssssssssssssssssss.....sss....................s...................... [ 43%]
+.....s..........................ss...................................... [ 86%]
+[answer] Test Gadget: p1 -> no
+.......................                                                  [100%]
+=============================== warnings summary ===============================
+tests/test_touch_navigation.py::test_legacy_overlay_can_close_without_cancelling_work
+  <checkout>/.venv/lib/python3.14/site-packages/_pytest/unraisableexception.py:67: PytestUnraisableExceptionWarning: Exception ignored while calling deallocator <function Variable.__del__ at 0x7e2492f562a0>: None
+  
+  Traceback (most recent call last):
+    File "<home>/.hermes/tools/python-3.14.7+20260901-linux-x64/lib/python3.14/tkinter/__init__.py", line 416, in __del__
+      if self._tk.getboolean(self._tk.call("info", "exists", self._name)):
+                             ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  RuntimeError: main thread is not in main loop
+  
+  
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+tests/test_touch_navigation.py::test_legacy_overlay_can_close_without_cancelling_work
+  <checkout>/.venv/lib/python3.14/site-packages/_pytest/unraisableexception.py:67: PytestUnraisableExceptionWarning: Exception ignored while calling deallocator <function Image.__del__ at 0x7e2492e55590>: None
+  
+  Traceback (most recent call last):
+    File "<home>/.hermes/tools/python-3.14.7+20260901-linux-x64/lib/python3.14/tkinter/__init__.py", line 4332, in __del__
+      self.tk.call('image', 'delete', self.name)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  RuntimeError: main thread is not in main loop
+  
+  
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+139 passed, 30 skipped, 2 warnings in 108.85s (0:01:48)

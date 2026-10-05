@@ -1,0 +1,40 @@
+npm notice run test
+npm notice run node --test "test/*.test.mjs"
+✔ ready-made boards come first, then by name (5.231355ms)
+✔ reads sizes and built-in PSRAM the way esptool reports them (0.226467ms)
+✔ a matching board passes the check (0.121029ms)
+✔ another chip or too little flash stops the install (0.136888ms)
+✔ the wrong kind of PSRAM, or none, is a warning (0.110178ms)
+✔ keeping the settings writes around the settings partition (0.515623ms)
+✔ the link from hermes gateway setup fills in the server (0.2701ms)
+✔ only ws:// and wss:// addresses with a host are accepted (0.121349ms)
+✔ loads the manifest, and says when there is none (0.409863ms)
+✔ checks downloads with SHA-256 (3.038766ms)
+✔ quoting gets spaces, quotes and backslashes through, and secrets stay out of the log (4.346705ms)
+✔ waits out the start-up, then stores each setting (1506.12717ms)
+✔ a refused setting says why (0.767869ms)
+✔ silence is a timeout, not a hang, and stray @ lines aren't replies (301.655586ms)
+✔ a late reply to an earlier command doesn't answer the next one (3001.900005ms)
+✔ an unplugged board ends the wait at once (22.072346ms)
+✔ reads the diagnostics report and the recent log (0.87435ms)
+✔ a board that keeps no log still gives its report, and says why the log is empty (0.562522ms)
+✔ a board without the diag command is refused clearly (0.265691ms)
+✔ commands from two callers take turns, so neither takes the other's reply (0.893346ms)
+✔ a line too long for the console is refused before sending (0.285939ms)
+✔ the report reads like the one hermes-gadget diag saves (0.452204ms)
+✔ the file is named after the device and the time, with nothing a file system rejects (0.219234ms)
+✔ published guides keep links to guides, anchors, images, and repository files (10.282871ms)
+build: 19 documentation pages
+✔ the docs build publishes every registered guide in navigation and search (15.469782ms)
+✔ a new guide must be registered before the build can publish it (3.45413ms)
+✔ missing guides, local files, and section anchors identify their source (4.14257ms)
+✔ matches RFC 1321's test suite (0.649376ms)
+✔ matches Node's MD5 at every padding boundary and for a firmware-sized image (43.781105ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 14856.421879

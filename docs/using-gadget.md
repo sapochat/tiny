@@ -1,6 +1,26 @@
 # Talk, type, and interrupt
 
-Wait for the device to show Ready. On the LCD board, BOOT is TALK and PLUS is CANCEL. On the round touchscreen, hold the screen to talk and swipe down to cancel.
+Wait for the device to show Ready. On the LCD board, BOOT is TALK and PLUS is CANCEL. On the round touchscreen, hold the screen to talk. Navigation swipes never cancel a turn or answer a question.
+
+## Touch navigation
+
+Views and activity are independent: you can navigate while Hermes is thinking, streaming, or speaking without stopping it.
+
+| Starting view | Up / down | Right | Left |
+|---|---|---|---|
+| Home | Up opens the latest reply; down opens quick controls | No action | No action |
+| Response | Scroll text, including at either boundary | Home, retaining reading position | No action |
+| Quick controls | Adjust only the volume or brightness slider where the gesture starts | Home | No action |
+| Approval | Scroll the question | No action | No action |
+| Recording | No navigation | No navigation | No navigation |
+
+Tap the rendered **Yes** or **No** button to decide an approval. Tap **Stop** in quick controls to stop work/audio explicitly. Existing physical CANCEL and console cancellation remain available; no swipe starts a new session or resets the device.
+
+Streaming follows new text only while at the bottom. Scrolling up holds your reading position, including after the final text arrives and when returning from Home. Scroll back to the bottom to follow again. Home retains the current activity indicator, and the previous reply remains readable while the next turn is thinking.
+
+A gesture belongs to its starting view. A newly arrived/replaced approval cannot consume an older contact. Ambiguous diagonals and drags outside a button do not decide anything. A stationary hold still starts push-to-talk after 120 ms; once recording has started, movement is ignored and lifting the original talk contact sends normally. A separate navigation contact during recording neither submits nor discards it.
+
+Quick controls are separate from the legacy settings/hardware-check menu. Hold the title for one second **while idle** to enter that menu, or use its existing physical chord/console command. Its local item-navigation and Wi-Fi setup gestures are unchanged.
 
 | What you want to do | Control |
 |---|---|

@@ -32,3 +32,15 @@ firmware/esp32/sdkconfig.*-*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Private operator state and generated evidence (checkpoint uses explicit allowlist)
+.env
+.env.*
+!.env.example
+.hermes/
+config.before.yaml
+*.pem
+*.key
+node_modules/
+.pio/
+artifacts/

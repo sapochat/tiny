@@ -1,0 +1,11 @@
+{
+  "at": 1791215929.9210181,
+  "device_id": "[device-id-redacted]",
+  "receipt": {
+    "state": "done",
+    "version": "0.2.0",
+    "at": 1791215917.9289
+  },
+  "pending_image": false,
+  "checkpoint_note": "Redacted copy; original local receipt retained. Physical usability was subsequently confirmed by user; not exhaustive hardware validation."
+}
