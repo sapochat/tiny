@@ -38,7 +38,7 @@ class Board:
     backlight: bool = True
     scroll_buttons: bool = True
     round: bool = False  # circular panel: pixels outside the circle are not shown
-    touch: bool = False  # touchscreen: hold to talk, tap to answer yes, swipe down to cancel
+    touch: bool = False  # hold to talk; view-owned navigation and explicit approval controls
 
 
 BOARDS = {

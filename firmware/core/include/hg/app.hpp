@@ -43,8 +43,8 @@ struct DeviceProfile {
   bool has_scroll_buttons = false;
   std::string talk_label = "TALK";
   std::string cancel_label = "CANCEL";
-  // The screen stands in for the buttons (hold to talk, tap to answer yes,
-  // swipe to cancel); on-screen hints are worded for touch.
+  // The screen supports hold-to-talk, view-owned navigation and explicit
+  // approval controls; on-screen hints are worded for touch.
   bool touch_screen = false;
   // Board-specific settings the console accepts besides the core ones. Changes
   // reach the port through App::on_setting_changed.
@@ -92,6 +92,12 @@ class App {
   void close_settings();
   bool settings_open() const { return menu_ != Menu::Closed; }
   bool settings_title_hit(int x, int y) const;
+  // Navigation never synthesizes Cancel or changes the activity state.
+  TouchView touch_view() const;
+  uint32_t touch_epoch() const { return touch_epoch_; }
+  TouchControl touch_hit(int x, int y) const;
+  void touch_swipe(TouchView owner, int dx, int dy, TouchControl control);
+  void touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at);
   // Returns true when this input only wakes a sleeping display.
   bool wake_display();
   bool start_wifi_setup();
@@ -213,6 +219,11 @@ class App {
   DeviceProfile profile_;
   std::unique_ptr<Ui> ui_;
   UiModel model_;
+  enum class Navigation : uint8_t { Auto, Home, Response, Controls };
+  Navigation navigation_ = Navigation::Auto;
+  uint32_t touch_epoch_ = 0;
+  int prompt_scroll_ = 0;
+  bool awaiting_reply_ = false;  // keep latest text readable until the next reply begins
 
   // identity & settings
   std::vector<uint8_t> key_;

@@ -1,0 +1,15 @@
+{
+  "at": 1791215886.8546057,
+  "device": "[device-id-redacted]",
+  "metadata": {
+    "version": "0.2.0",
+    "sha256": "00f90b6a52d86f77c8e02de7e3130ca2e00906fef3da742b3d65111359361c17",
+    "size": 1273552,
+    "board": "esp32s3-touch-amoled-1.75c",
+    "staged_at": 1791215886.8152032,
+    "attempts": 0
+  },
+  "staged_bytes_sha256": "00f90b6a52d86f77c8e02de7e3130ca2e00906fef3da742b3d65111359361c17",
+  "staged_bytes_size": 1273552,
+  "checkpoint_note": "Redacted copy; original local receipt retained. Physical usability was subsequently confirmed by user; not exhaustive hardware validation."
+}

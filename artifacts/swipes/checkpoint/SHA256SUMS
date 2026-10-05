@@ -1,0 +1,9 @@
+78a1f23c5f54ba4e60e6507fbe597ae6a79c85061067df4b3398017c24ff2783  candidate-SHA256SUMS
+47a18143d24e40eb1fa764f2280e47ef0a8fe8cd5cc4f30e6286ac6f2be41402  candidate-hermes-gadget-0.2.0-licenses.zip
+00f90b6a52d86f77c8e02de7e3130ca2e00906fef3da742b3d65111359361c17  candidate-hermes-gadget-esp32s3-touch-amoled-175c-0.2.0-app.bin
+5c7551a817421041698fe2011f420a5226bc1af3f1e2f9181b6ebf7a0fc991a0  candidate-hermes-gadget-esp32s3-touch-amoled-175c-0.2.0.bin
+a6b0cda69568bae9b18abafa27c91ca210d2bfd72137ca5ec4f041de76b08677  candidate-manifest.json
+40831a1ed809b9914451aec9f69c4cdf7587502263c1b9fabde93b8622b23f3d  recovery-SHA256SUMS
+3d592d1dc0f54153759f8bf991dad663e5abf441b21c0d86cac3d1cf24aa9f2e  recovery-hermes-gadget-esp32s3-touch-amoled-175c-0.2.0-app.bin
+6805f5e13a73e4adaf2ed901615f6490607f6f8e95139f10292440f0c0b066ac  recovery-hermes-gadget-esp32s3-touch-amoled-175c-0.2.0.bin
+659223ae99cf7bbafc351e475a7147e20cc55d720884003bee4bd758d7a3ea85  recovery-manifest.json

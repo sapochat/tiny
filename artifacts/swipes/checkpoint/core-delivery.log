@@ -1,0 +1,20 @@
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: <checkout>/build/host
+[  4%] Building CXX object core/CMakeFiles/hg_core.dir/src/app.cpp.o
+[  8%] Linking CXX static library libhg_core.a
+[ 60%] Built target hg_core
+[ 65%] Linking CXX shared library libhgsim.so
+[ 69%] Built target hgsim
+[ 73%] Linking CXX executable hg_core_tests
+[100%] Built target hg_core_tests
+Test project <checkout>/build/host
+    Start 1: hg_core_tests
+1/1 Test #1: hg_core_tests ....................   Passed    0.01 sec
+
+100% tests passed out of 1
+
+Total Test time (real) =   0.02 sec
++ <checkout>/.venv/bin/cmake -S <checkout>/firmware -B <checkout>/build/host -DCMAKE_BUILD_TYPE=Release
++ <checkout>/.venv/bin/cmake --build <checkout>/build/host --config Release
+simulator library: <checkout>/build/host/libhgsim.so

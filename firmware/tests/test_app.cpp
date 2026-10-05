@@ -893,7 +893,7 @@ TEST("touch: hold to talk, lift to send") {
   CHECK(r.fake.last("audio.end") != nullptr);
 }
 
-TEST("touch: swipe down while holding discards the recording") {
+TEST("touch: swipe while holding preserves recording; explicit Cancel discards") {
   Rig r(Rig::touch_profile());
   r.bring_online(true);
   hg::TouchGestures touch(r.app);
@@ -902,19 +902,22 @@ TEST("touch: swipe down while holding discards the recording") {
   touch.tick(r.fake.clock);
   CHECK(r.fake.mic_on);
   touch.update(true, 205, 260, r.fake.clock);
+  CHECK(r.fake.mic_on);
+  CHECK(r.fake.last("audio.cancel") == nullptr);
+  r.app.console("cancel");
   CHECK(!r.fake.mic_on);
   CHECK(r.fake.last("audio.cancel") != nullptr);
   touch.update(false, 0, 0, r.fake.clock);
   CHECK(r.fake.last("audio.end") == nullptr);
 }
 
-TEST("touch: tap answers yes, swipe answers no, sideways drags do nothing") {
+TEST("touch: explicit answer buttons decide; swipes do not") {
   Rig r(Rig::touch_profile());
   r.bring_online(true);
   hg::TouchGestures touch(r.app);
   r.server(R"({"type":"prompt","id":"q1","title":"Allow?","text":"rm -rf build"})");
-  CHECK_EQ(r.app.model().yes, std::string("Tap: Yes"));
-  CHECK_EQ(r.app.model().no, std::string("Swipe: No"));
+  CHECK_EQ(r.app.model().yes, std::string("Yes"));
+  CHECK_EQ(r.app.model().no, std::string("No"));
   r.advance(700);
   touch.update(true, 100, 100, r.fake.clock);  // sideways: ignored
   touch.update(true, 200, 104, r.fake.clock);
@@ -924,7 +927,9 @@ TEST("touch: tap answers yes, swipe answers no, sideways drags do nothing") {
   CHECK(r.fake.last("prompt.reply") == nullptr);
   CHECK(!r.fake.mic_on);
 
-  touch.update(true, 200, 200, r.fake.clock);  // quick tap
+  hg::Ui geometry(r.fake);
+  auto yes_rect = geometry.control_rect(hg::TouchControl::Yes, r.app.model());
+  touch.update(true, yes_rect.x + yes_rect.w/2, yes_rect.y + yes_rect.h/2, r.fake.clock);
   r.advance(40);
   touch.update(false, 0, 0, r.fake.clock);
   const Value* yes = r.fake.last("prompt.reply");
@@ -935,6 +940,10 @@ TEST("touch: tap answers yes, swipe answers no, sideways drags do nothing") {
   touch.update(true, 200, 120, r.fake.clock);
   r.advance(30);
   touch.update(true, 202, 220, r.fake.clock);
+  touch.update(false, 0, 0, r.fake.clock);
+  CHECK(r.app.screen() == hg::Screen::Prompt);
+  auto no_rect = geometry.control_rect(hg::TouchControl::No, r.app.model());
+  touch.update(true, no_rect.x + no_rect.w/2, no_rect.y + no_rect.h/2, r.fake.clock);
   touch.update(false, 0, 0, r.fake.clock);
   const Value* no = r.fake.last("prompt.reply");
   CHECK(no && (*no)["id"].as_string() == "q2" && (*no)["answer"].as_string() == "no");

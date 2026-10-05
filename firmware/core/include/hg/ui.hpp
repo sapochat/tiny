@@ -36,6 +36,13 @@ enum class Screen : uint8_t {
 
 enum class Link : uint8_t { Offline, Network, Connecting, Online };
 
+enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, Other };
+enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No };
+struct UiRect {
+  int x = 0, y = 0, w = 0, h = 0;
+  bool contains(int px, int py) const { return px >= x && py >= y && px < x+w && py < y+h; }
+};
+
 const char* screen_name(Screen s);
 
 struct UiModel {
@@ -50,6 +57,8 @@ struct UiModel {
   uint8_t level = 0;     // microphone level 0..100
   bool speaking = false;
   bool color_test = false;
+  bool quick_controls = false, touch_prompt = false;
+  int volume = 0, brightness = 0;
   uint32_t frame = 0;    // animation frame, advanced by the app
   std::string hint;      // bottom bar
   std::string yes, no;   // answer buttons under the hero caption (Prompt screen)
@@ -84,6 +93,8 @@ class Ui {
   void flush(int y0, int y1);
   // Body text rows visible on a text screen for this model (after detail lines).
   int body_rows(const UiModel& m) const;
+  UiRect control_rect(TouchControl control, const UiModel& m) const;
+  TouchControl control_hit(int x, int y, const UiModel& m) const;
   bool title_hit(int x, int y) const {
     return x >= ox_ && x < ox_ + info_.width && y >= oy_ && y < oy_ + layout_.top_h;
   }
@@ -93,6 +104,7 @@ class Ui {
   void draw_header(Canvas& c, const UiModel& m);
   void draw_content(Canvas& c, const UiModel& m);
   void draw_bottom(Canvas& c, const UiModel& m);
+  void draw_touch_controls(Canvas& c, const UiModel& m);
   void draw_indicator(Canvas& c, const UiModel& m, int cx, int cy, int r);
   struct HeroGeom {
     int size = 0, x = 0, y = 0;  // mascot

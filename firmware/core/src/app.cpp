@@ -431,13 +431,15 @@ void App::h_unpaired(const json::Value&) {
 bool App::can_talk() const { return phase_ == Phase::Online && paired_ && ota_ != Ota::Receiving; }
 
 void App::h_turn_start(const json::Value& m) {
+  ++touch_epoch_;  // an old Stop contact must not stop a new turn
+  awaiting_reply_ = true;
   wake_display();
   active_turn_ = m["turn"].as_string();
   turn_done_ = false;
   reply_final_ = false;
   last_turn_rx_ = now();
   if (mode_ != Mode::Listening) {
-    if (mode_ != Mode::Thinking) {
+    if (mode_ != Mode::Thinking && !profile_.touch_screen) {
       reply_.clear();
       scroll_ = -1;
     }
@@ -478,7 +480,8 @@ void App::h_reply_delta(const json::Value& m) {
   wake_display();
   if (mode_ == Mode::Listening) return;
   reply_ = m["text"].as_string();
-  scroll_ = -1;
+  if (!profile_.touch_screen || awaiting_reply_) scroll_ = -1;
+  awaiting_reply_ = false;
   last_turn_rx_ = now();
   if (mode_ != Mode::Responding) {
     mode_ = Mode::Responding;
@@ -497,7 +500,9 @@ void App::h_reply(const json::Value& m) {
   if (mode_ == Mode::Listening) return;
   reply_ = text;
   reply_final_ = true;
-  scroll_ = 0;  // a finished reply is read from the top
+  if (!profile_.touch_screen) scroll_ = 0;  // touch keeps the reader's position
+  else if (awaiting_reply_) scroll_ = -1;
+  awaiting_reply_ = false;
   page_at_ = now() + page_dwell_ms();
   status_.clear();
   mode_ = Mode::Responding;
@@ -641,6 +646,8 @@ void App::h_prompt(const json::Value& m) {
   const std::string& id = m["id"].as_string();
   if (id.empty()) return;
   prompt_id_ = id;
+  ++touch_epoch_;
+  prompt_scroll_ = 0;
   prompt_title_ = m["title"].as_string();
   prompt_text_ = m["text"].as_string();
   prompt_since_ = now();
@@ -671,6 +678,7 @@ void App::answer_prompt(bool yes) {
 }
 
 void App::clear_prompt() {
+  ++touch_epoch_;
   prompt_id_.clear();
   prompt_title_.clear();
   prompt_text_.clear();
@@ -846,10 +854,10 @@ void App::start_listening(bool hands_free) {
   send(start);
   mode_ = Mode::Listening;
   mode_since_ = now();
-  reply_.clear();
+  awaiting_reply_ = true;
+  if (!profile_.touch_screen) { reply_.clear(); scroll_ = -1; }
   status_.clear();
   user_echo_.clear();
-  scroll_ = -1;
 }
 
 void App::finish_listening() {
@@ -948,9 +956,9 @@ void App::submit_text(std::string_view text) {
   msg.set("id", request_id_).set("text", t);
   send(msg);
   user_echo_ = t;
-  reply_.clear();
+  awaiting_reply_ = true;
+  if (!profile_.touch_screen) { reply_.clear(); scroll_ = -1; }
   status_ = "Sending...";
-  scroll_ = -1;
   mode_ = Mode::Thinking;
   mode_since_ = now();
   last_turn_rx_ = now();
@@ -966,6 +974,7 @@ void App::scroll_body(int delta) {
   int max_first = std::max(0, total - ui_->body_rows(model_));
   int cur = pos < 0 ? max_first : std::min(pos, max_first);
   pos = std::max(0, std::min(max_first, cur + delta));
+  if (profile_.touch_screen && !card && delta > 0 && pos == max_first) pos = -1;
 }
 
 uint32_t App::page_dwell_ms() const {
@@ -974,6 +983,7 @@ uint32_t App::page_dwell_ms() const {
 }
 
 bool App::turn_page() {
+  if (profile_.touch_screen && overlay_ == Overlay::None) return false;  // touch replies never auto-page
   // Only text screens that are read from the top page; a streaming reply stays pinned to its end.
   if (!ui_ || model_.hero) return false;
   int* pos = nullptr;
@@ -1347,6 +1357,8 @@ void App::update_model() {
   m.level = level_;
   m.speaking = speaking();
   m.color_test = false;
+  m.quick_controls = false;
+  m.touch_prompt = false;
 
   switch (phase_) {
     case Phase::NoNetwork:
@@ -1442,7 +1454,7 @@ void App::update_model() {
     m.headline = "Listening";
     m.detail = hands_free_ ? "Speak now - pause to send"
                : profile_.touch_screen ? "Lift your finger to send" : "Release " + talk + " to send";
-    m.hint = profile_.cancel_label + " to discard";
+    m.hint = profile_.touch_screen ? "Recording - no navigation" : profile_.cancel_label + " to discard";
   } else if (!prompt_id_.empty()) {
     m.screen = Screen::Prompt;
     m.hero = true;
@@ -1452,6 +1464,16 @@ void App::update_model() {
     m.yes = profile_.touch_screen ? "Tap: Yes" : talk + ": Yes";
     if (profile_.has_cancel_button) m.no = profile_.touch_screen ? "Swipe: No" : profile_.cancel_label + ": No";
     m.hint = "Hermes is waiting for you";
+    if (profile_.touch_screen) {
+      m.hero = false;
+      m.touch_prompt = true;
+      m.body = prompt_text_;
+      m.detail.clear();
+      m.scroll = prompt_scroll_;
+      m.yes = "Yes";
+      m.no = "No";
+      m.hint = "Tap Yes or No";
+    }
   } else if (overlay_ == Overlay::Image) {
     m.screen = Screen::Image;
     m.headline = "Image";
@@ -1479,7 +1501,7 @@ void App::update_model() {
       m.body = "\"" + user_echo_ + "\"";
       if (m.detail.empty()) m.detail = m.body;
     }
-    m.hint = profile_.cancel_label + " to stop";
+    m.hint = profile_.touch_screen ? "Down: Controls" : profile_.cancel_label + " to stop";
   } else if (mode_ == Mode::Responding) {
     m.screen = Screen::Responding;
     m.headline = m.speaking ? "Speaking" : "Hermes";
@@ -1499,6 +1521,35 @@ void App::update_model() {
     if (m.hero) {
       m.headline = "Hi, I'm Hermes";
       m.detail = reply_.empty() || !profile_.has_scroll_buttons ? "Ask me anything" : "UP shows my last reply";
+    }
+  }
+  if (profile_.touch_screen && can_talk() && !ota_busy() && ota_ != Ota::Restarting &&
+      fatal_.empty() && mode_ != Mode::Listening && !prompt_showing() && overlay_ == Overlay::None) {
+    if (navigation_ == Navigation::Controls) {
+      m.screen = Screen::Settings;
+      m.hero = false;
+      m.quick_controls = true;
+      m.volume = hal_.speaker ? volume_ : -1;
+      m.brightness = hal_.display && hal_.display->info().has_backlight ? brightness_ : -1;
+      m.headline = "Quick controls";
+      m.detail.clear();
+      m.body.clear();
+      m.hint = "Swipe right: Home";
+    } else if (navigation_ == Navigation::Home) {
+      m.hero = true;
+      m.body.clear();
+      if (mode_ == Mode::Thinking) m.headline = "Thinking";
+      else if (speaking()) m.headline = "Speaking";
+      else if (mode_ == Mode::Responding) m.headline = "Receiving reply";
+      m.hint = "Up: Reply | Down: Controls";
+    } else if (navigation_ == Navigation::Response && !reply_.empty()) {
+      m.hero = false;
+      m.body = reply_;
+      m.detail.clear();
+      m.hint = "Scroll | Right: Home";
+    } else if (!reply_.empty() && mode_ != Mode::Thinking) {
+      m.hero = false;
+      m.hint = "Scroll | Right: Home";
     }
   }
   bool keeps_detail = m.screen == Screen::Pairing || m.screen == Screen::Boot || m.screen == Screen::Prompt;
@@ -1535,6 +1586,24 @@ json::Value App::status_value() const {
       .set("server", server_url_)
       .set("network", network_up_);
   s.set("display_sleeping", display_sleeping_);
+  if (profile_.touch_screen) {
+    const char* views[] = {"home", "response", "controls", "approval", "recording", "other"};
+    json::Value u = json::Value::object(), controls = json::Value::object();
+    u.set("view", views[static_cast<unsigned>(touch_view())])
+      .set("activity", mode_ == Mode::Listening ? "recording" : speaking() ? "speaking" :
+           mode_ == Mode::Thinking ? "thinking" : mode_ == Mode::Responding && !reply_final_ ? "streaming" : "idle")
+      .set("scroll", model_.scroll).set("headline", model_.headline).set("hint", model_.hint).set("speaking", speaking());
+    const char* names[] = {"none", "volume", "brightness", "stop", "yes", "no"};
+    if (ui_) for (unsigned i = 1; i <= 5; ++i) {
+      auto r = ui_->control_rect(static_cast<TouchControl>(i), model_);
+      if (!r.w || !r.h) continue;
+      json::Value rect = json::Value::array();
+      rect.push(r.x); rect.push(r.y); rect.push(r.w); rect.push(r.h);
+      controls.set(names[i], rect);
+    }
+    u.set("controls", controls);
+    s.set("ui", u);
+  }
   if (hal_.power) s.set("power", power_value());
   if (!pairing_code_.empty()) s.set("pairing_code", pairing_code_);
   if (!prompt_id_.empty()) s.set("prompt", prompt_id_);

@@ -228,7 +228,7 @@ counterclockwise. Use the same orientation as your touch input.
 On a Linux desktop, install `.[display]`, set `fullscreen` to `false` for a
 window, and start the client from your desktop terminal. Space is TALK, Escape
 is Cancel, and the arrow keys scroll. Touch or hold the screen to interact;
-swipe down to cancel. Closing the window stops the client. Omitting `display`
+swipe down from Home for quick controls (see [touch navigation](using-gadget.md#touch-navigation)). Closing the window stops the client. Omitting `display`
 keeps the service headless.
 
 On Raspberry Pi OS Lite, the optional screen needs an SDL build with KMS/DRM

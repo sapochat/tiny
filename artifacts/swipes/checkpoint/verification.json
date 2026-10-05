@@ -1,0 +1,24 @@
+{
+  "at": 1791216254.0727167,
+  "device_id": "[device-id-redacted]",
+  "successful": true,
+  "same_gateway_pid": 984188,
+  "retained_pairing": true,
+  "retained_name": "Tiny",
+  "final_connected_for_s": 328,
+  "receipt": {
+    "state": "done",
+    "version": "0.2.0",
+    "at": 1791215917.9289
+  },
+  "no_pending_update": true,
+  "observations": 19,
+  "firmware_version": "0.2.0",
+  "limitations": [
+    "No remote running-app hash or boot-slot/probation telemetry; exact installed image established by captured staged bytes plus hash-checked OTA done receipt, not version label.",
+    "No USB serial startup log or current-flash backup.",
+    "Wi-Fi/identity/pairing continuity verified; brightness, volume and other persisted values not exposed by status.",
+    "Physical swipes, screen rendering, microphone/speaker usability and rollback fault injection remain untested."
+  ],
+  "checkpoint_note": "Redacted copy; original local receipt retained. Physical usability was subsequently confirmed by user; not exhaustive hardware validation."
+}
