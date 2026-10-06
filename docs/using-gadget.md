@@ -16,7 +16,7 @@ Views and activity are independent: you can navigate while Hermes is thinking, s
 
 Tap the rendered **Yes** or **No** button to decide an approval. Tap **Stop** in quick controls to stop work/audio explicitly. Existing physical CANCEL and console cancellation remain available; no swipe starts a new session or resets the device.
 
-Home shows a quiet tappable footer when reply text changes while the response is not visible: **New text - tap to read**. A matching successful `turn.end` changes it to **Reply ready - tap to read**; a non-success ending shows **Reply stopped - tap to read** instead. A final text snapshot alone is not completion. A turn without new text cannot mark a retained previous reply complete. Opening the response clears unread status (it does not claim every line was read); later hidden text changes make it unread again. This is local, in-memory status for the latest reply, not a notification history.
+Home shows a quiet tappable reply indicator when text changes while the response is not visible: **New text**. A matching successful `turn.end` changes it to **Reply ready**; a non-success ending shows **Reply stopped** instead. On the 466px face-first display these are the state label above a **Read reply** pill; legacy displays retain the combined footer label. A final text snapshot alone is not completion. A turn without new text cannot mark a retained previous reply complete. Opening the response clears unread status (it does not claim every line was read); later hidden text changes make it unread again. This is local, in-memory status for the latest reply, not a notification history.
 
 Tap that footer to open the response at its retained reading position, without starting audio. It does not replace approval, recording, settings or overlays, and completion does not change your selected view. Holding the footer also does not start recording; hold elsewhere on Home to talk. A contact begun on an older reply cannot open replacement text. The existing up/down navigation remains available while the footer temporarily replaces its hint.
 
@@ -24,7 +24,7 @@ Streaming follows new text only while at the bottom. Scrolling up holds your rea
 
 A gesture belongs to its starting view. A newly arrived/replaced approval cannot consume an older contact. Ambiguous diagonals and drags outside a button do not decide anything. A stationary hold still starts push-to-talk after 120 ms; once recording has started, movement is ignored and lifting the original talk contact sends normally. A separate navigation contact during recording neither submits nor discards it.
 
-Quick controls are separate from the legacy settings/hardware-check menu. Hold the title for one second **while idle** to enter that menu, or use its existing physical chord/console command. Its local item-navigation and Wi-Fi setup gestures are unchanged.
+Quick controls are separate from the legacy settings/hardware-check menu. Hold the title for one second **while idle** to enter that menu, or use its existing physical chord/console command. A pending title hold is consumed if its view or idle eligibility changes; it cannot cancel a recording or speech that starts later. Starting a recording also invalidates older navigation contacts, without changing the original touch-owned TALK release. Its local item-navigation and Wi-Fi setup gestures are unchanged.
 
 | What you want to do | Control |
 |---|---|
@@ -44,9 +44,35 @@ If speech is missing, check [audio setup](connect-hermes.md#4-enable-speech). Fo
 
 ## Round AMOLED companion face (466×466)
 
-The local Tiny expression candidate uses a true-black background, a fixed neutral mascot palette, and a single central focus. Its 192px original outline never moves: receptive listening eyes, an upward thinking gaze, and a small closed-lip ready smile are locally composited from existing expression artwork. Ready is selected only for successful completed unread text, not streaming, final snapshots or failures. Reading clears it. Entries blend from the last rendered facial pose over eight 100ms animation ticks; interruption/reversal keeps the identical boundary frame. Hidden views pause the pose; idle has a softened periodic blink, while listening/thinking/ready hold still. Speaking uses the neutral face and perimeter indicator, not fabricated lip-sync. Listening has single perimeter brackets; thinking has three stationary dots (not progress); speaking has double brackets. The listening meter above the mascot uses actual captured sample levels, not a decorative waveform. An unread reply adds a quiet lower marker and a **232×56px** read target; the completion rules above are unchanged. Response text uses **18px cells** rather than 12px, with retained manual scrolling and a visible scroll track for long replies.
+The local Tiny v2 candidate plays motion from the approved, non-smoothed video pack on a true-black background. The full silhouette can move; this supersedes the earlier fixed-outline facial patches. Offline conversion embeds 96×96, four-level grayscale frames displayed at 192×192, at five frames per second. It does not decode MP4 on the device. Idle, listening and speaking loop; thinking, reply-ready, asking and alert play their authored entries and hold their final poses. Speaking is an authored animation, **not audio-synchronized lip-sync**.
 
-Quick controls keep predictable vertical gestures in **68×136px** slider targets. **Screen** means display brightness; **Stop turn** explicitly stops current work/audio, and is a no-op when idle. Approval remains explicit Yes/No with **144×64px** targets; no gesture means approval. The same rectangles are used by drawing and hit testing. Hold the small **HERMES** label while idle for the legacy settings menu. Existing setup, image and card overlays retain their safe inscribed area.
+Ready is selected only for successful completed unread text, not streaming, final snapshots or failures. Reading clears it. When a completed hold returns to neutral, its authored exit plays; early interruption skips the incompatible exit. New recording, speech, thinking, approval or alert preempts decorative transitions immediately, rather than waiting five seconds. These cuts are intentionally responsive and are not promised to be pixel-continuous. Hidden views keep animation time; returning shows the current activity rather than replaying a stale entry.
+
+Approval prioritizes the complete scrollable question and existing Yes/No semantics, without a decorative portrait. Network loss/setup errors use the alert animation in the existing safe-area layout. During quiet idle dimming, fall-asleep leads to the sleeping loop; existing screen timeout still turns the display off on schedule and stops rendering. Waking from the sleep pose plays wake, unless a higher-priority activity preempts it. Short timeouts can skip unfinished sleep/wake decoration. The first wake touch still cannot record or approve.
+
+The face-first layout places the original 192px animated character at (137,96),
+with smooth proportional Geist text: a small HERMES label, 30px state at y299,
+and 17px support at y342. Idle says **Hold to talk** or **Tap to talk** according
+to the configured mode. Listening says **Release to send** (or **Pause to send**
+in silence-detection mode); its single brackets and meter reflect recording,
+not fabricated audio. Speaking has double brackets. Thinking has no fake progress.
+
+Unread completion is a **Reply ready** state and a **210×55px Read reply** pill;
+new text and stopped replies remain distinct. The reading view removes the face,
+labels the content **Latest reply**, and uses 24px Geist, measured wrapping,
+eight 34px rows and a curved position marker. The complete reply is scrollable;
+reading position and bottom-follow behavior are unchanged. Long approval text
+uses five rows above equally sized **146×64px No / Yes** buttons, with amber Yes.
+Generic questions are not relabeled as permissions. Unsupported characters have
+a visible replacement glyph; full Unicode shaping and browser kerning are not
+implemented. Native results do not establish physical readability.
+
+Quick controls use **72×143px** rounded filled tracks labeled **Volume** and
+**Brightness**, with actual percentages. **Stop response** is muted and a no-op
+when there is no active work/audio. Drawing and hit testing share the same
+rectangles; stale contacts still cannot decide replacement targets. Hold the
+small **HERMES** title while idle for legacy settings. Setup, images and cards
+retain their safe inscribed area, and other display sizes keep their renderer.
 
 The perimeter is not a touch control, audio-volume scale or estimated progress. Idle has no bright ring; configured screen timeout still dims and sleeps normally. These are pixel dimensions verified in native simulation, **not physical touch-target or readability measurements**. No hardware power saving or frame-rate measurement is claimed.
 

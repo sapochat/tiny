@@ -1,0 +1,62 @@
+{
+  "display_name": "Grok Video 1.5",
+  "job_type": "grok_video_v15",
+  "params": [
+    {
+      "name": "audio_references",
+      "type": "array",
+      "default": null,
+      "required": false
+    },
+    {
+      "name": "duration",
+      "type": "integer",
+      "default": 5,
+      "required": false
+    },
+    {
+      "name": "image_references",
+      "type": "array",
+      "default": null,
+      "required": false
+    },
+    {
+      "name": "prompt",
+      "type": "string",
+      "default": null,
+      "required": true
+    },
+    {
+      "name": "resolution",
+      "type": "string",
+      "default": "720p",
+      "required": false,
+      "enum": [
+        "480p",
+        "720p",
+        "1080p"
+      ]
+    },
+    {
+      "name": "start_image",
+      "type": "object|null",
+      "default": null,
+      "required": false
+    }
+  ],
+  "rules": [
+    {
+      "cel": "params.start_image == null || (size(params.image_references) == 0 && size(params.audio_references) == 0)",
+      "message": "start_image cannot be combined with reference media"
+    },
+    {
+      "cel": "size(params.audio_references) == 0 || size(params.image_references) > 0",
+      "message": "audio_references require at least one image reference"
+    },
+    {
+      "cel": "(size(params.image_references) == 0 && size(params.audio_references) == 0) || params.resolution != \"1080p\"",
+      "message": "1080p is not available with reference media"
+    }
+  ],
+  "type": "video"
+}

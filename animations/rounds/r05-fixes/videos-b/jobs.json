@@ -1,0 +1,108 @@
+[
+  {
+    "name": "enter-alerto-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "She suddenly notices someone: a quick small lift of the head, eyes snap wide open, brows rise high, lips part into a small round solid-black 'o' with no teeth, then she holds that alert pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/alerto-kf-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "exit-alerto-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "She relaxes after the surprise: mouth closes, brows lower, eyes return to their calm half-lidded look, head settles, ending exactly in the calm neutral pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/anchors/alerto-kf-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-askinghm-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "She asks the viewer a question: one brow lifts higher than the other, her eyes come to meet the viewer, head tilts to the side, lips part into a tiny 'hm?' with no teeth, then she holds, waiting for the answer. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/askinghm-kf-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "exit-askinghm-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "She has her answer: brows settle, the head straightens, lips close, eyes return to their calm half-lidded look, ending exactly in the calm neutral pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/anchors/askinghm-kf-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-pleasedopen-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "She reacts to good news: a warm smile grows, her eyes stay open and look at the viewer with a gentle smiling squint, cheeks lift, a tiny happy lift of the head, then she holds the warm smile with eyes open. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/pleasedopen-kf-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "exit-pleasedopen-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "Her smile gently fades as she settles: mouth relaxes, eyes return to their calm half-lidded look, ending exactly in the calm neutral pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/anchors/pleasedopen-kf-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-alerto-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "She suddenly notices someone: a quick small lift of the head, eyes snap wide open, brows rise high, lips part into a small round solid-black 'o' with no teeth, then she holds that alert pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/alerto-kf-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-askinghm-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "She asks the viewer a question: one brow lifts higher than the other, her eyes come to meet the viewer, head tilts to the side, lips part into a tiny 'hm?' with no teeth, then she holds, waiting for the answer. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/askinghm-kf-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  }
+]

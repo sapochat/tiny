@@ -96,6 +96,85 @@ Two checks stop a firmware build that would run with settings nobody asked for. 
 - **`tools/check_config.py`**, from `CMakeLists.txt` after the configuration is generated (so `idf.py` builds run it too). It fails when a line of `sdkconfig.defaults` or the board's defaults didn't reach the generated sdkconfig. That happens when a symbol is misspelled, belongs to another chip, or has an unmet dependency, and when an sdkconfig from an older checkout outlives a change to the defaults. In the last case, delete `sdkconfig.<board>` (PlatformIO) or the build directory, then build again. A board file that picks another option of a choice the base file sets says so with `# CONFIG_<base option> is not set`.
 - **`tools/check_size.py`**, after linking (`tools/pio_checks.py`). It fails when the app leaves less than 10% of its smallest app partition free. For `idf.py` builds, run it by hand: `python tools/check_size.py --app build/hermes_gadget.bin --partitions build/partition_table/partition-table.bin`.
 
+### Tiny v2 local animation candidate
+
+The round 466px renderer uses the existing approved sources in the sibling
+`../tiny-animations/picks/states-v2/` directory. The exact 14 numbered MP4s
+and `../tiny-animations/picks/chain/chain-v2.json` are required for regeneration;
+firmware builds only need the checked-in generated header. No paid generation,
+network asset lookup, runtime video codec or smoothing is involved.
+
+```sh
+.venv/bin/python tools/build_expressions.py
+.venv/bin/python -m cmake -S firmware -B build/video-v2 -DCMAKE_BUILD_TYPE=Release
+.venv/bin/python -m cmake --build build/video-v2 -j 4
+HGSIM_LIBRARY=$PWD/build/video-v2/libhgsim.so .venv/bin/python -m pytest tests/test_video_v2.py tests/test_expressions.py tests/test_touch_navigation.py tests/test_round_amoled.py tests/test_round_amoled_safety.py tests/test_reply_indicator.py -v --junitxml=artifacts/video-v2/results.xml
+PLATFORMIO_BUILD_DIR=$PWD/build/video-v2-esp32 .venv/bin/python -m platformio run --project-dir firmware/esp32 -e esp32s3-touch-amoled-175c
+```
+
+Conversion uses FFmpeg and NumPy, samples each five-second clip to 25 frames,
+retains the exact first/last source frame, Lanczos-resizes to 96px and quantizes
+to four gray levels. Independent packed-gray2 LZ frames bound working storage to
+2,304 bytes, with no per-frame allocation. The converter enforces its asset
+budget; the actual firmware must also pass the unchanged 10%-free partition
+size gate. Do not enlarge partitions to fit the pack.
+
+`artifacts/video-v2/manifest.json` records input hashes, source frame indices,
+anchor names, conversion versions and generated-header hash. The E2E fixtures
+use a real local DeviceHub and native App, save protocol receipts and playback
+GIFs, and compare rendered listening pixels against an independent MP4 decode.
+The app's local `status` JSON includes `ui.animation.clip` and `frame`; these are
+diagnostics, not a new host-controlled animation protocol. Evidence and build
+outputs are ignored artifacts, not a release or a physical validation report.
+The old static-outline/channel-step assertions are explicitly superseded; touch,
+reading, success-only readiness and approval semantics remain enforced.
+
+### Tiny face-first circular UI candidate
+
+The 466px face-first renderer uses the original video motion with offline
+proportional antialiased Geist. Source TTF, OFL, exact version/hash, glyph list
+and regeneration notes live in `assets/fonts/`. `tools/build_geist.py` produces
+the bounded static RLE gray4 atlas; firmware needs no runtime font library.
+The browser reference uses subpixel typography; this embedded implementation
+uses integer advances and a visible fallback for unsupported Unicode scalars.
+
+The glyph table must be sorted and duplicate-free for `std::lower_bound`.
+The generator canonicalizes codepoints and validates the explicit replacement
+index; insertion order is not lookup order. `test_face_first_font.py` drives real
+reading/controls/readiness/speaking workflows and compares RGB565 pixels with an
+independent source-TTF raster, including every intended codepoint in replies.
+The known return chevron must never be confused with the deliberately unsupported
+owl replacement in the long-approval fixture. Preserve the approved pixel-art
+portrait and original motion; neither is part of a typography correction.
+
+`Ui::body_lines` and `body_rows` are the shared drawing/scroll contracts.
+Response and approval must use them in both `app.cpp` and `app_settings.cpp`;
+legacy cards keep fixed-cell wrapping. Do not replace only the drawn font while
+leaving scroll/page counts based on the previous 18px cells.
+
+```sh
+.venv/bin/python tools/build_geist.py
+.venv/bin/python -m cmake -S firmware -B build/face-first -DCMAKE_BUILD_TYPE=Release
+.venv/bin/python -m cmake --build build/face-first -j 4
+# Run the ctest binary from the installed CMake package; relocated venv script
+# shebangs may still refer to an old checkout. Do not alter host configuration.
+.venv/lib/python3.14/site-packages/cmake/data/bin/ctest --test-dir build/face-first --output-on-failure
+HGSIM_LIBRARY=$PWD/build/face-first/libhgsim.so FACE_ARTIFACTS=artifacts/face-first/green AMOLED_ARTIFACTS=artifacts/face-first/green SWIPE_ARTIFACTS=artifacts/face-first/workflows VIDEO_ARTIFACTS=artifacts/face-first/video .venv/bin/python -m pytest tests/test_face_first.py tests/test_face_first_font.py tests/test_touch_navigation.py tests/test_reply_indicator.py tests/test_round_amoled.py tests/test_round_amoled_safety.py tests/test_video_v2.py tests/test_expressions.py tests/test_sim_hub.py tests/test_firmware_tools.py tests/test_protocol.py tests/test_installer_console.py tests/test_stale_title_hold.py -v --basetemp=/home/santi/.hermes/cache/scratch/tstitle --junitxml=artifacts/face-first/results.xml
+PLATFORMIO_BUILD_DIR=$PWD/build/face-first-esp32 .venv/bin/python -m platformio run --project-dir firmware/esp32 -e esp32s3-touch-amoled-175c
+.venv/bin/python tools/report_face_first.py
+```
+
+`artifacts/face-first/REPORT.md` records the initial dirty-tree snapshot, failing
+native baseline, fixture corrections, exact final runs, framebuffer contact sheet,
+image inspection and limitations. `source.tar.gz` freezes the final source and
+`implementation.patch` separates this work from preexisting video-v2 changes.
+The report tool expects that baseline snapshot and successful test/build outputs;
+it never starts a gateway, flashes, stages OTA or touches a physical device.
+Existing visual tests change only their crop/target dimensions to the approved
+layout: headline instead of old reply footer, meter y78, portrait y96, 55px read
+pill and 48px Stop. Approval, stale contacts, scroll-follow, wake, live preemption
+and independent MP4 pixel comparisons remain intact.
+
 ### Releases
 
 `tools/package_release.py` turns PlatformIO builds into release files. For each board:

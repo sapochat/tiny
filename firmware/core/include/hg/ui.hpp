@@ -59,7 +59,10 @@ struct UiModel {
   bool color_test = false;
   bool quick_controls = false, touch_prompt = false;
   bool unread_reply = false;
+  bool has_reply = false, can_stop = false;
   bool reply_ready = false;  // success-only completed text; never inferred from a label
+  // Authored clip entry, selected from activity BEFORE navigation overrides.
+  uint8_t expression = 0;
   int volume = 0, brightness = 0;
   uint32_t frame = 0;    // animation frame, advanced by the app
   std::string hint;      // bottom bar
@@ -97,12 +100,17 @@ class Ui {
   int body_rows(const UiModel& m) const;
   UiRect control_rect(TouchControl control, const UiModel& m) const;
   TouchControl control_hit(int x, int y, const UiModel& m) const;
+  // Diagnostics expose the actual decoded frame, not the requested activity.
+  const char* expression_name() const;
+  int expression_frame() const { return face_index_; }
+  std::vector<std::string> body_lines(std::string_view text, const UiModel& m) const;
+  bool round_companion() const { return panel_.round && panel_.width == 466 && panel_.height == 466; }
   bool title_hit(int x, int y) const {
+    if (round_companion()) return x >= 150 && x < 316 && y >= 45 && y < 92;
     return x >= ox_ && x < ox_ + info_.width && y >= oy_ && y < oy_ + layout_.top_h;
   }
 
  private:
-  bool round_companion() const { return panel_.round && panel_.width == 466 && panel_.height == 466; }
   uint16_t background() const { return panel_.round ? 0 : rgb565(10, 14, 20); }
   bool companion_model(const UiModel& m) const;
   void render_companion(const UiModel& m);
@@ -131,14 +139,14 @@ class Ui {
   uint32_t hero_static_ = 0, hero_anim_ = 0;
   bool hero_valid_ = false;
   bool companion_valid_ = false;
-  // Allocated only for the 466px companion. Current pose survives invalidation,
-  // overlays and target reversal; no hot-path allocations.
-  std::vector<uint8_t> face_current_, face_start_;
-  int face_target_ = -1, face_step_ = 8;
+  // One packed gray2 frame, allocated only for the round companion.
+  std::vector<uint8_t> face_current_;
+  int face_target_ = -1, face_clip_ = 0, face_index_ = -1;
   uint32_t face_frame_ = 0;
-  bool face_visible_ = false;
+  bool face_changed_ = false;
+  void update_expression(const UiModel& m);
+  void draw_expression(Canvas& c, int x, int y, int size) const;
   uint32_t companion_hash_ = 0;
-  mascot::Frame companion_frame_ = mascot::Frame::Idle;
   int companion_level_ = -1;
   bool valid_ = false;
 };

@@ -1,0 +1,170 @@
+[
+  {
+    "name": "thinking-a-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to pondering: she looks up and away toward the upper-left of the frame, the pupil touching the upper eyelid with white of the eye clearly visible below it; brows relaxed and slightly raised, NOT frowning; lips relaxed and pushed very slightly to one side. Reads as daydreaming/considering, not annoyed.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "thinking-b-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to thinking hard but pleasantly: eyes rolled up toward the top of the frame as if recalling something, brows lifted, a tiny thoughtful pout with closed lips. Calm and curious, not skeptical.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "asking-a-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to a curious open question: both brows raised, eyes wide and looking directly at the viewer, a small closed-mouth neutral 'hm?' mouth, head tilted sideways about 8 degrees. Reads as 'yes or no?' \u2014 curious and polite, not smug.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "asking-b-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to politely waiting for an answer: eyebrows raised in the middle, eyes open and directly meeting the viewer, the faintest hopeful smile, head tilted slightly. Earnest, not teasing.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "listening-a-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to listening intently: eyes turned to look directly at the viewer and slightly widened, brows lifted in the middle, soft small closed mouth, head inclined slightly forward toward the viewer. Warm and focused.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "listening-b-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to attentive listening: eyes on the viewer, brows gently raised, a barely-there receptive smile, head tilted a few degrees as if to hear better.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "enter-pleased-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "Starting from the neutral pose, she reacts to good news: a soft closed-mouth smile grows and her eyes soften into a smile, a tiny happy lift of the head, then she holds exactly on the final smiling pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/pleased-r01nbp-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-pleased-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "Starting from the neutral pose, she reacts to good news: a soft closed-mouth smile grows and her eyes soften into a smile, a tiny happy lift of the head, then she holds exactly on the final smiling pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/pleased-r01nbp-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-alert-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "She suddenly notices someone: a quick small lift of the head, eyes open wide and brows rise, lips part into a small 'oh', then she holds exactly on the final pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/alert-r01nbp-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-alert-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "She suddenly notices someone: a quick small lift of the head, eyes open wide and brows rise, lips part into a small 'oh', then she holds exactly on the final pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/alert-r01nbp-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-sleeping-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "She gets sleepy: eyelids slowly lower, head dips gently, a calm settling breath, eyes fully close, then she holds exactly on the final sleeping pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/sleeping-r01nbp-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-sleeping-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "She gets sleepy: eyelids slowly lower, head dips gently, a calm settling breath, eyes fully close, then she holds exactly on the final sleeping pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/sleeping-r01nbp-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "loop-speaking-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "She talks naturally to the viewer: her mouth opens and closes in a relaxed speech rhythm with small rounded mouth shapes and no teeth, small natural head movements and expressive brows, eyes engaged with the viewer, ending exactly in the starting pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--generate_audio": "false",
+      "--resolution": "1080p"
+    }
+  },
+  {
+    "name": "loop-speaking-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "She talks naturally to the viewer: her mouth opens and closes in a relaxed speech rhythm with small rounded mouth shapes and no teeth, small natural head movements and expressive brows, eyes engaged with the viewer, ending exactly in the starting pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--generate_audio": "false",
+      "--resolution": "1080p"
+    }
+  }
+]

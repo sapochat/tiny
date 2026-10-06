@@ -1,0 +1,58 @@
+[
+  {
+    "name": "enter-listening-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "Someone starts talking to her: she turns her eyes to the viewer, brows lift gently, head inclines a little toward the viewer with a barely-there receptive smile, then she holds that attentive pose, perfectly still except for a tiny settle. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/listening-kf-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-thinking-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "She starts thinking: her eyes drift up and away toward the top of the frame as if recalling something, brows lift, lips form a tiny thoughtful closed pout, head tilts very slightly back, then she holds the pondering pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/thinking-kf-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-asking-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "She asks a question: brows rise, eyes widen and meet the viewer directly, head tilts to the side, a small curious closed-mouth expression, then she holds, politely waiting for an answer. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/asking-kf-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "enter-confused-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "Something doesn't add up: her brows knit with one raised, eyes glance sideways, a small asymmetric frown forms, a tiny puzzled head tilt, then she holds the puzzled pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/anchors/confused-kf-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  }
+]

@@ -1,0 +1,75 @@
+[
+ {
+  "clip": "rounds/r04-chains/out/hold-sleeping-seedance20/hold-sleeping-seedance20.mp4",
+  "start": "ref/anchors/sleeping-hold-1440.png",
+  "end": "ref/anchors/sleeping-hold-1440.png",
+  "label": "sleep - hold"
+ },
+ {
+  "clip": "rounds/r04-chains/out/exit-sleeping-wan30prime/exit-sleeping-wan30prime.mp4",
+  "start": "ref/anchors/sleeping-hold-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "wake"
+ },
+ {
+  "clip": "rounds/r01-motion-bakeoff/out/listen-wan30prime/listen-wan30prime.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "listening"
+ },
+ {
+  "clip": "rounds/r03-entries/out/enter-thinking-seedance20/enter-thinking-seedance20.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/anchors/thinking-hold-1440.png",
+  "label": "thinking - enter"
+ },
+ {
+  "clip": "rounds/r03-entries/out/enter-thinking-seedance20/enter-thinking-seedance20.mp4",
+  "start": "ref/anchors/thinking-hold-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "thinking - resolve",
+  "reverse": true
+ },
+ {
+  "clip": "rounds/r02-states/out/loop-speaking-seedance20/loop-speaking-seedance20.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "speaking"
+ },
+ {
+  "clip": "rounds/r02-states/out/enter-pleased-seedance20/enter-pleased-seedance20.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/anchors/pleased-hold-1440.png",
+  "label": "reply ready - enter"
+ },
+ {
+  "clip": "rounds/r04-chains/out/hold-pleased-seedance20/hold-pleased-seedance20.mp4",
+  "start": "ref/anchors/pleased-hold-1440.png",
+  "end": "ref/anchors/pleased-hold-1440.png",
+  "label": "reply ready - hold"
+ },
+ {
+  "clip": "rounds/r04-chains/out/exit-pleased-seedance20/exit-pleased-seedance20.mp4",
+  "start": "ref/anchors/pleased-hold-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "reply ready - exit"
+ },
+ {
+  "clip": "rounds/r02-states/out/enter-alert-seedance20/enter-alert-seedance20.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/anchors/alert-hold-1440.png",
+  "label": "alert - enter"
+ },
+ {
+  "clip": "rounds/r04-chains/out/exit-alert-wan30prime/exit-alert-wan30prime.mp4",
+  "start": "ref/anchors/alert-hold-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "alert - exit"
+ },
+ {
+  "clip": "rounds/r02-states/out/enter-sleeping-seedance20/enter-sleeping-seedance20.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/anchors/sleeping-hold-1440.png",
+  "label": "fall asleep"
+ }
+]

@@ -863,6 +863,7 @@ void App::start_listening(bool hands_free) {
       .set("format", "pcm16")
       .set("mode", hands_free ? "tap" : "hold");
   send(start);
+  ++touch_epoch_;  // invalidate old navigation contacts; touch-owned Talk keeps its release
   mode_ = Mode::Listening;
   mode_since_ = now();
   awaiting_reply_ = true;
@@ -983,7 +984,7 @@ void App::scroll_body(int delta) {
   const std::string& body = card ? card_body_ : reply_;
   if (body.empty() || !ui_) return;
   int& pos = card ? card_scroll_ : scroll_;
-  int total = static_cast<int>(wrap_text(body, ui_->layout().body_cols).size());
+  int total = static_cast<int>(ui_->body_lines(body, model_).size());
   int max_first = std::max(0, total - ui_->body_rows(model_));
   int cur = pos < 0 ? max_first : std::min(pos, max_first);
   pos = std::max(0, std::min(max_first, cur + delta));
@@ -1010,7 +1011,7 @@ bool App::turn_page() {
   }
   if (!pos) return false;
   const int rows = ui_->body_rows(model_);
-  const int total = static_cast<int>(wrap_text(*body, ui_->layout().body_cols).size());
+  const int total = static_cast<int>(ui_->body_lines(*body, model_).size());
   const int max_first = std::max(0, total - rows);
   if (*pos >= max_first) return false;
   *pos = std::min(max_first, *pos + std::max(1, rows - 1));  // keep one line of context
@@ -1538,6 +1539,12 @@ void App::update_model() {
       m.detail = reply_.empty() || !profile_.has_scroll_buttons ? "Ask me anything" : "UP shows my last reply";
     }
   }
+  // Keep animation selection independent of the selected touch view. No new
+  // protocol states: dimming, approval and errors already exist in the app.
+  m.expression = mode_ == Mode::Listening ? 1 : !prompt_id_.empty() ? 7 :
+      (m.screen == Screen::Error || m.screen == Screen::Offline) ? 9 :
+      m.speaking ? 4 : mode_ == Mode::Thinking ? 2 :
+      m.reply_ready ? 5 : display_dimmed_ ? 11 : 0;
   if (profile_.touch_screen && can_talk() && !ota_busy() && ota_ != Ota::Restarting &&
       fatal_.empty() && mode_ != Mode::Listening && !prompt_showing() && overlay_ == Overlay::None) {
     if (navigation_ == Navigation::Controls) {
@@ -1576,6 +1583,20 @@ void App::update_model() {
     m.unread_reply = true;
     m.hint = reply_completed_ ? "Reply ready - tap to read" :
              reply_stopped_ ? "Reply stopped - tap to read" : "New text - tap to read";
+  }
+  m.has_reply = !reply_.empty();
+  m.can_stop = mode_ == Mode::Thinking || (mode_ == Mode::Responding && !turn_done_) || speaking();
+  if (ui_ && ui_->round_companion() && m.hero) {
+    if (m.screen == Screen::Ready) {
+      m.headline = talk_mode_ == TalkMode::Tap ? "Tap to talk" : "Hold to talk";
+      m.detail = "I’m here.";
+    } else if (m.screen == Screen::Listening) {
+      m.detail = hands_free_ ? "Pause to send" : "Release to send";
+    }
+    if (m.unread_reply && !m.speaking && mode_ != Mode::Thinking) {
+      m.headline = reply_completed_ ? "Reply ready" : reply_stopped_ ? "Reply stopped" : "New text";
+      m.detail.clear();
+    }
   }
   bool keeps_detail = m.screen == Screen::Pairing || m.screen == Screen::Boot || m.screen == Screen::Prompt;
   if (!notice_.empty() && !keeps_detail) m.detail = notice_;
@@ -1625,6 +1646,11 @@ json::Value App::status_value() const {
       json::Value rect = json::Value::array();
       rect.push(r.x); rect.push(r.y); rect.push(r.w); rect.push(r.h);
       controls.set(names[i], rect);
+    }
+    if (ui_) {
+      json::Value animation = json::Value::object();
+      animation.set("clip", ui_->expression_name()).set("frame", ui_->expression_frame());
+      u.set("animation", animation);
     }
     u.set("controls", controls);
     s.set("ui", u);

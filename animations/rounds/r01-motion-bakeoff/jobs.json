@@ -1,0 +1,110 @@
+[
+  {
+    "name": "listen-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "She hears someone start talking: her eyes open a little wider and settle on the viewer, a small attentive head tilt and lean toward the viewer, one soft nod of acknowledgement, then she eases back to exactly the starting pose. Hair moves as solid shapes following the head. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "listen-seedance25",
+    "model": "seedance_2_5",
+    "prompt": "She hears someone start talking: her eyes open a little wider and settle on the viewer, a small attentive head tilt and lean toward the viewer, one soft nod of acknowledgement, then she eases back to exactly the starting pose. Hair moves as solid shapes following the head. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false",
+      "--mode": "omni_reference"
+    }
+  },
+  {
+    "name": "listen-kling30",
+    "model": "kling3_0",
+    "prompt": "She hears someone start talking: her eyes open a little wider and settle on the viewer, a small attentive head tilt and lean toward the viewer, one soft nod of acknowledgement, then she eases back to exactly the starting pose. Hair moves as solid shapes following the head. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "pro",
+      "--sound": "off"
+    }
+  },
+  {
+    "name": "listen-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "She hears someone start talking: her eyes open a little wider and settle on the viewer, a small attentive head tilt and lean toward the viewer, one soft nod of acknowledgement, then she eases back to exactly the starting pose. Hair moves as solid shapes following the head. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "delight-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "She receives good news: a soft closed-mouth smile blooms, her eyes smile, a small happy bob of the head makes the curls bounce once, then she relaxes back to exactly the starting pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "delight-seedance25",
+    "model": "seedance_2_5",
+    "prompt": "She receives good news: a soft closed-mouth smile blooms, her eyes smile, a small happy bob of the head makes the curls bounce once, then she relaxes back to exactly the starting pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false",
+      "--mode": "omni_reference"
+    }
+  },
+  {
+    "name": "delight-kling30",
+    "model": "kling3_0",
+    "prompt": "She receives good news: a soft closed-mouth smile blooms, her eyes smile, a small happy bob of the head makes the curls bounce once, then she relaxes back to exactly the starting pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "pro",
+      "--sound": "off"
+    }
+  },
+  {
+    "name": "delight-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "She receives good news: a soft closed-mouth smile blooms, her eyes smile, a small happy bob of the head makes the curls bounce once, then she relaxes back to exactly the starting pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  }
+]

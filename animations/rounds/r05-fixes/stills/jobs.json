@@ -1,0 +1,62 @@
+[
+  {
+    "name": "pleasedopen-a-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to a warm, pleased smile: a soft closed-lip smile with the corners clearly lifted, eyes stay OPEN with pupils clearly visible, lower eyelids lifted slightly into a gentle smiling squint. Not closed eyes, no teeth.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "pleasedopen-b-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to quietly delighted: eyes open and looking at the viewer with visible pupils, a slight smiling squint, cheeks lifted, a warm closed-mouth smile. Eyes must remain open.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "alerto-a-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to alert surprise: eyes opened wide with fully visible round pupils, brows raised high, lips parted into a small round 'o' that is a solid black opening with NO teeth and no tongue visible, head lifted very slightly.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "alerto-b-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to a startled 'oh!': wide open eyes looking at the viewer, eyebrows high, a small solid-black oval mouth, no teeth, no inner mouth detail.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "askinghm-a-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to asking a question: one eyebrow raised higher than the other, eyes wide and looking directly at the viewer, lips slightly parted in a small 'hm?' shape (small solid black opening, no teeth), head tilted to the side about 10 degrees. Clearly inquisitive, expecting an answer.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "askinghm-b-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to an inquisitive 'mm?': brows raised with a slight asymmetry, eyes on the viewer, a tiny open questioning mouth with no teeth, a pronounced curious head tilt. Reads unmistakably as a question.",
+    "args": {
+      "--image": "/home/santi/projects/tiny-animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  }
+]

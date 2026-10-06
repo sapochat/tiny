@@ -1,0 +1,100 @@
+{
+  "display_name": "Wan 3.0 Prime",
+  "job_type": "wan3_0_prime",
+  "params": [
+    {
+      "name": "aspect_ratio",
+      "type": "string",
+      "default": "auto",
+      "required": false,
+      "enum": [
+        "auto",
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ]
+    },
+    {
+      "name": "audio_references",
+      "type": "array",
+      "default": null,
+      "required": false
+    },
+    {
+      "name": "duration",
+      "type": "integer",
+      "default": 5,
+      "required": false
+    },
+    {
+      "name": "enable_thinking",
+      "type": "boolean",
+      "default": false,
+      "required": false
+    },
+    {
+      "name": "end_image",
+      "type": "object|null",
+      "default": null,
+      "required": false
+    },
+    {
+      "name": "generate_audio",
+      "type": "boolean",
+      "default": true,
+      "required": false
+    },
+    {
+      "name": "image_references",
+      "type": "array",
+      "default": null,
+      "required": false
+    },
+    {
+      "name": "prompt",
+      "type": "string",
+      "default": null,
+      "required": true
+    },
+    {
+      "name": "resolution",
+      "type": "string",
+      "default": "720p",
+      "required": false,
+      "enum": [
+        "480p",
+        "720p",
+        "1080p"
+      ]
+    },
+    {
+      "name": "start_image",
+      "type": "object|null",
+      "default": null,
+      "required": false
+    },
+    {
+      "name": "video_references",
+      "type": "array",
+      "default": null,
+      "required": false
+    }
+  ],
+  "rules": [
+    {
+      "cel": "params.end_image == null || !(params.start_image == null)",
+      "message": "end_image requires start_image"
+    },
+    {
+      "cel": "(params.start_image == null && params.end_image == null) || size(params.image_references) + size(params.video_references) + size(params.audio_references) == 0",
+      "message": "start_image/end_image cannot be combined with reference media"
+    },
+    {
+      "cel": "params.duration == -1 || params.duration >= 2",
+      "message": "duration must be -1 (smart duration) or between 2 and 30"
+    }
+  ],
+  "type": "video"
+}

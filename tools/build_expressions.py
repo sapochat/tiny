@@ -1,65 +1,112 @@
-"""Offline deterministic expression compositor. No providers or video playback.
-Existing generated eyes/mouth are transplanted only inside bounded facial masks;
-shared master geometry and native-resolution static pixels remain identical.
+"""Build Tiny v2 from approved snapped MP4s, offline (no runtime video codec).
+96px / 5fps / 4 gray levels, independently decodable LZ frames.
+Full authored endpoints are retained. Never use the smoothed review montage.
 """
+import argparse
+import hashlib
+import json
 from pathlib import Path
-import hashlib,json
+import subprocess
+
 import numpy as np
-from PIL import Image,ImageDraw,ImageFilter
-R=Path(__file__).resolve().parents[1]
-A=R/'artifacts/mascot-motion'; O=R/'artifacts/expressions/assets';O.mkdir(parents=True,exist_ok=True)
-base=Image.open(A/'reference-black.png').convert('L')
-eyes=Image.open(A/'expression-states-v4/selected/eye-brow-mask.png').convert('L')
-mouth=Image.new('L',base.size);ImageDraw.Draw(mouth).polygon([(233,604),(319,604),(327,634),(316,672),(239,672),(230,638)],fill=255)
-mouth=mouth.filter(ImageFilter.GaussianBlur(2))
-sources={'idle':A/'reference-black.png','listening':A/'expression-states-v4/selected/listening.png','thinking':A/'expression-states-v3/keyframes/thinking-replacement/image.png','ready':A/'expression-states-v3/keyframes/ready/image.png'}
-masters={'idle':base}
-for name in ('listening','thinking','ready'):
-    donor=Image.open(sources[name]).convert('L').resize(base.size)
-    if name!='listening':
-        donor=donor.point(lambda v:255 if v>=150 else 0)
-        # Local landmark registration; donor face geometry never replaces base.
-        shifted=Image.new('L',base.size,255)
-        shifted.paste(donor,(-28,29) if name=='ready' else (-10,30))
-        donor=shifted
-    masters[name]=Image.composite(donor,base,mouth if name=='ready' else eyes)
-# Keep old closed-eye linework as blink source, with unchanged outline.
-# Parse generated mascot through a tiny compiled helper, passed by build script.
-blink_path=O/'legacy-blink.pgm'
-if blink_path.exists():
-    blink=Image.open(blink_path).convert('L')
-else:raise SystemExit('first export legacy blink using tools/export_blink.cpp')
-size=(192,192); native={k:np.array(v.resize(size,Image.Resampling.LANCZOS)) for k,v in masters.items()}
-support=np.zeros((192,192),bool);support[72:105,34:94]=True;support[111:130,41:64]=True
-for name in native:native[name][~support]=native['idle'][~support]
-# Only eye pixels come from the proven closed-eye asset, never its outline.
-bm=np.array(eyes.resize(size,Image.Resampling.LANCZOS))/255
-native['blink']=np.rint(np.array(blink)*bm+native['idle']*(1-bm)).astype('uint8')
-native['blink'][~support]=native['idle'][~support]
-eyes.save(O/'eye-brow-mask.png');mouth.save(O/'mouth-mask.png')
-master_checks={}
-for name,im in masters.items():
-    mask = mouth if name=='ready' else eyes
-    outside=np.array(mask)==0
-    master_checks[name]=int(np.count_nonzero(np.array(im)[outside]!=np.array(base)[outside]))
-    assert master_checks[name]==0
-    im.save(O/f'{name}-master.png')
-(O/'master-invariants.json').write_text(json.dumps(master_checks,indent=2))
-for name,im in native.items():Image.fromarray(im).save(O/f'{name}-192.png')
-# One 8-bit shared master plus five compact 60x58 facial patches (54 KB flash).
-x,y,w,h=34,72,60,58
-out=['// Generated offline by tools/build_expressions.py; see artifacts/expressions/README.md.','#pragma once','#include <cstdint>','namespace hg::expression {',f'constexpr int x={x}, y={y}, w={w}, h={h}, count=w*h;']
-def emit(name,im):
-    vals=im.flatten().tolist();out.append('inline constexpr uint8_t '+name+'[] = {')
-    out.extend(','.join(map(str,vals[i:i+32]))+',' for i in range(0,len(vals),32));out.append('};')
-emit('base',native['idle'])
-for name,im in native.items():emit(name,im[y:y+h,x:x+w])
-out.append('inline constexpr const uint8_t* poses[] = {idle,listening,thinking,ready,blink};\n}')
-(R/'firmware/core/include/hg/expression_assets.hpp').write_text('\n'.join(out)+'\n')
-meta={'sources':{k:{'path':str(v.relative_to(R)),'sha256':hashlib.sha256(v.read_bytes()).hexdigest()} for k,v in sources.items()},'native_size':192,'patch':[x,y,w,h],'flash_bytes':192*192+5*w*h,'static_changed_pixels':{k:int(np.count_nonzero(im[~support]!=native['idle'][~support])) for k,im in native.items()},'method':'Offline feathered local feature transplant; original common base. V3 ready still, not MP4.'}
-(O/'manifest.json').write_text(json.dumps(meta,indent=2))
-sheet=Image.new('RGB',(5*384,448))
-for i,(name,im) in enumerate(native.items()):
-    sheet.paste(Image.fromarray(im).resize((384,384)),(i*384,32));ImageDraw.Draw(sheet).text((i*384+10,10),name,fill='white')
-sheet.save(O/'selection.png')
-print(json.dumps(meta,indent=2))
+
+ROOT = Path(__file__).resolve().parents[1]
+NAMES = ['idle','listening','thinking','thinking-got-it','speaking','reply-ready',
+         'reply-ready-settle','asking','asking-answered','alert','alert-settle',
+         'fall-asleep','sleep','wake']
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def encode(frame):
+    # Pack four gray2 pixels/byte, then greedy bounded LZ with a 16-bit distance.
+    # token 0..127: literal length=token+1; 128..255: match length=(token&127)+3.
+    values = frame.ravel()
+    raw = bytes((values[::4]<<6)|(values[1::4]<<4)|(values[2::4]<<2)|values[3::4])
+    out, literal, seen = bytearray(), bytearray(), {}
+    def flush():
+        if literal:
+            out.append(len(literal)-1)
+            out.extend(literal)
+            literal.clear()
+    i = 0
+    while i < len(raw):
+        key = raw[i:i+3]
+        prev = seen.get(key,-1)
+        length = 0
+        if len(key)==3 and prev>=0:
+            while length<130 and i+length<len(raw) and raw[prev+length]==raw[i+length]:
+                length+=1
+        if length>=3:
+            flush()
+            distance=i-prev
+            out.extend([128+length-3,distance&255,distance>>8])
+            for j in range(i,i+length):
+                seen[raw[j:j+3]]=j
+            i+=length
+        else:
+            seen[key]=i
+            literal.append(raw[i]); i+=1
+            if len(literal)==128: flush()
+    flush()
+    return out
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--sources',type=Path,default=ROOT.parent/'tiny-animations/picks/states-v2')
+    args = parser.parse_args()
+    chain_path = args.sources.parent/'chain/chain-v2.json'
+    chain = json.loads(chain_path.read_text())
+    labels = [entry["label"].replace(" - ","-").replace(" ","-") for entry in chain]
+    if labels != NAMES:
+        raise SystemExit("Anchor manifest labels/order do not match the approved pack")
+    data,offsets,clips,meta = bytearray(),[],[],[]
+    # Read the exact 14 named files, refusing a partial or ambiguous pack.
+    expected = [f'{i:02d}-{name}.mp4' for i,name in enumerate(NAMES)]
+    if sorted(p.name for p in args.sources.glob('*.mp4')) != expected:
+        raise SystemExit('Expected exactly the approved 14 snapped states-v2 clips')
+    for i,(name,filename) in enumerate(zip(NAMES,expected)):
+        path = args.sources/filename
+        probe = json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height,duration','-of','json',str(path)]))['streams'][0]
+        if (probe['width'],probe['height']) != (720,720):
+            raise SystemExit(f'{filename}: expected 720x720 snapped source')
+        raw = subprocess.check_output(['ffmpeg','-v','error','-threads','1','-i',str(path),'-vf','scale=96:96:flags=lanczos,format=gray','-f','rawvideo','-'])
+        frames = np.frombuffer(raw,dtype=np.uint8).reshape(-1,96,96)
+        count = max(2,round(float(probe['duration'])*5))
+        indices = np.linspace(0,len(frames)-1,count).round().astype(int)
+        selected = ((frames[indices].astype(np.uint16)+42)//85).clip(0,3).astype(np.uint8)
+        first = len(offsets)
+        start_bytes = len(data)
+        for frame in selected:
+            offsets.append(len(data))
+            data.extend(encode(frame))
+        clips.append((first,count,name))
+        meta.append({'name':name,'file':filename,'sha256':sha(path.read_bytes()),'source_frames':len(frames),'selected_indices':indices.tolist(),'frame_count':count,'bytes':len(data)-start_bytes,'start_anchor':chain[i]['start'],'end_anchor':chain[i]['end'],'gray_sha256':sha(selected.tobytes())})
+    offsets.append(len(data))
+    # ESP32 pointers are 4 bytes. Include clip structs, pointers and C strings.
+    footprint = len(data)+4*len(offsets)+8*len(clips)+sum(len(n)+1 for n in NAMES)
+    if footprint > 500000:
+        raise SystemExit(f'Animation budget exceeded: {footprint} > 500000 bytes')
+    out = ['// Generated by tools/build_expressions.py from approved snapped v2 MP4s.',
+           '#pragma once','#include <cstdint>','namespace hg::expression {',
+           'constexpr int size=96, count=size*size, ticks_per_frame=2;',
+           'struct Clip { uint16_t first, count; };',
+           'inline constexpr uint8_t data[] = {']
+    out += [','.join(map(str,data[j:j+32]))+',' for j in range(0,len(data),32)]
+    out += ['};','inline constexpr uint32_t offsets[] = {',','.join(map(str,offsets)),'};',
+            'inline constexpr Clip clips[] = {',','.join('{'+f'{f},{n}'+'}' for f,n,_ in clips),'};',
+            'inline constexpr const char* names[] = {',','.join(json.dumps(n) for _,_,n in clips),'};','}']
+    header = ('\n'.join(out)+'\n').encode()
+    (ROOT/'firmware/core/include/hg/expression_assets.hpp').write_bytes(header)
+    dest = ROOT/'artifacts/video-v2'
+    dest.mkdir(parents=True,exist_ok=True)
+    manifest = {'format':'gray2-lz-independent-v1','native_size':96,'display_size':192,'fps':5,'gray_levels':4,'flash_bytes':footprint,'budget_bytes':500000,'framebuffer_bytes':2304,'header_sha256':sha(header),'chain_sha256':sha(chain_path.read_bytes()),'ffmpeg':subprocess.check_output(['ffmpeg','-version'],text=True).splitlines()[0],'numpy':np.__version__,'sources':meta,'unmapped':[]}
+    (dest/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+    print(json.dumps({'clips':len(clips),'frames':len(offsets)-1,'flash_bytes':footprint,'header_sha256':sha(header)},indent=2))
+
+
+if __name__=='__main__':
+    main()

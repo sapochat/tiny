@@ -1,0 +1,86 @@
+[
+ {
+  "clip": "rounds/r05-fixes/videos-a/out/loop-idle-seedance20/loop-idle-seedance20.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "idle"
+ },
+ {
+  "clip": "rounds/r01-motion-bakeoff/out/listen-wan30prime/listen-wan30prime.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "listening"
+ },
+ {
+  "clip": "rounds/r03-entries/out/enter-thinking-seedance20/enter-thinking-seedance20.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/anchors/thinking-hold-1440.png",
+  "label": "thinking"
+ },
+ {
+  "clip": "rounds/r05-fixes/videos-a/out/resolve-thinking-seedance20/resolve-thinking-seedance20.mp4",
+  "start": "ref/anchors/thinking-hold-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "thinking - got it"
+ },
+ {
+  "clip": "rounds/r02-states/out/loop-speaking-seedance20/loop-speaking-seedance20.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "speaking"
+ },
+ {
+  "clip": "rounds/r05-fixes/videos-b/out/enter-pleasedopen-wan30prime/enter-pleasedopen-wan30prime.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/anchors/pleasedopen-kf-1440.png",
+  "label": "reply ready"
+ },
+ {
+  "clip": "rounds/r05-fixes/videos-b/out/exit-pleasedopen-wan30prime/exit-pleasedopen-wan30prime.mp4",
+  "start": "ref/anchors/pleasedopen-kf-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "reply ready - settle"
+ },
+ {
+  "clip": "rounds/r05-fixes/videos-b/out/enter-askinghm-wan30prime/enter-askinghm-wan30prime.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/anchors/askinghm-kf-1440.png",
+  "label": "asking"
+ },
+ {
+  "clip": "rounds/r05-fixes/videos-b/out/exit-askinghm-wan30prime/exit-askinghm-wan30prime.mp4",
+  "start": "ref/anchors/askinghm-kf-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "asking - answered"
+ },
+ {
+  "clip": "rounds/r05-fixes/videos-b/out/enter-alerto-wan30prime/enter-alerto-wan30prime.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/anchors/alerto-kf-1440.png",
+  "label": "alert"
+ },
+ {
+  "clip": "rounds/r05-fixes/videos-b/out/exit-alerto-wan30prime/exit-alerto-wan30prime.mp4",
+  "start": "ref/anchors/alerto-kf-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "alert - settle"
+ },
+ {
+  "clip": "rounds/r02-states/out/enter-sleeping-seedance20/enter-sleeping-seedance20.mp4",
+  "start": "ref/neutral-roundsafe-1440.png",
+  "end": "ref/anchors/sleeping-hold-1440.png",
+  "label": "fall asleep"
+ },
+ {
+  "clip": "rounds/r04-chains/out/hold-sleeping-seedance20/hold-sleeping-seedance20.mp4",
+  "start": "ref/anchors/sleeping-hold-1440.png",
+  "end": "ref/anchors/sleeping-hold-1440.png",
+  "label": "sleep"
+ },
+ {
+  "clip": "rounds/r04-chains/out/exit-sleeping-wan30prime/exit-sleeping-wan30prime.mp4",
+  "start": "ref/anchors/sleeping-hold-1440.png",
+  "end": "ref/neutral-roundsafe-1440.png",
+  "label": "wake"
+ }
+]
