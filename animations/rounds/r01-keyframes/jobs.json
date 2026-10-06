@@ -1,0 +1,170 @@
+[
+  {
+    "name": "listening-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to attentive listening: eyes opened slightly wider and looking straight at the viewer, brows gently lifted, relaxed closed mouth, warm receptive look; head tilted a few degrees toward the viewer.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "listening-grok",
+    "model": "grok_image_2_0",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to attentive listening: eyes opened slightly wider and looking straight at the viewer, brows gently lifted, relaxed closed mouth, warm receptive look; head tilted a few degrees toward the viewer.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k",
+      "--quality": "medium"
+    }
+  },
+  {
+    "name": "thinking-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to thinking: the iris clearly shifted up and toward the upper-left with visible white of the eye beneath it, one brow raised, lips pressed slightly to one side, pensive.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "thinking-grok",
+    "model": "grok_image_2_0",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to thinking: the iris clearly shifted up and toward the upper-left with visible white of the eye beneath it, one brow raised, lips pressed slightly to one side, pensive.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k",
+      "--quality": "medium"
+    }
+  },
+  {
+    "name": "speaking-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to speaking mid-sentence: lips softly parted in a relaxed open vowel shape with a small dark mouth opening, no teeth, engaged eyes toward the viewer.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "speaking-grok",
+    "model": "grok_image_2_0",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to speaking mid-sentence: lips softly parted in a relaxed open vowel shape with a small dark mouth opening, no teeth, engaged eyes toward the viewer.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k",
+      "--quality": "medium"
+    }
+  },
+  {
+    "name": "pleased-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to pleased: a gentle closed-mouth smile with both mouth corners lifted, eyes softly smiling with lower lids slightly raised, warm and satisfied.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "pleased-grok",
+    "model": "grok_image_2_0",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to pleased: a gentle closed-mouth smile with both mouth corners lifted, eyes softly smiling with lower lids slightly raised, warm and satisfied.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k",
+      "--quality": "medium"
+    }
+  },
+  {
+    "name": "asking-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to asking a question: one eyebrow raised high, direct eye contact with the viewer, a small inquisitive half-smile; head tilted slightly.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "asking-grok",
+    "model": "grok_image_2_0",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to asking a question: one eyebrow raised high, direct eye contact with the viewer, a small inquisitive half-smile; head tilted slightly.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k",
+      "--quality": "medium"
+    }
+  },
+  {
+    "name": "confused-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to puzzled: brows knitted with one raised, a small asymmetric frown, eyes glancing sideways.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "confused-grok",
+    "model": "grok_image_2_0",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to puzzled: brows knitted with one raised, a small asymmetric frown, eyes glancing sideways.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k",
+      "--quality": "medium"
+    }
+  },
+  {
+    "name": "sleeping-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to peacefully asleep: eyes fully closed shown as a single curved lash line, brows relaxed, serene closed mouth.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "sleeping-grok",
+    "model": "grok_image_2_0",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to peacefully asleep: eyes fully closed shown as a single curved lash line, brows relaxed, serene closed mouth.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k",
+      "--quality": "medium"
+    }
+  },
+  {
+    "name": "alert-nbp",
+    "model": "nano_banana_pro",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to alert, as if she just noticed someone: eyes wide open, brows raised, lips slightly parted in a small 'oh'.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k"
+    }
+  },
+  {
+    "name": "alert-grok",
+    "model": "grok_image_2_0",
+    "prompt": "Edit this exact illustration. Keep the same character, identical framing, scale and position on the pure black square canvas, the same flat two-tone black-and-white vector style with bold white outer contour, the same hair silhouette (rounded crown, heavy jagged bangs, hooked curls on the left, long hair on the right), the same white headband arc and white hair highlights, the same earring, neck and shoulder. Pure black background. No color, no gray shading, no gradients, no glow, no text, no new objects. Change ONLY the facial expression to alert, as if she just noticed someone: eyes wide open, brows raised, lips slightly parted in a small 'oh'.",
+    "args": {
+      "--image": "animations/ref/neutral-roundsafe-1440.png",
+      "--aspect_ratio": "1:1",
+      "--resolution": "2k",
+      "--quality": "medium"
+    }
+  }
+]

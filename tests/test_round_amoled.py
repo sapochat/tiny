@@ -78,7 +78,7 @@ def test_round_companion_states_and_readable_response(rig):
     px = capture(s, 'unread')
     safe_circle(px)
     assert peripheral(px) > 20
-    x,y = safe_target(s, 'reply', 56)
+    x,y = safe_target(s, 'reply', 55)
     before = len(s.sent)
     tap(s,x,y)
     assert ui(s)['view'] == 'response'
@@ -96,7 +96,7 @@ def test_round_controls_and_approval_geometry(rig):
         old = s.console('get '+name)
         swipe(s,dy=-70,x=x,y=y)
         assert s.console('get '+name) != old
-    safe_target(s,'stop',56)
+    safe_target(s,'stop',48)
     swipe(s,dx=100)
     s.send_fixture('prompt', id='permission', title='Permission', text='Allow Hermes to turn on the desk lamp?')
     s.run_for(.6)

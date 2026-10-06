@@ -42,7 +42,7 @@ void App::touch_swipe(TouchView owner, int dx, int dy, TouchControl control) {
   }
   if (prompt_showing()) {
     if (owner != TouchView::Approval || !dy) return;
-    int total = static_cast<int>(wrap_text(prompt_text_, ui_->layout().body_cols).size());
+    int total = static_cast<int>(ui_->body_lines(prompt_text_, model_).size());
     int last = std::max(0, total - ui_->body_rows(model_));
     prompt_scroll_ = std::clamp(prompt_scroll_ + (dy < 0 ? 3 : -3), 0, last);
   } else if (!can_talk() || ota_busy() || ota_ == Ota::Restarting) return;
@@ -73,7 +73,7 @@ void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) 
     if (control == TouchControl::Yes || control == TouchControl::No)
       answer_prompt(control == TouchControl::Yes);
   } else if (owner == TouchView::Controls && control == TouchControl::Stop) {
-    if (mode_ == Mode::Thinking || mode_ == Mode::Responding || speaking()) cancel_turn();
+    if (model_.can_stop) cancel_turn();
   } else if (owner == TouchView::Home && control == TouchControl::Reply && model_.unread_reply) {
     navigation_ = Navigation::Response;
   } else if (owner == TouchView::Home && mode_ == Mode::Idle && talk_mode_ == TalkMode::Tap) {

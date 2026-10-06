@@ -13,9 +13,17 @@ void TouchGestures::tick(uint32_t now_ms) {
     if (state_ != State::Talk) state_ = State::Ignored;
     return;
   }
-  if (state_ == State::Settings && !moved_ && now_ms - t0_ >= 1000) {
-    state_ = State::Ignored;
-    app_.open_settings();
+  if (state_ == State::Settings) {
+    // A title contact cannot carry idle navigation intent into new activity.
+    // Consume it as soon as eligibility/ownership changes, not just at timeout.
+    if (app_.touch_view() != owner_ || !app_.settings_title_hit(x0_, y0_)) {
+      state_ = State::Ignored;
+      return;
+    }
+    if (!moved_ && now_ms - t0_ >= 1000) {
+      state_ = State::Ignored;
+      app_.open_settings();
+    }
   }
   if (state_ == State::Pending && !moved_ && control_ == TouchControl::None &&
       (owner_ == TouchView::Home || owner_ == TouchView::Response) &&

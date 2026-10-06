@@ -21,6 +21,13 @@ The dependencies below keep their own licenses and are downloaded when you build
 | [python-sounddevice](https://github.com/spatialaudio/python-sounddevice/blob/master/LICENSE), [PortAudio](https://www.portaudio.com/license.html) | Optional live microphone and speaker on Linux | MIT licenses |
 | [Paho MQTT](https://github.com/eclipse-paho/paho.mqtt.python/blob/v2.1.0/LICENSE.txt) | Optional MQTT sensor/action example | EPL 2.0 / EDL 1.0 dual license; installed package includes both texts |
 
+## Embedded typography
+
+Geist Regular Version 1.800, Copyright 2024 The Geist Project Authors, is embedded
+as a bounded antialiased atlas. It retains the [SIL OFL 1.1](LICENSES/Geist-OFL.txt),
+including in binary distributions. [Source provenance](assets/fonts/README.md)
+and the committed font/manifest make offline regeneration reproducible.
+
 ## Artwork
 
 The mascot artwork, and the logo and device bitmaps drawn from it, come from [Hermes Agent](https://github.com/NousResearch/hermes-agent) (MIT, © 2025 Nous Research); see [assets/mascot](assets/mascot) and [NOTICE](NOTICE).

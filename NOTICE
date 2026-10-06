@@ -15,6 +15,14 @@ are trademarks or brand assets of Nous Research. They are used here only to
 describe compatibility with Hermes Agent. This project's MIT license covers its
 own code and documentation; it grants no rights to those names or marks.
 
+Embedded typeface
+-----------------
+Geist Regular Version 1.800 and its generated coverage atlas are Copyright
+2024 The Geist Project Authors (https://github.com/vercel/geist-font), licensed
+under SIL Open Font License 1.1 (LICENSES/Geist-OFL.txt). The exact source,
+hashes and offline conversion are recorded in assets/fonts/README.md and
+assets/fonts/manifest.json. These font assets are not MIT-licensed.
+
 Third-party material
 --------------------
 The MIT license above covers only the code and documentation written for this

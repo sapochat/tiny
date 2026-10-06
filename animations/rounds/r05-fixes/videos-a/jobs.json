@@ -1,0 +1,70 @@
+[
+  {
+    "name": "resolve-thinking-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "She figures it out: her eyes come down from the ceiling to meet the viewer, a small knowing 'got it' smile flickers across her lips, a tiny confident nod, then she relaxes into the calm neutral pose and holds it. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "animations/ref/anchors/thinking-hold-1440.png",
+      "--end-image": "animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "resolve-thinking-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "She figures it out: her eyes come down from the ceiling to meet the viewer, a small knowing 'got it' smile flickers across her lips, a tiny confident nod, then she relaxes into the calm neutral pose and holds it. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "animations/ref/anchors/thinking-hold-1440.png",
+      "--end-image": "animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "loop-idle-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "Calm idle: she is simply present and relaxed, very subtle breathing moves her shoulders and head almost imperceptibly, one single natural blink in the middle of the clip, otherwise eyes stay open and calm, ending exactly in the starting pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "loop-idle-wan30prime",
+    "model": "wan3_0_prime",
+    "prompt": "Calm idle: she is simply present and relaxed, very subtle breathing moves her shoulders and head almost imperceptibly, one single natural blink in the middle of the clip, otherwise eyes stay open and calm, ending exactly in the starting pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  },
+  {
+    "name": "loop-speaking2-seedance20",
+    "model": "seedance_2_0",
+    "prompt": "She explains something enthusiastically to the viewer: lively speech rhythm with small rounded mouth shapes and no teeth, brows lifting on emphasis, a small expressive head tilt mid-sentence, eyes engaged with the viewer, ending exactly in the starting pose. Flat two-tone black-and-white vector illustration preserved exactly in every frame: same linework, same hair silhouette, white headband and highlights, earring, crisp clean lines without shimmer or boiling. Pure solid black background. Locked camera, no zoom, no pan, no cuts, no color, no gradients, no glow, no text, no new objects. No blinking unless described. Polished, smooth, high-quality 2D character animation. Silent.",
+    "args": {
+      "--start-image": "animations/ref/neutral-roundsafe-1440.png",
+      "--end-image": "animations/ref/neutral-roundsafe-1440.png",
+      "--duration": 5,
+      "--aspect_ratio": "1:1",
+      "--mode": "std",
+      "--resolution": "1080p",
+      "--generate_audio": "false"
+    }
+  }
+]

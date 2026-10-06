@@ -15,7 +15,7 @@ def test_real_sample_level_and_silent_meter(rig):
         time.sleep(.12)
         s.device.mic_samples(struct.pack('<h',value)*320)
         s.device.tick()
-        return s.device.framebuffer_rows(55,65)
+        return s.device.framebuffer_rows(78,82)
     silent = feed(0)
     assert feed(0) == silent, 'silence must not generate fake amplitude'
     loud = feed(12000)

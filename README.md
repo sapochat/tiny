@@ -1,3 +1,13 @@
+# Tiny
+
+Tiny is a desk companion built on Hermes Gadget: an ESP32 touchscreen device with a speaker and microphone.
+
+**Canonical checkout:** `.`, branch `main`. The firmware and SDK live at this repository root; video-production sources live in [`animations/`](animations/README.md). This baseline preserves the latest expression/face-first working tree, including its previously uncommitted changes. It is a development checkpoint, not a hardware-release certification.
+
+See [workspace provenance and recovery](docs/tiny-workspace.md) for the archived candidates, retained history, and verification limits. Work here rather than in the archived candidate folders. Original upstream documentation and attribution follow; upstream installer links do not install this Tiny development baseline.
+
+---
+
 <p align="center">
   <img src="docs/images/logo.png" width="64" alt="Hermes Gadget logo">
 </p>

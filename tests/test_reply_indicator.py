@@ -20,11 +20,11 @@ def test_unread_completion_is_quiet_and_tappable(rig):
     s.send_fixture('reply.delta', text='A quiet')
     assert ui(s)['view'] == 'home'
     assert ui(s)['hint'] == 'New text - tap to read'
-    streaming = s.rgb888(377, 397)
+    streaming = s.rgb888(299, 336)
     finish(s)
     assert ui(s)['view'] == 'home'
     assert ui(s)['hint'] == 'Reply ready - tap to read'
-    assert s.rgb888(377, 397) != streaming
+    assert s.rgb888(299, 336) != streaming
     x,y = control(s, 'reply')
     assert (x-233)**2 + (y-233)**2 < 228**2  # physical circle, not obsolete square
     s.touch(True,x,y)
