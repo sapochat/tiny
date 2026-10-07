@@ -81,6 +81,15 @@ class SimulatorWindow:
         self.sim.peripherals.changed = self._refresh_peripherals
         self._refresh_peripherals()
 
+    @staticmethod
+    def _detach(sim: Simulator):
+        # A closed simulator stays in its own reference cycle with the native device. Drop the
+        # window's callbacks so the window's Tk objects are freed on this thread, not by a
+        # garbage collection on a network thread, where Tk waits for a main loop and fails.
+        sim.on_log = None
+        sim.on_message = None
+        sim.peripherals.changed = lambda: None
+
     def _build(self):
         self._history_revision = -1
         b = self.sim.board
@@ -435,6 +444,7 @@ class SimulatorWindow:
                                         state_dir=self.sim.state_dir, library=self.sim.library)
                 self._release_controls()
                 self.sim.close()
+                self._detach(self.sim)
                 self.sim = replacement
                 self._replay.abort()
                 # Keep the settings dialog until its Save handler closes it.
@@ -541,6 +551,7 @@ class SimulatorWindow:
         self._release_controls()
         self._replay.abort()
         self.sim.close()
+        self._detach(self.sim)
         self.root.destroy()
 
     def run(self):

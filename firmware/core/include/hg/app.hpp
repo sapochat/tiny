@@ -96,9 +96,14 @@ class App {
   TouchView touch_view() const;
   uint32_t touch_epoch() const { return touch_epoch_; }
   uint32_t reply_epoch() const { return reply_epoch_; }
+  // The revision of the target a control acts on (reply text, output stream, work,
+  // capture). A contact acts only if the revision is unchanged when it lifts.
+  uint32_t control_revision(TouchControl control) const;
   TouchControl touch_hit(int x, int y) const;
   void touch_swipe(TouchView owner, int dx, int dy, TouchControl control);
   void touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at);
+  // A touch-owned TALK press. Unlike a physical TALK press it never answers a question.
+  void on_touch_talk(bool pressed);
   // Returns true when this input only wakes a sleeping display.
   bool wake_display();
   bool start_wifi_setup();
@@ -193,8 +198,40 @@ class App {
   void start_listening(bool hands_free);
   void finish_listening();
   void cancel_listening(std::string_view why);
+  // Abandons the capture: audio.cancel, never audio.end. Samples already streamed
+  // during the hold have left the device; the request is simply not made.
+  void discard_capture();
   void stop_playback();
-  void cancel_turn();
+  // Local only: abort playback and keep later audio for the same reply quiet until
+  // a new turn or request. Never sends anything and never cancels work.
+  void silence();
+  void clear_silence();
+  // Remote work: a request or turn that has not ended (final text is not an end) and is
+  // still followed. Independent of recording and display modes; a capture never ends it.
+  bool work_open() const;
+  bool work_active() const;  // open and online: Stop is offered, Settings wait
+  // A new generation of remote work: a request, or a turn.start that is not the
+  // requested work's own. The previous named turn becomes a known earlier identity.
+  void begin_work(bool requested);
+  // Which work a reply or delta belongs to, from the identity it carries.
+  enum class TextOwner : uint8_t { Current, Other, Unbound };
+  TextOwner text_owner(const json::Value& m) const;
+  // The shown text is the latest work's own: the only text an outcome may describe.
+  bool own_text() const;
+  // Sends one cancel for the selected work and shows "Stop requested" until a
+  // matching turn.end establishes the outcome. Without active work it only silences.
+  void request_stop();
+  bool stop_pending_current() const;
+  // Settles the current work's stop from an end for the current turn; only the exact
+  // turn named in the cancel confirms it.
+  void resolve_stop(const std::string& turn, const std::string& outcome);
+  // Newer work begins: keep an unresolved stop separately as unknown, never pending.
+  void retire_stop();
+  // An outcome shown on the idle face until new activity; never a timed toast.
+  void set_note(std::string head, std::string detail);
+  void clear_note();
+  bool settings_allowed() const;
+  void request_sent();  // a text/voice request left the device
   bool known_setting(std::string_view key) const;
   void start_new_session();
   void scroll_body(int delta);
@@ -283,7 +320,6 @@ class App {
   uint16_t mic_seq_ = 0;
   std::string request_id_;
   std::string active_turn_;
-  bool turn_done_ = false;
   bool reply_final_ = false;
   uint32_t last_turn_rx_ = 0;
   std::string reply_;
@@ -301,6 +337,40 @@ class App {
   std::vector<int16_t> pcm_buf_;
   int in_stream_ = -1;
   uint32_t id_counter_ = 0;
+
+  // Local playback policy (Silence), independent of remote work.
+  bool silenced_ = false;
+  std::string silenced_turn_;  // the reply that was silenced; empty when unidentified
+  std::string out_turn_;       // the turn of the stream that is playing, when known
+  uint32_t output_epoch_ = 0;  // each stream and each silence expires older Silence contacts
+  // Capture ownership: who may finish it and whether the screen is free to discard.
+  enum class Capture : uint8_t { None, Touch, Button, Tap };
+  Capture capture_ = Capture::None;
+  bool touch_talk_ = false;
+  uint32_t capture_epoch_ = 0;
+  // Remote work, tracked apart from capture and display modes. Requested: sent, its
+  // turn not yet started (a turn.end now belongs to older work). Lost: no longer followed
+  // (disconnect, unpaired, expiry), outcome unknown until a matching end. A generation is
+  // one request or unsolicited turn; reply_ is bound to the generation that sent it.
+  enum class Work : uint8_t { None, Requested, Started, Lost, Ended };
+  Work work_ = Work::None;
+  uint32_t work_gen_ = 1;
+  uint32_t reply_gen_ = 0;   // 0: shown text not bound to any work this device follows
+  std::string prior_turn_;   // the latest earlier named turn: its text is never current
+  enum class StopState : uint8_t { None, Requested, Stopped, Finished, Failed, Unknown };
+  StopState stop_ = StopState::None;
+  std::string stop_turn_, stop_request_, sent_request_;
+  bool stop_matchable_ = false;  // the cancel named a turn; a request-scoped one never matches
+  // A stop for older work, retired when newer work began: unknown unless a later end
+  // names its turn. Kept apart so it never relabels or blocks the current work.
+  StopState earlier_stop_ = StopState::None;
+  std::string earlier_stop_turn_;
+  // How the latest work ended, as far as this device knows; None while it is open.
+  enum class Outcome : uint8_t { None, Finished, Stopped, Failed, Unknown };
+  Outcome outcome_ = Outcome::None;
+  uint32_t work_epoch_ = 0;
+  std::string note_head_, note_detail_;
+  bool interrupted_ = false;  // the connection dropped while work was active
 
   // overlays
   enum class Overlay : uint8_t { None, Card, Image };

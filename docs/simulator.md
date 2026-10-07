@@ -48,7 +48,7 @@ A first session, start to finish:
 | Input | Action |
 |---|---|
 | Hold **Space** / TALK button | Push-to-talk |
-| **Esc** / CANCEL | Discard a recording, close a card, stop a turn |
+| **Esc** / CANCEL | Discard a recording, close a card, request a stop of active work (or silence speech) |
 | Hold **Esc** / CANCEL for 2 s | Start a new Hermes session (`/new`); a countdown shows in the hint bar |
 | Hold **Space + Esc** for 1 s | Open or close the device's settings and local hardware checks |
 | **Space** / **Esc** on a question | Answer yes / no |
@@ -83,7 +83,7 @@ Like a board, the simulated device takes firmware updates (`hermes gadget update
 | `sim-480x320` | 480×320 | Larger panel |
 | `sim-240x240` | 240×240 | The 1.54" LCD board: two buttons, no scroll buttons, so long replies page by themselves |
 | `sim-240x240-nospeaker` | 240×240 | No speaker, so replies stay text only |
-| `sim-466x466-round` | 466×466 round | The 1.75" AMOLED touch board: hold to talk; state-aware swipes navigate/scroll; explicit Yes/No and Stop buttons. Touch replies do not auto-page; see [touch navigation](using-gadget.md#touch-navigation) |
+| `sim-466x466-round` | 466×466 round | The 1.75" AMOLED touch board: hold Home to talk; state-aware swipes navigate/scroll with visible tap routes; explicit Yes/No, Silence, Stop work, Discard/Finish and Hold to talk targets. Touch replies do not auto-page; see [touch navigation](using-gadget.md#touch-navigation) |
 
 Add a profile to `BOARDS` in `python/hermes_gadget/sim/runner.py` to mirror new hardware.
 

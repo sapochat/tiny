@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import wave
+import weakref
 from types import SimpleNamespace
 
 import pytest
@@ -192,3 +193,43 @@ def test_focus_changes_release_talk_and_typing_does_not_record(window, devserver
     assert [m["type"] for m in window.sim.sent if m["type"].startswith("audio.")] == ["audio.start", "audio.cancel"]
     window._key("talk", True)
     assert window.sim.mic.active is False
+
+
+@requires_sim
+def test_closed_window_leaves_no_tk_objects_for_the_hub_thread(tmp_path, devserver, loop_thread):
+    # Python's cycle collector runs on whichever thread allocates. Tk objects it finalizes on
+    # a loopback thread wait about a second each for a main loop, then fail; in the full suite
+    # that stalled a later simulator's WebSocket handshake past its timeout.
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY") and not os.environ.get("HERMES_GADGET_UI_TESTS"):
+        pytest.skip("needs a desktop or xvfb-run")
+    _, _, url = devserver()
+    gc.collect()
+    gc.disable()
+    try:
+        sim = Simulator(state_dir=tmp_path / "device", board="sim-466x466-round")
+        window = SimulatorWindow(sim)
+        sim.start(network=False)
+        window.root.update()
+        assert window._apply_settings(url, window.sim.board.name, False, False)
+        window.sim.set_network(True)
+        drive(window, lambda: window.sim.status()["screen"] == "ready")
+        assert window._apply_settings(url, "sim-320x240", False, False)
+        drive(window, lambda: window.sim.status()["screen"] == "ready")
+        window._quit()
+        closed = weakref.ref(window)
+        del window, sim
+        still_open = closed() is not None
+        if still_open:
+            gc.collect()  # Finalize it here; on the hub thread Tcl aborts the whole process.
+        assert not still_open, "the closed window waits for a cycle collection, which may run on any thread"
+        failures = []
+        hook, sys.unraisablehook = sys.unraisablehook, lambda u: failures.append(f"{u.object!r}: {u.exc_value!r}")
+        try:
+            async def collect_on_hub_thread():
+                gc.collect()
+            loop_thread.run(collect_on_hub_thread(), timeout=60)
+        finally:
+            sys.unraisablehook = hook
+    finally:
+        gc.enable()
+    assert failures == []

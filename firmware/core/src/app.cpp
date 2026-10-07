@@ -17,7 +17,6 @@ constexpr uint32_t kStableSessionMs = 30000;
 constexpr uint32_t kMinUtteranceMs = 350;
 constexpr uint32_t kMaxUtteranceMs = 30000;
 constexpr uint32_t kThinkingTimeoutMs = 180000;
-constexpr uint32_t kSettleAfterReplyMs = 6000;
 constexpr uint32_t kReplyLingerMs = 20000;    // reply text stays up this long before the mascot returns
 constexpr uint32_t kNewSessionHoldMs = 2000;  // hold CANCEL this long to start a new session
 constexpr uint32_t kNewSessionHintMs = 600;   // ...and show the countdown after this long
@@ -256,6 +255,20 @@ void App::drop_session(std::string_view reason) {
     ota_reset();
     log(LogLevel::Warn, "firmware update abandoned: the connection dropped");
   }
+  // A dropped connection never establishes an outcome. Nothing is replayed later.
+  const bool stopping = stop_pending_current();
+  const bool open = work_open();
+  if (stopping || open) outcome_ = Outcome::Unknown;
+  if (open) work_ = Work::Lost;  // no longer followed; a later matching end still resolves it
+  if (stop_ == StopState::Requested) stop_ = StopState::Unknown;
+  if (stopping) {
+    set_note("Outcome unknown", "Connection lost while stopping");
+  } else if (open) {
+    interrupted_ = true;
+    set_note("Connection lost", "Task status unknown");
+  } else if (mode_ == Mode::Listening) {
+    set_note("Connection lost", "Recording not sent");
+  }
   if (mode_ == Mode::Listening && hal_.mic) hal_.mic->stop();
   stop_playback();
   mode_ = Mode::Idle;
@@ -421,6 +434,11 @@ void App::h_paired(const json::Value&) {
 
 void App::h_unpaired(const json::Value&) {
   paired_ = false;
+  if (work_open()) {  // no longer followed: never assumed done
+    work_ = Work::Lost;
+    outcome_ = Outcome::Unknown;
+  }
+  if (stop_ == StopState::Requested) stop_ = StopState::Unknown;
   mode_ = Mode::Idle;
   stop_playback();
 }
@@ -432,11 +450,31 @@ bool App::can_talk() const { return phase_ == Phase::Online && paired_ && ota_ !
 
 void App::h_turn_start(const json::Value& m) {
   ++touch_epoch_;  // an old Stop contact must not stop a new turn
+  ++work_epoch_;
+  const std::string& turn = m["turn"].as_string();
+  // The first turn.start after a request is that request's turn; any other is new work.
+  const bool requested = work_ == Work::Requested;
+  // A stop sent before Hermes named the work belongs to the turn that starts for that
+  // same request: bound to it, though never matchable by id. Any other stop is for older
+  // work and is kept apart, so it can neither block nor relabel this turn.
+  if (stop_ == StopState::Requested && requested && stop_turn_.empty()) {
+    stop_turn_ = turn;
+    if (silenced_ && silenced_turn_.empty()) silenced_turn_ = turn;  // its quiet binds too
+  } else if (stop_ != StopState::None && (turn.empty() || turn != stop_turn_)) retire_stop();
+  if (!requested) {
+    begin_work(false);
+    sent_request_.clear();  // not this device's request: a Stop can only name the turn
+  }
+  work_ = Work::Started;
+  outcome_ = Outcome::None;
   awaiting_reply_ = true;
   reply_completed_ = reply_stopped_ = false;
   wake_display();
-  active_turn_ = m["turn"].as_string();
-  turn_done_ = false;
+  // A different (or unidentified) turn is new work: earlier silence and outcomes end here.
+  if (silenced_ && (turn.empty() || turn != silenced_turn_)) clear_silence();
+  clear_note();
+  interrupted_ = false;
+  active_turn_ = turn;
   reply_final_ = false;
   last_turn_rx_ = now();
   if (mode_ != Mode::Listening) {
@@ -451,15 +489,43 @@ void App::h_turn_start(const json::Value& m) {
 }
 
 void App::h_turn_end(const json::Value& m) {
+  const bool tagged = m.has("turn") && !m["turn"].is_null();
   const std::string& turn = m["turn"].as_string();
-  if (!active_turn_.empty() && !turn.empty() && turn != active_turn_) return;
-  turn_done_ = true;
-  reply_completed_ = !awaiting_reply_ && !reply_.empty() && m["outcome"].as_string() == "success";
-  reply_stopped_ = !awaiting_reply_ && !reply_.empty() && m["outcome"].as_string() != "success";
+  const std::string& outcome = m["outcome"].as_string();
+  // Known earlier work first: an end that names an earlier stop's turn settles that
+  // record, never the current work.
+  if (earlier_stop_ == StopState::Unknown && !turn.empty() && turn == earlier_stop_turn_) {
+    earlier_stop_ = outcome == "cancelled" ? StopState::Stopped : outcome == "success" ? StopState::Finished
+                    : outcome == "failure" ? StopState::Failed : StopState::Unknown;
+    earlier_stop_turn_.clear();
+    return;
+  }
+  // The channel is ordered: an end received after this device sent a newer request, but
+  // before that request's turn.start, belongs to older work. Otherwise only an end naming
+  // the current turn ends it; a missing identity is never a wildcard. Once Hermes names
+  // the turn, an end without that name ends nothing (the lifecycle expiry still bounds the
+  // wait), and an end naming any turn never ends an unnamed one. Only a server that never
+  // names turns ends its unnamed turn with an end that has no turn.
+  const bool followed = work_ == Work::Started || work_ == Work::Lost;
+  const bool current = followed && (active_turn_.empty() ? !tagged : turn == active_turn_);
+  if (!current) return;
+  resolve_stop(turn, outcome);
+  switch (stop_) {
+    case StopState::None:
+      outcome_ = outcome == "success" ? Outcome::Finished : outcome == "cancelled" ? Outcome::Stopped
+                 : outcome == "failure" ? Outcome::Failed : Outcome::Unknown;
+      break;
+    case StopState::Finished: outcome_ = Outcome::Finished; break;
+    case StopState::Stopped: outcome_ = Outcome::Stopped; break;
+    case StopState::Failed: outcome_ = Outcome::Failed; break;
+    default: outcome_ = Outcome::Unknown; break;
+  }
+  work_ = Work::Ended;
+  reply_completed_ = own_text() && outcome == "success";
+  reply_stopped_ = own_text() && outcome != "success";
   last_turn_rx_ = now();
-  if (m["outcome"].as_string() == "failure" && reply_.empty()) {
-    notice_ = "Hermes could not complete that request";
-    notice_until_ = now() + 8000;
+  if (outcome == "failure" && reply_.empty() && note_head_.empty()) {
+    set_note(ui_ && ui_->round_companion() ? "Couldn’t finish" : "Couldn't finish", "Hermes reported a failure");
   }
   if (mode_ == Mode::Thinking) {
     mode_ = reply_.empty() ? Mode::Idle : Mode::Responding;
@@ -479,7 +545,24 @@ void App::h_transcript(const json::Value& m) {
   if (status_ == "Sending...") status_.clear();
 }
 
+App::TextOwner App::text_owner(const json::Value& m) const {
+  const std::string& turn = m["turn"].as_string();
+  if (turn.empty()) return TextOwner::Current;  // legacy text names no turn: the latest work's
+  if (turn == active_turn_) return TextOwner::Current;
+  if (turn == prior_turn_ || turn == earlier_stop_turn_) return TextOwner::Other;  // known earlier work
+  if (work_ == Work::Started) return TextOwner::Other;  // the followed turn has another (or no) name
+  if (work_ == Work::Requested) return TextOwner::Current;  // its turn.start may never arrive
+  return TextOwner::Unbound;  // shown, but no outcome this device knows describes it
+}
+
+bool App::own_text() const { return !reply_.empty() && !awaiting_reply_ && reply_gen_ == work_gen_; }
+
 void App::h_reply_delta(const json::Value& m) {
+  const TextOwner owner = text_owner(m);
+  if (owner == TextOwner::Other) {
+    log(LogLevel::Debug, "ignored text for other work");
+    return;
+  }
   wake_display();
   if (mode_ == Mode::Listening) return;
   if (reply_ != m["text"].as_string() || awaiting_reply_) {
@@ -487,6 +570,8 @@ void App::h_reply_delta(const json::Value& m) {
     ++reply_epoch_;  // never open replacement text with a stale contact
   }
   reply_ = m["text"].as_string();
+  reply_gen_ = owner == TextOwner::Current ? work_gen_ : 0;
+  if (owner == TextOwner::Unbound) reply_completed_ = reply_stopped_ = false;
   if (!profile_.touch_screen || awaiting_reply_) scroll_ = -1;
   awaiting_reply_ = false;
   last_turn_rx_ = now();
@@ -497,6 +582,11 @@ void App::h_reply_delta(const json::Value& m) {
 }
 
 void App::h_reply(const json::Value& m) {
+  const TextOwner owner = text_owner(m);
+  if (owner == TextOwner::Other) {
+    log(LogLevel::Debug, "ignored text for other work");
+    return;
+  }
   wake_display();
   last_turn_rx_ = now();
   const std::string& text = m["text"].as_string();
@@ -510,6 +600,8 @@ void App::h_reply(const json::Value& m) {
     ++reply_epoch_;
   }
   reply_ = text;
+  reply_gen_ = owner == TextOwner::Current ? work_gen_ : 0;
+  if (owner == TextOwner::Unbound) reply_completed_ = reply_stopped_ = false;
   reply_final_ = true;
   if (!profile_.touch_screen) scroll_ = 0;  // touch keeps the reader's position
   else if (awaiting_reply_) scroll_ = -1;
@@ -521,6 +613,18 @@ void App::h_reply(const json::Value& m) {
 }
 
 void App::h_audio_start(const json::Value& m) {
+  const std::string& turn = m["turn"].as_string();
+  if (silenced_) {
+    // Only a stream that names a different turn than the silenced reply plays again.
+    // Same-turn or unidentified audio stays quiet until a new turn or request; the host
+    // keeps pacing it on its own clock (there are no playback credits to withhold).
+    if (turn.empty() || silenced_turn_.empty() || turn == silenced_turn_) {
+      ++output_epoch_;
+      log(LogLevel::Debug, "silenced: not playing audio for the same reply");
+      return;
+    }
+    clear_silence();
+  }
   close_wifi_setup();
   wake_display();
   if (settings_open()) close_settings();
@@ -535,12 +639,27 @@ void App::h_audio_start(const json::Value& m) {
     return;
   }
   in_stream_ = static_cast<int>(m["stream"].as_int(0));
+  out_turn_ = !turn.empty() ? turn : (work_ == Work::Started ? active_turn_ : std::string());
+  ++output_epoch_;
   last_turn_rx_ = now();
   status_.clear();  // audible reply: the working-state phrase is over
   if (mode_ != Mode::Responding) {
     mode_ = Mode::Responding;
     mode_since_ = now();
   }
+}
+
+void App::silence() {
+  if (!speaking()) return;
+  silenced_turn_ = out_turn_;
+  stop_playback();
+  silenced_ = true;
+  ++output_epoch_;
+}
+
+void App::clear_silence() {
+  silenced_ = false;
+  silenced_turn_.clear();
 }
 
 void App::h_audio_end(const json::Value& m) {
@@ -689,7 +808,9 @@ void App::answer_prompt(bool yes) {
 }
 
 void App::clear_prompt() {
-  ++touch_epoch_;
+  // Removing a shown prompt invalidates contacts on it; clearing none (as each failed
+  // reconnect does) must not consume an unrelated hold such as the offline title.
+  if (!prompt_id_.empty()) ++touch_epoch_;
   prompt_id_.clear();
   prompt_title_.clear();
   prompt_text_.clear();
@@ -797,6 +918,7 @@ void App::on_button(Button button, bool pressed) {
           cancel_listening("too short");
           set_hint_flash(profile_.touch_screen ? "Hold the screen while speaking"
                                                : "Hold " + profile_.talk_label + " while speaking");
+          if (!work_open()) set_note("Too short to send", "Hold while you speak");
         } else {
           finish_listening();
         }
@@ -809,7 +931,10 @@ void App::on_button(Button button, bool pressed) {
         cancel_held_ = true;
         cancel_down_at_ = now();
         cancel_long_fired_ = false;
-        if (talk_held_ && mode_ == Mode::Listening) cancel_listening("cancelled");
+        if (talk_held_ && mode_ == Mode::Listening) {
+          discard_capture();
+          cancel_long_fired_ = true;  // this press acted: its release never also stops open work
+        }
         return;
       }
       if (!cancel_held_) return;
@@ -817,9 +942,9 @@ void App::on_button(Button button, bool pressed) {
       if (cancel_long_fired_) return;
       if (prompt_showing()) {
         if (prompt_armed(cancel_down_at_)) answer_prompt(false);
-      } else if (mode_ == Mode::Listening) cancel_listening("cancelled");
+      } else if (mode_ == Mode::Listening) discard_capture();
       else if (overlay_ != Overlay::None) dismiss_overlay();
-      else if (mode_ == Mode::Thinking || mode_ == Mode::Responding) cancel_turn();
+      else if (work_active() || speaking()) request_stop();  // speech alone is only silenced
       if (hint_flash_.rfind("New session in", 0) == 0) hint_flash_until_ = now();
       break;
     case Button::Up:
@@ -864,9 +989,11 @@ void App::start_listening(bool hands_free) {
       .set("mode", hands_free ? "tap" : "hold");
   send(start);
   ++touch_epoch_;  // invalidate old navigation contacts; touch-owned Talk keeps its release
+  ++capture_epoch_;
+  capture_ = hands_free ? Capture::Tap : touch_talk_ ? Capture::Touch : Capture::Button;
+  clear_note();
   mode_ = Mode::Listening;
   mode_since_ = now();
-  awaiting_reply_ = true;
   reply_completed_ = reply_stopped_ = false;
   if (!profile_.touch_screen) { reply_.clear(); scroll_ = -1; }
   status_.clear();
@@ -878,6 +1005,8 @@ void App::finish_listening() {
   json::Value end = proto::message("audio.end");
   end.set("id", request_id_).set("stream", mic_stream_).set("duration_ms", now() - mode_since_);
   send(end);
+  capture_ = Capture::None;
+  request_sent();
   mode_ = Mode::Thinking;
   mode_since_ = now();
   last_turn_rx_ = now();
@@ -889,8 +1018,126 @@ void App::cancel_listening(std::string_view why) {
   json::Value c = proto::message("audio.cancel");
   c.set("id", request_id_).set("stream", mic_stream_).set("reason", why);
   send(c);
-  mode_ = Mode::Idle;
+  capture_ = Capture::None;
+  // No request was made: remote work is exactly as it was, so show it again.
+  mode_ = !work_open() ? Mode::Idle : own_text() ? Mode::Responding : Mode::Thinking;
   mode_since_ = now();
+}
+
+void App::discard_capture() {
+  if (mode_ != Mode::Listening) return;
+  cancel_listening("discarded");
+  if (work_open()) set_hint_flash("Discarded");  // open work keeps the screen
+  else set_note("Discarded", "Not sent as a request");
+}
+
+void App::begin_work(bool requested) {
+  if (!active_turn_.empty()) prior_turn_ = active_turn_;
+  active_turn_.clear();
+  ++work_gen_;
+  work_ = requested ? Work::Requested : Work::Started;
+}
+
+void App::request_sent() {
+  retire_stop();  // the user asked again: an earlier stop never applies to this request
+  begin_work(true);
+  outcome_ = Outcome::None;
+  awaiting_reply_ = true;  // earlier text stays readable but is not this request's
+  sent_request_ = request_id_;
+  ++work_epoch_;
+  clear_silence();  // the user asked again: the next reply may speak
+  clear_note();
+  interrupted_ = false;
+}
+
+bool App::work_open() const { return work_ == Work::Requested || work_ == Work::Started; }
+
+bool App::work_active() const { return phase_ == Phase::Online && work_open(); }
+
+bool App::stop_pending_current() const {
+  // Stops for older work are retired when newer work begins, so a requested stop belongs
+  // to this request, or to the turn it was bound to or named.
+  if (stop_ != StopState::Requested) return false;
+  if (work_ == Work::Requested) return stop_turn_.empty() && stop_request_ == sent_request_;
+  return stop_turn_ == active_turn_;
+}
+
+void App::request_stop() {
+  if (!work_active()) {
+    silence();
+    return;
+  }
+  const bool hints = !(ui_ && ui_->round_companion());  // the companion shows state, not hint flashes
+  if (stop_pending_current()) {
+    if (hints) set_hint_flash("Stop already requested");
+    return;
+  }
+  json::Value c = proto::message("cancel");
+  stop_matchable_ = work_ == Work::Started && !active_turn_.empty();
+  if (stop_matchable_) {
+    stop_turn_ = active_turn_;
+    stop_request_.clear();
+    c.set("turn", stop_turn_);
+  } else {
+    stop_turn_.clear();  // bound when this request's turn starts; never matched by id
+    stop_request_ = sent_request_;
+    if (!stop_request_.empty()) c.set("request", stop_request_);
+  }
+  send(c);
+  stop_ = StopState::Requested;
+  ++work_epoch_;
+  // Local quiet is immediate and scoped to the selected work; the outcome is not.
+  stop_playback();
+  silenced_ = true;
+  silenced_turn_ = stop_turn_;
+  ++output_epoch_;
+  clear_note();
+  last_turn_rx_ = now();
+  if (hints) set_hint_flash("Stop requested");
+}
+
+void App::resolve_stop(const std::string& turn, const std::string& outcome) {
+  if (stop_ != StopState::Requested && stop_ != StopState::Unknown) return;
+  if (!stop_matchable_ || turn.empty() || turn != stop_turn_) {
+    // Sent by request, or the end does not name the turn: the work ended, but nothing
+    // says what became of this stop.
+    if (stop_ == StopState::Requested) {
+      stop_ = StopState::Unknown;
+      set_note("Outcome unknown", stop_turn_.empty() ? "Hermes did not name the task" : "Sent before Hermes started");
+    }
+    return;
+  }
+  stop_ = outcome == "cancelled" ? StopState::Stopped
+          : outcome == "success" ? StopState::Finished
+          : outcome == "failure" ? StopState::Failed : StopState::Unknown;
+  ++work_epoch_;
+  switch (stop_) {
+    case StopState::Stopped: set_note("Stopped", "Completed steps are not undone"); break;
+    case StopState::Finished: set_note("Finished", "Stop was not confirmed"); break;
+    case StopState::Failed: set_note("Ended with an error", "Stop was not confirmed"); break;
+    default: set_note("Outcome unknown", "Hermes sent no outcome"); break;
+  }
+}
+
+void App::retire_stop() {
+  if (stop_ == StopState::None) return;
+  const bool open = stop_ == StopState::Requested || stop_ == StopState::Unknown;
+  earlier_stop_ = stop_ == StopState::Requested ? StopState::Unknown : stop_;
+  earlier_stop_turn_ = open && stop_matchable_ ? stop_turn_ : std::string();
+  stop_ = StopState::None;
+  stop_turn_.clear();
+  stop_request_.clear();
+  stop_matchable_ = false;
+}
+
+void App::set_note(std::string head, std::string detail) {
+  note_head_ = std::move(head);
+  note_detail_ = std::move(detail);
+}
+
+void App::clear_note() {
+  note_head_.clear();
+  note_detail_.clear();
 }
 
 void App::start_new_session() {
@@ -903,6 +1150,8 @@ void App::start_new_session() {
   dismiss_overlay();
   clear_prompt();
   send(proto::message("session.new"));
+  request_id_.clear();
+  request_sent();  // Hermes answers /new as a turn: new work, cancellable without an id
   reply_.clear();
   user_echo_.clear();
   status_ = "Starting a new session";
@@ -911,14 +1160,6 @@ void App::start_new_session() {
   mode_since_ = now();
   last_turn_rx_ = now();
   set_hint_flash("New session");
-}
-
-void App::cancel_turn() {
-  stop_playback();
-  send(proto::message("cancel"));
-  mode_ = Mode::Idle;
-  mode_since_ = now();
-  set_hint_flash("Cancelled");
 }
 
 void App::on_mic_samples(const int16_t* samples, size_t count) {
@@ -946,6 +1187,7 @@ void App::on_mic_samples(const int16_t* samples, size_t count) {
     } else if (r == Vad::Result::NoSpeech) {
       cancel_listening("no speech");
       set_hint_flash("Didn't hear anything");
+      set_note("No speech heard", "Not sent as a request");
       update_model();
     }
   }
@@ -968,6 +1210,7 @@ void App::submit_text(std::string_view text) {
   json::Value msg = proto::message("text");
   msg.set("id", request_id_).set("text", t);
   send(msg);
+  request_sent();
   user_echo_ = t;
   awaiting_reply_ = true;
   reply_completed_ = reply_stopped_ = false;
@@ -1294,20 +1537,33 @@ void App::tick() {
     update_model();
   }
   if (!prompt_id_.empty()) last_turn_rx_ = t;  // Hermes is waiting for the user, not stuck
-  if (mode_ == Mode::Thinking && t - last_turn_rx_ > kThinkingTimeoutMs) {
-    mode_ = Mode::Idle;
-    notice_ = "No reply from Hermes";
-    notice_until_ = t + 8000;
-    update_model();
-  }
-  if (mode_ == Mode::Responding && !speaking()) {
-    bool settled = turn_done_ || (reply_final_ && t - last_turn_rx_ > kSettleAfterReplyMs);
-    if (settled) {
+  // Work stays open until its turn.end; final text is not an end. After this long with no
+  // lifecycle message the outcome becomes explicitly unknown: never assumed finished, and
+  // never left open for good.
+  if (work_open() && !speaking() && t - last_turn_rx_ > kThinkingTimeoutMs) {
+    const bool text = own_text();
+    work_ = Work::Lost;
+    if (mode_ != Mode::Listening) {  // a capture in progress stays the user's
       mode_ = Mode::Idle;
       mode_since_ = t;
-      reply_until_ = t + kReplyLingerMs;
-      update_model();
     }
+    outcome_ = Outcome::Unknown;
+    // Silence from Hermes is not an outcome; say so until new activity.
+    if (stop_ == StopState::Requested) {
+      stop_ = StopState::Unknown;
+      set_note("Outcome unknown", text ? "No ending from Hermes" : "No reply from Hermes");
+    } else if (text) {
+      set_note("Task status unknown", "No ending from Hermes");
+    } else {
+      set_note("No reply from Hermes", "Task status unknown");
+    }
+    update_model();
+  }
+  if (mode_ == Mode::Responding && !speaking() && !work_open()) {
+    mode_ = Mode::Idle;
+    mode_since_ = t;
+    reply_until_ = t + kReplyLingerMs;
+    update_model();
   }
   if (overlay_ != Overlay::None && overlay_until_ && static_cast<int32_t>(t - overlay_until_) >= 0) {
     dismiss_overlay();
@@ -1435,6 +1691,8 @@ void App::update_model() {
     m.caption_lines = 2;
     m.headline = "No network";
     m.detail = network_detail_.empty() ? "Waiting for Wi-Fi" : network_detail_;
+    if (interrupted_ || stop_ == StopState::Unknown || outcome_ == Outcome::Unknown)
+      m.detail = "Task status unknown\n" + m.detail;
     m.hint = "configure Wi-Fi via serial";
   } else if (phase_ == Phase::Connecting || phase_ == Phase::Handshake) {
     m.screen = Screen::Connecting;
@@ -1443,6 +1701,8 @@ void App::update_model() {
     m.headline = phase_ == Phase::Handshake ? "Authenticating" : "Connecting to Hermes";
     m.detail = server_url_;
     if (!last_close_.empty() && attempts_ > 1) m.detail += "\nError: " + last_close_;
+    if (interrupted_ || stop_ == StopState::Unknown || outcome_ == Outcome::Unknown)
+      m.detail = "Task status unknown\n" + m.detail;
     char buf[48];
     if (reconnect_pending_) {
       uint32_t wait = static_cast<int32_t>(reconnect_at_ - now()) > 0 ? (reconnect_at_ - now() + 999) / 1000 : 0;
@@ -1585,18 +1845,73 @@ void App::update_model() {
              reply_stopped_ ? "Reply stopped - tap to read" : "New text - tap to read";
   }
   m.has_reply = !reply_.empty();
-  m.can_stop = mode_ == Mode::Thinking || (mode_ == Mode::Responding && !turn_done_) || speaking();
-  if (ui_ && ui_->round_companion() && m.hero) {
+  // Work, playback and capture are separate facts; each gets its own control.
+  const bool round = ui_ && ui_->round_companion();
+  const bool working = work_active();
+  m.stop_pending = working && stop_pending_current();
+  m.can_stop = working && !m.stop_pending;
+  if (!round && speaking()) m.can_stop = true;  // legacy quick-controls Stop also quiets speech
+  m.can_silence = speaking();
+  m.capture = mode_ != Mode::Listening ? 0 : hands_free_ ? 3 : capture_ == Capture::Touch ? 1 : 2;
+  m.tap_talk = talk_mode_ == TalkMode::Tap;
+  m.talk_control = mode_ == Mode::Idle && !speaking() && can_talk() && hal_.mic && !prompt_showing();
+  m.settings_ready = settings_allowed();
+  // The latest work's ending, compact, where Home's caption is not visible: a reading line
+  // (only for text from that work, which is complete only on success) and a quick-controls
+  // word on the inert Stop target.
+  m.outcome.clear();  // the model persists: an earlier work's ending never carries over
+  m.outcome_word.clear();
+  if (!working && outcome_ != Outcome::None) {
+    const bool text = own_text();
+    switch (outcome_) {
+      case Outcome::Finished:
+        m.outcome_word = "Finished";
+        if (text) m.outcome = stop_ == StopState::Finished ? "Finished · stop unconfirmed" : "Finished";
+        break;
+      case Outcome::Stopped:
+        m.outcome_word = "Stopped";
+        if (text) m.outcome = "Stopped · may be partial";
+        break;
+      case Outcome::Failed:
+        m.outcome_word = "Error";
+        if (text) m.outcome = "Error · may be partial";
+        break;
+      default:
+        m.outcome_word = "Unknown";
+        if (text) m.outcome = "Unknown · may be partial";
+        break;
+    }
+  }
+  if (m.stop_pending && (m.screen == Screen::Thinking || m.screen == Screen::Responding))
+    m.headline = "Stop requested";  // never "Cancelled" or "Stopped" before an outcome
+  const bool companion_screen = m.screen == Screen::Ready || m.screen == Screen::Thinking ||
+                                m.screen == Screen::Responding || m.screen == Screen::Listening;
+  if (round && m.hero && companion_screen) {
     if (m.screen == Screen::Ready) {
       m.headline = talk_mode_ == TalkMode::Tap ? "Tap to talk" : "Hold to talk";
       m.detail = "I’m here.";
     } else if (m.screen == Screen::Listening) {
-      m.detail = hands_free_ ? "Pause to send" : "Release to send";
+      // Samples stream while recording; release ends the capture and makes the request.
+      m.detail = hands_free_ ? "Pause or tap Finish" : capture_ == Capture::Touch ? "Release to finish"
+                                                                                : "Release " + talk + " to finish";
     }
     if (m.unread_reply && !m.speaking && mode_ != Mode::Thinking) {
       m.headline = reply_completed_ ? "Reply ready" : reply_stopped_ ? "Reply stopped" : "New text";
       m.detail.clear();
     }
+    if (m.stop_pending) {
+      m.headline = "Stop requested";
+      m.detail = "Waiting for Hermes to confirm";
+    } else if (mode_ == Mode::Idle && !note_head_.empty()) {
+      m.headline = note_head_;
+      m.detail = note_detail_;
+    } else if (silenced_ && working && m.detail.empty()) {
+      m.detail = "Speech silenced";
+    }
+  } else if (!round && m.hero && m.screen == Screen::Ready && !note_head_.empty()) {
+    m.headline = note_head_;
+    m.detail = note_detail_;
+    m.caption_lines = 2;
   }
   bool keeps_detail = m.screen == Screen::Pairing || m.screen == Screen::Boot || m.screen == Screen::Prompt;
   if (!notice_.empty() && !keeps_detail) m.detail = notice_;
@@ -1632,20 +1947,32 @@ json::Value App::status_value() const {
       .set("server", server_url_)
       .set("network", network_up_);
   s.set("display_sleeping", display_sleeping_);
+  // Remote-work stop state and local silence, for every board; diagnostics, not a protocol.
+  const char* stops[] = {"none", "requested", "stopped", "finished", "failed", "unknown"};
+  json::Value work = json::Value::object();
+  const char* outcomes[] = {"none", "finished", "stopped", "failed", "unknown"};
+  const char* lifecycles[] = {"none", "requested", "started", "lost", "ended"};
+  work.set("lifecycle", lifecycles[static_cast<unsigned>(work_)]).set("stop", stops[static_cast<unsigned>(stop_)])
+      .set("silenced", silenced_)
+      .set("active", work_active()).set("outcome", outcomes[static_cast<unsigned>(outcome_)])
+      .set("earlier_stop", stops[static_cast<unsigned>(earlier_stop_)]);
+  s.set("work", work);
   if (profile_.touch_screen) {
     const char* views[] = {"home", "response", "controls", "approval", "recording", "other"};
     json::Value u = json::Value::object(), controls = json::Value::object();
     u.set("view", views[static_cast<unsigned>(touch_view())])
       .set("activity", mode_ == Mode::Listening ? "recording" : speaking() ? "speaking" :
            mode_ == Mode::Thinking ? "thinking" : mode_ == Mode::Responding && !reply_final_ ? "streaming" : "idle")
-      .set("scroll", model_.scroll).set("headline", model_.headline).set("hint", model_.hint).set("speaking", speaking());
-    const char* names[] = {"none", "volume", "brightness", "stop", "yes", "no", "reply"};
-    if (ui_) for (unsigned i = 1; i <= 6; ++i) {
+      .set("scroll", model_.scroll).set("headline", model_.headline).set("detail", model_.detail)
+      .set("hint", model_.hint).set("speaking", speaking());
+    const char* captures[] = {"none", "touch", "button", "tap"};
+    u.set("capture", captures[model_.capture & 3]);
+    if (ui_) for (unsigned i = 1; i < kTouchControls; ++i) {
       auto r = ui_->control_rect(static_cast<TouchControl>(i), model_);
       if (!r.w || !r.h) continue;
       json::Value rect = json::Value::array();
       rect.push(r.x); rect.push(r.y); rect.push(r.w); rect.push(r.h);
-      controls.set(names[i], rect);
+      controls.set(control_name(static_cast<TouchControl>(i)), rect);
     }
     if (ui_) {
       json::Value animation = json::Value::object();
@@ -1714,7 +2041,7 @@ std::string App::console(std::string_view raw) {
   }
   if (cmd == "settings") {
     if (rest == "close") { close_settings(); return "@ok settings closed"; }
-    return open_settings() ? "@ok settings" : "@error settings unavailable during a prompt or update";
+    return open_settings() ? "@ok settings" : "@error settings open when idle (not during work, speech, recording, a prompt or an update)";
   }
   if (cmd == "diag" && rest.empty()) return diag_report();
   if (cmd == "diag" && rest == "log") {

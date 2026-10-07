@@ -153,7 +153,7 @@ This local Tiny trial sets ES7210 microphone codec gain to 30 dB on the 1.75C on
 | AXP2101 | I2C 0x34; ALDO1 at 3.3 V supplies analog audio |
 | BOOT | GPIO 0, TALK |
 
-Hold the screen or BOOT to talk. Swipe down from Home for quick controls; tap Stop there to stop a turn. Hold the screen's title for one second to open settings. PWR retains its hardware power function; firmware does not map it to CANCEL on this model. There is no TCA9554 expander. The IMU and RTC are not exposed.
+Hold Home or BOOT to talk; while BOOT is held, the screen can tap **Discard**. Tap **Silence** to quiet speech and **Stop work** to request a stop, on Home, a reply or quick controls. Open settings from quick controls (or hold the title for one second) when idle. PWR retains its hardware power function; firmware does not map it to CANCEL on this model. There is no TCA9554 expander. The IMU and RTC are not exposed.
 
 The firmware enables ALDO1 for audio while preserving the other rails and charging settings. Battery readings and local power-off use the existing AXP2101 driver. An unavailable ADC or gauge reading remains absent. Use the settings menu for microphone, speaker, display, touch, volume, brightness and power checks.
 
@@ -227,14 +227,15 @@ Board option `esp32s3-touch-amoled-175`, for Waveshare's all-in-one board: an ES
 
 | Do this | Does |
 |---|---|
-| Hold the screen | TALK: speak while holding, lift to send |
+| Hold Home | TALK: speak while holding, lift to finish and send |
+| Tap Silence / Stop work | Quiet speech locally / request a stop of Hermes's work |
 | Tap Yes / No | Explicitly answer a question |
 | Swipe down on Home | Open quick controls without stopping activity |
 | Swipe vertically on a reply | Scroll; right returns Home with reading position retained |
 | Press the side PWR key | CANCEL as well; hold it 2 s for a new conversation |
 | Hold BOOT | TALK, like holding the screen |
 
-The legacy `touch_cancel` setting still selects whether the non-C board's PWR key acts as CANCEL (`pwr` or `both`). Navigation swipes no longer act as CANCEL in any setting; use the explicit Stop control. This does not add a CANCEL key to the separate 1.75C model. The same gestures work on the `sim-466x466-round` simulator board with the mouse.
+The legacy `touch_cancel` setting still selects whether the non-C board's PWR key acts as CANCEL (`pwr` or `both`). Navigation swipes no longer act as CANCEL in any setting; use the explicit Silence or Stop work control. This does not add a CANCEL key to the separate 1.75C model. The same gestures work on the `sim-466x466-round` simulator board with the mouse.
 
 The [device settings menu](using-gadget.md#device-settings-and-hardware-checks) shows battery voltage, the PMIC's estimated percentage, charging and USB power. Readings refresh every five seconds and appear in `status`, `diag` and Hermes sensor telemetry. Failed reads become unavailable; they do not retain a stale percentage. A low gauge estimate, 10 percent or less without USB, adds a reminder on the idle screen.
 
@@ -258,7 +259,7 @@ This port is written from Waveshare's published pinout and drivers. On the first
 1. **Boot log:** `CO5300 466x466 ready`, `codecs: speaker ready, microphones ready` and `touch ready, key ready`. A `did not answer` or `missing` line names the part to look at. The `hg.diag` lines sum it up: reset reason, memory, and `parts: display co5300, microphone es7210, speaker es8311, touch yes, key yes`. In the `diag` report, `i2c` should include `0x18` (ES8311), `0x20` (TCA9554), `0x34` (AXP2101), `0x40` (ES7210) and `0x5a` (CST9217).
 2. **Console:** `hermes-gadget console --port COMx` on the USB-C port answers `status`. If the log shows but commands get no answer, the console is still on UART0.
 3. **Screen:** the mascot is centred, upright and not mirrored, and the colours are right (amber accents, not blue). A thin stripe at one edge means the column offset is off.
-4. **Touch:** hold the screen and the listening waves appear. From Home, swipe down to open quick controls and right to return. On a reply, vertical gestures scroll; during recording, movement must not navigate or cancel. See [touch navigation](using-gadget.md#touch-navigation).
+4. **Touch:** hold Home and the listening waves appear. From Home, swipe down (or tap **↓ Controls**) to open quick controls and swipe right (or tap the title) to return. On a reply, vertical gestures scroll and a still finger does not record; during recording, movement must not navigate or cancel. See [touch navigation](using-gadget.md#touch-navigation).
 5. **PWR key:** a short press cancels and holding 2 s starts a new conversation without powering the board off.
 6. **Microphone:** say something; the waves move with your voice, and Hermes's transcript is right.
 7. **Speaker:** replies are clear and loud enough (`set volume 80`); no hiss between replies.

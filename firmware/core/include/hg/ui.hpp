@@ -37,7 +37,11 @@ enum class Screen : uint8_t {
 enum class Link : uint8_t { Offline, Network, Connecting, Online };
 
 enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, Other };
-enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No, Reply };
+// Stop means "Stop work" (a cancellation request). Silence only quiets local playback.
+enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No, Reply, Silence, Discard, Finish,
+                                    Talk, Controls, Home, Settings };
+constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::Settings) + 1;
+const char* control_name(TouchControl c);
 struct UiRect {
   int x = 0, y = 0, w = 0, h = 0;
   bool contains(int px, int py) const { return px >= x && py >= y && px < x+w && py < y+h; }
@@ -61,6 +65,15 @@ struct UiModel {
   bool unread_reply = false;
   bool has_reply = false, can_stop = false;
   bool reply_ready = false;  // success-only completed text; never inferred from a label
+  // Independent facts: local playback, a pending stop request for the current work,
+  // capture ownership (0 none, 1 touch hold, 2 physical TALK hold, 3 tap mode) and
+  // whether an explicit reading Talk target or idle settings entry is offered.
+  bool can_silence = false, stop_pending = false;
+  uint8_t capture = 0;
+  bool talk_control = false, tap_talk = false, settings_ready = false;
+  // How the latest work ended, once it has: a compact reading line (only for text from
+  // that work) and a word for the inert Stop target in quick controls. Empty while open.
+  std::string outcome, outcome_word;
   // Authored clip entry, selected from activity BEFORE navigation overrides.
   uint8_t expression = 0;
   int volume = 0, brightness = 0;
@@ -113,6 +126,9 @@ class Ui {
  private:
   uint16_t background() const { return panel_.round ? 0 : rgb565(10, 14, 20); }
   bool companion_model(const UiModel& m) const;
+  // The 466px companion's shared bottom action row (Home, recording and reading):
+  // at most two targets, in priority order. Drawing and hit testing both use it.
+  int action_slots(const UiModel& m, TouchControl (&slots)[2]) const;
   void render_companion(const UiModel& m);
   void draw_top(Canvas& c, const UiModel& m);
   void draw_header(Canvas& c, const UiModel& m);

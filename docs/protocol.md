@@ -111,12 +111,13 @@ If authentication fails, the server sends `{"type": "error", "code": "auth_faile
 | `{"type": "audio.start", "id": "a4", "stream": 4, "rate": 16000, "format": "pcm16", "mode": "hold"}` | An utterance begins; binary audio frames follow on `stream` |
 | `{"type": "audio.end", "id": "a4", "stream": 4, "duration_ms": 2100}` | Utterance complete; the server turns it into a WAV voice message |
 | `{"type": "audio.cancel", "id": "a4", "stream": 4, "reason": "too short"}` | Discard the utterance |
-| `{"type": "cancel"}` | Stop the current turn (Hermes `/stop`) |
+| `{"type": "cancel", "turn": "..."}` | Request a stop of the current work (Hermes `/stop`). `turn` or `request` is optional; see [Stopping work](#stopping-work) |
 | `{"type": "session.new"}` | Start a fresh conversation (Hermes `/new`). The reference firmware sends it when CANCEL is held for 2 s |
 | `{"type": "prompt.reply", "id": "q1", "answer": "yes"}` | The answer (`yes` or `no`) to a `prompt` |
 
 - Utterances shorter than 0.25 s are dropped with a `notice`.
 - The server caps an utterance at `max_utterance_s` (60 s by default).
+- Audio frames stream while the device records. `audio.end` asks the server to turn the utterance into a request; `audio.cancel` asks it to drop the upload and make no request. Neither recalls frames already sent, and the reference hub keeps the partial upload only in memory until it is dropped.
 
 ### Server → device
 
@@ -145,7 +146,26 @@ Reply text is already shaped for the device: Markdown is stripped and the text i
 2. Binary channel-1 frames follow, about 40 ms each.
 3. `{"type": "audio.end", "stream": 7}` marks normal completion; `{"type": "audio.abort", "stream": 7}` means stop now.
 
-The server resamples to the device's declared speaker rate. It also paces frames to real time, at most 0.5 s ahead, so a jitter buffer of about 1 s is enough. A new `audio.start` replaces the stream that is playing.
+The server resamples to the device's declared speaker rate. It also paces frames to real time, at most 0.5 s ahead, so a jitter buffer of about 1 s is enough. A new `audio.start` replaces the stream that is playing. There is no device-to-server flow control: the server's pacing never waits for the device.
+
+Silence is local to the device and has no message. A device that silences a reply aborts its speaker and ignores later frames and later `audio.start` messages for the same `turn`, or without a `turn`, until a `turn.start` names a different (or unnamed) turn or the user makes a new request. The server keeps streaming until its own `audio.end`; silencing never cancels the turn.
+
+### Stopping work
+
+`cancel` is a request, not a confirmation. Devices from this release add the work they selected: `"turn"` when a `turn.start` has named it, otherwise `"request"` with the `id` of the device's own `text` or `audio.start`. Current servers, including the reference hub and the Hermes adapter, ignore both fields and stop whatever the session is running (`/stop`); a server that implements per-turn cancellation should ignore a `cancel` whose `turn` is no longer current. The hub also aborts its outbound audio when it receives `cancel`.
+
+Only a `turn.end` that names the same turn establishes what happened:
+
+- `cancelled` means the remaining work was stopped. Steps that already ran are not undone.
+- `success` or `failure` after a stop request means the turn ended without a confirmed stop. Hermes can report an interrupted turn either way, so devices do not show these as stopped.
+- A dropped connection before that `turn.end` leaves the outcome unknown. Nothing is resent after reconnecting; a later `turn.end` for the same turn still resolves it.
+- A stop sent before any `turn.start` named the work cannot be matched to a later turn, because `turn.start` does not identify the request it serves. Devices keep it pending only for the next turn that starts for that same request, then report its outcome as unknown. Sending a new request retires it, still unknown; it is never pending for the new request, which can be stopped on its own.
+- Once a device knows the current turn's id, a `turn.end` without a `turn` (or with a non-string one) cannot be attributed: it neither confirms a stop nor ends that work. A server that never names turns still ends its current unnamed turn this way.
+- A missing identity is never a wildcard: a `turn.end` that names any turn never ends a turn whose `turn.start` had no name. An end naming an earlier stopped turn settles only that earlier stop.
+- Final `reply` text is not an end. Work stays open until its `turn.end`; a device that receives nothing about the turn for three minutes reports the outcome as unknown, never as finished. A recording that is discarded, or too short to send, makes no request and leaves open work open.
+- `reply` and `reply.delta` text that names a turn other than the current one, or an earlier turn the device knows, is not shown as the current work's text. Text without a `turn` is shown as the latest work's. A device describes an ending only under text from that same work.
+
+Messages arrive in order on the one connection, so a `turn.end` that a device receives after sending a new `text` or `audio.end`, but before the next `turn.start`, belongs to earlier work and never ends the new request.
 
 ### Display
 
@@ -161,7 +181,7 @@ The server fits images inside `caps.display.image` before sending them, so devic
 
 Hermes asks before some actions: destructive commands such as `/new`, a costly model switch, or a dangerous shell command the agent wants to run. The server turns each one into a `prompt`:
 
-- The device shows the title and text with two answers. The reference firmware maps TALK to yes and CANCEL to no, and ignores presses in the first 0.6 s so a press meant for something else doesn't answer it.
+- The device shows the title and text with two answers. The reference firmware maps the physical TALK button to yes and CANCEL to no, and ignores presses in the first 0.6 s so a press meant for something else doesn't answer it. On touch boards only the rendered Yes and No targets answer; touch Talk targets never do. A `prompt` carries no action identity, revision or target, so devices keep its generic Yes/No wording rather than inferring them from its text.
 - The device answers with `prompt.reply` exactly once, or not at all if the question expires (`ttl_s`, when present) or is withdrawn with `prompt.close`.
 - The server sends one question at a time. A question asked while a device was offline is sent again when it reconnects.
 - Text is shaped like replies: short, plain and already folded to the device's charset.

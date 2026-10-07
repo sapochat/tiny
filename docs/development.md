@@ -175,6 +175,55 @@ layout: headline instead of old reply footer, meter y78, portrait y96, 55px read
 pill and 48px Stop. Approval, stale contacts, scroll-follow, wake, live preemption
 and independent MP4 pixel comparisons remain intact.
 
+### Interaction surface E2E
+
+`tests/test_interaction_surface_e2e.py` covers Silence, Stop work, capture
+ownership/Discard, visible tap routes, idle-only settings, equal-emphasis review
+and persistent outcomes. `tests/test_interaction_remediation_e2e.py` adds the
+review regressions: stop ownership across requests, unattributable `turn.end`,
+final text without `turn.end` (including the three-minute expiry, so that file
+takes about four minutes), offline/connecting/pairing Settings on round and
+rectangular touch profiles, outcome lines in reading and quick controls, and
+Silence/Stop order. `tests/test_interaction_ownership_e2e.py` covers remote-work
+ownership: a tagged end of earlier work never ends newer unnamed work, a
+discarded capture or final text without `turn.start` never ends open work (Stop
+once, busy Settings, offline uncertainty, no replay), and text tagged for older
+work never replaces the current work's text or carries its outcome. Each workflow runs the native core (App, Ui and
+TouchGestures) against the production `DeviceHub` on 127.0.0.1 with a
+disposable store; its delegate is the development `EchoBrain`, recording what the
+host was asked to do and replying only when the test drives it. Assertions use
+device→host wire receipts, the simulator's speaker/microphone HAL calls, hub
+delegate calls and RGB565 pixels compared with an independent raster of the
+source Geist TTF. No Hermes checkout, provider, gateway or hardware is used.
+
+```sh
+uv venv .venv --python 3.14
+uv pip install --python .venv/bin/python -e '.[dev,images]' cmake
+PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=python .venv/bin/python -m hermes_gadget build-sim --test
+mkdir -p /tmp/ti/home && export HGSIM_LIBRARY=$PWD/build/host/libhgsim.so \
+  HERMES_HOME=/tmp/ti/home HERMES_AGENT_DIR=/nonexistent IX_ARTIFACTS=$PWD/artifacts/interaction-v1/local
+PATH="$PWD/.venv/bin:$PATH" .venv/bin/python -m pytest tests/test_interaction_surface_e2e.py \
+  tests/test_interaction_remediation_e2e.py tests/test_interaction_ownership_e2e.py tests/test_touch_navigation.py tests/test_reply_indicator.py tests/test_face_first.py \
+  tests/test_face_first_font.py tests/test_round_amoled.py tests/test_round_amoled_safety.py \
+  tests/test_stale_title_hold.py tests/test_sim_hub.py tests/test_protocol.py -v \
+  --basetemp=/tmp/ti/bt --junitxml=artifacts/interaction-v1/local/results.xml
+```
+
+Keep `--basetemp` short; Unix socket paths have a length limit. `IX_ARTIFACTS`
+receives `run.json` (environment, library and source hashes, exact command
+line), a copy of the fixture file, and per-test snapshots, receipts, HAL logs and
+framebuffer hashes. `tests/test_video_v2.py` resolves its MP4 sources at
+`../tiny-animations/picks/states-v2/` relative to the checkout's parent; run it
+from a copy whose parent contains that directory rather than editing the test.
+
+This work supersedes some face-first geometry, each with its behavioral check
+kept: approval Yes/No are equal-emphasis 150×96 targets (no amber Yes); quick
+controls show 160×56 Stop work and Silence plus Settings; the reading view has
+seven rows above a shared 55px action row; and the swipe-only footers became
+visible tap routes. `test_face_first.py` and `test_face_first_font.py` assert the
+new rectangles and labels against the same source-TTF oracle, and the glyph
+coverage test pages by the advertised `text_rows`.
+
 ### Releases
 
 `tools/package_release.py` turns PlatformIO builds into release files. For each board:
