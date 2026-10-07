@@ -43,7 +43,10 @@ def test_approved_face_first(rig,state):
         s.run_for(.6)
         pixels=capture(s,'approval')
         assert not any(pixels[(y*466+x)*3:(y*466+x)*3+3]!=b'\0\0\0' for y in range(10,50) for x in range(180,280)), 'No decorative approval portrait'
-        assert ui(s)['controls']['yes']==[240,309,146,64]
+        # Superseded geometry (interaction v1): equal-emphasis Yes/No enlarged from 146x64
+        # to 150x96 below the same five question rows; explicit-tap semantics unchanged.
+        assert ui(s)['controls']['yes']==[238,296,150,96]
+        assert ui(s)['controls']['no']==[78,296,150,96]
         tap(s,*control(s,'yes'))
         assert any(m['type']=='prompt.reply' and m['answer']=='yes' for m in s.sent)
     else:
@@ -99,6 +102,12 @@ def test_tap_mode_and_no_reply_speaking_cue(rig):
     assert ui(s)['headline']=='Tap to talk'
     s.send_fixture('turn.start',turn='audio-only')
     s.send_fixture('audio.start',stream=91,rate=16000,format='pcm16')
-    pixels=capture(s,'speaking-no-text')
-    assert not any(pixels[(y*466+x)*3:(y*466+x)*3+3]!=b'\0\0\0'
-                   for y in range(400,430) for x in range(125,340))
+    capture(s,'speaking-no-text')
+    # Superseded check (interaction v1): rows 400-430 now hold the Silence / Stop work
+    # targets, so "no reply cue without a reply" is asserted semantically instead:
+    # no Read reply target and neither old nor new Read reply label anywhere on screen.
+    from test_interaction_surface_e2e import find_text
+    from test_face_first_font import rgb
+    assert 'reply' not in ui(s)['controls'] and {'silence','stop'} <= set(ui(s)['controls'])
+    assert find_text(s,'↑  Read reply',14,rgb(164,164,169)) is None
+    assert find_text(s,'Read reply  ↑',18,rgb(240,239,235),rgb(32,32,35)) is None

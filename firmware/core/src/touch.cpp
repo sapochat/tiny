@@ -4,9 +4,6 @@
 
 namespace hg {
 
-void TouchGestures::press(Button b) { app_.on_button(b, true); }
-void TouchGestures::release(Button b) { app_.on_button(b, false); }
-
 void TouchGestures::tick(uint32_t now_ms) {
   if (state_ != State::Pending && state_ != State::Settings) return;
   if (epoch_ != app_.touch_epoch()) {
@@ -25,19 +22,22 @@ void TouchGestures::tick(uint32_t now_ms) {
       app_.open_settings();
     }
   }
-  if (state_ == State::Pending && !moved_ && control_ == TouchControl::None &&
-      (owner_ == TouchView::Home || owner_ == TouchView::Response) &&
-      app_.touch_view() == owner_ && now_ms - t0_ >= cfg_.hold_ms) {
+  // Push-to-talk starts only from Home's open area or an explicit Talk target. Reading
+  // stays purely navigational, so a patient reader's still finger never records.
+  const bool talk_target = (owner_ == TouchView::Home && control_ == TouchControl::None) ||
+                           (owner_ == TouchView::Response && control_ == TouchControl::Talk);
+  if (state_ == State::Pending && !moved_ && talk_target && app_.touch_view() == owner_ &&
+      app_.control_revision(control_) == revision_ && now_ms - t0_ >= cfg_.hold_ms) {
     state_ = State::Talk;
-    press(Button::Talk);
+    app_.on_touch_talk(true);
   }
 }
 
 void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
   if (!touching) {
-    if (state_ == State::Talk) release(Button::Talk);  // normal push-to-talk release only
+    if (state_ == State::Talk) app_.on_touch_talk(false);  // normal push-to-talk release only
     else if (state_ == State::Pending && !moved_ && epoch_ == app_.touch_epoch() &&
-             (control_ != TouchControl::Reply || reply_epoch_ == app_.reply_epoch()))
+             app_.control_revision(control_) == revision_)
       app_.touch_tap(owner_, control_, t0_);
     state_ = State::Idle;
     return;
@@ -46,10 +46,12 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
     if (app_.wake_display()) { state_ = State::Ignored; return; }
     owner_ = app_.touch_view();
     epoch_ = app_.touch_epoch();
-    reply_epoch_ = app_.reply_epoch();
     control_ = app_.touch_hit(x, y);
+    revision_ = app_.control_revision(control_);
     moved_ = false;
-    state_ = owner_ == TouchView::Recording ? State::Ignored :
+    // While recording, only a rendered Discard/Finish target can be tapped; nothing navigates.
+    const bool capture_control = control_ == TouchControl::Discard || control_ == TouchControl::Finish;
+    state_ = owner_ == TouchView::Recording ? (capture_control ? State::Pending : State::Ignored) :
              app_.settings_title_hit(x, y) ? State::Settings : State::Pending;
     x0_ = x; y0_ = y; t0_ = now_ms;
     return;

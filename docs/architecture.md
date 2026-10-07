@@ -73,9 +73,11 @@ Every screen that isn't showing reply text uses a **hero layout**: the Hermes Ag
 - **Push-to-talk (default):** hold to speak, release to send. A press under 350 ms is discarded as a tap, and recording stops at 30 s.
 - **Tap mode** (`set talk_mode tap`): tap to start; the VAD (or a second tap) ends the utterance.
 - **Barge-in:** pressing talk while a reply plays stops playback immediately. The new message reaches Hermes, whose default "interrupt" busy mode stops the old turn.
-- **Cancel** acts on release: it discards a recording, dismisses an overlay, or stops a turn (Hermes `/stop`).
+- **Cancel** acts on release: it discards a recording, dismisses an overlay, or requests a stop of active work (`cancel` → Hermes `/stop`). The device shows "Stop requested" until a matching `turn.end` reports the outcome; with only speech playing it silences locally and sends nothing.
+- **Silence** (466px touch display) aborts local playback and keeps later audio for that reply quiet. It sends nothing; work continues.
+- **State is kept apart:** playback (Silence), capture (who owns the recording and whether a Discard target is honest), remote work and its stop request, and the selected view are separate facts in `hg::App`. See [Stopping work](protocol.md#stopping-work).
 - **Holding CANCEL for 2 s** starts a new session (`session.new` → Hermes `/new`). It fires while still held, after a countdown in the hint bar. The hold is the confirmation, so the plugin answers Hermes's "Confirm /new" itself.
-- **Questions** from Hermes (other confirmations, dangerous-command approvals) take over the screen: TALK answers yes, CANCEL answers no. A question that arrives while you are recording waits until you finish.
+- **Questions** from Hermes (other confirmations, dangerous-command approvals) take over the screen: the physical TALK button answers yes, CANCEL answers no; touch boards answer only with the rendered Yes/No targets. A question that arrives while you are recording waits until you finish.
 
 ## Hermes side (`plugin/`)
 

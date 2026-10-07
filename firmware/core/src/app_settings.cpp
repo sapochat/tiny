@@ -65,35 +65,87 @@ void App::touch_swipe(TouchView owner, int dx, int dy, TouchControl control) {
   update_model();
 }
 
+uint32_t App::control_revision(TouchControl control) const {
+  switch (control) {
+    case TouchControl::Reply: return reply_epoch_;
+    case TouchControl::Silence: return output_epoch_;
+    case TouchControl::Stop: return work_epoch_;
+    case TouchControl::Discard:
+    case TouchControl::Finish: return capture_epoch_;
+    default: return 0;
+  }
+}
+
+void App::on_touch_talk(bool pressed) {
+  if (pressed && prompt_showing()) return;  // touch Talk asks or clarifies; it never answers Yes
+  touch_talk_ = true;
+  on_button(Button::Talk, pressed);
+  touch_talk_ = false;
+}
+
 void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) {
   if (owner != touch_view()) return;
   if (owner == TouchView::Other && settings_open()) {
     settings_input(Button::Talk, false);
-  } else if (owner == TouchView::Approval && prompt_armed(pressed_at)) {
-    if (control == TouchControl::Yes || control == TouchControl::No)
+  } else if (owner == TouchView::Approval) {
+    if (prompt_armed(pressed_at) && (control == TouchControl::Yes || control == TouchControl::No))
       answer_prompt(control == TouchControl::Yes);
-  } else if (owner == TouchView::Controls && control == TouchControl::Stop) {
-    if (model_.can_stop) cancel_turn();
+  } else if (owner == TouchView::Recording) {
+    // Only a free hand can tap: tap mode, or a physical TALK hold. A touch hold owns the screen.
+    if (control == TouchControl::Discard && model_.capture >= 2) discard_capture();
+    else if (control == TouchControl::Finish && model_.capture == 3 && hands_free_) finish_listening();
+  } else if (control == TouchControl::Silence) {
+    if (model_.can_silence) silence();
+  } else if (control == TouchControl::Stop) {
+    if (model_.can_stop) request_stop();
+    // A pending stop is already shown on the target; a second tap sends nothing.
+  } else if (owner == TouchView::Home && control == TouchControl::Controls) {
+    navigation_ = Navigation::Controls;
+  } else if ((owner == TouchView::Response || owner == TouchView::Controls) && control == TouchControl::Home) {
+    navigation_ = Navigation::Home;
+  } else if (owner == TouchView::Controls && control == TouchControl::Settings) {
+    open_settings();
+  } else if (owner == TouchView::Response && control == TouchControl::Talk) {
+    if (model_.talk_control && talk_mode_ == TalkMode::Tap) {
+      on_touch_talk(true);
+      on_touch_talk(false);
+    }  // hold mode: the target itself says "Hold to talk"; a tap does nothing
   } else if (owner == TouchView::Home && control == TouchControl::Reply && model_.unread_reply) {
     navigation_ = Navigation::Response;
-  } else if (owner == TouchView::Home && mode_ == Mode::Idle && talk_mode_ == TalkMode::Tap) {
-    on_button(Button::Talk, true);
-    on_button(Button::Talk, false);
+  } else if (owner == TouchView::Home && control == TouchControl::None && mode_ == Mode::Idle &&
+             talk_mode_ == TalkMode::Tap) {
+    on_touch_talk(true);
+    on_touch_talk(false);
   }
   update_model();
 }
 
 bool App::settings_title_hit(int x, int y) const {
-  return ui_ && mode_ == Mode::Idle && !speaking() && !prompt_showing() && !ota_busy() &&
-         !wifi_setup_open() && navigation_ != Navigation::Controls && ui_->title_hit(x, y);
+  // The title opens Settings on Home, and on the offline, connecting and pairing screens,
+  // where it is the only on-device route to local recovery. Reading and quick controls
+  // use that area for navigation. Settings never cancel or replay remote work.
+  if (!ui_ || mode_ != Mode::Idle || speaking() || prompt_showing() || ota_busy() || wifi_setup_open())
+    return false;
+  const bool local_only = !can_talk() && overlay_ == Overlay::None;
+  return (local_only || (navigation_ != Navigation::Controls &&
+                         (settings_open() || touch_view() == TouchView::Home))) && ui_->title_hit(x, y);
+}
+
+bool App::settings_allowed() const {
+  return !work_active() && !speaking() && mode_ != Mode::Listening && !prompt_showing() && !ota_busy() &&
+         ota_ != Ota::Restarting && wifi_setup_text_.empty() && !stop_pending_current();
 }
 
 bool App::open_settings() {
   if (prompt_showing() || ota_busy() || ota_ == Ota::Restarting || !wifi_setup_text_.empty()) return false;
   wake_display();
   if (settings_open()) { close_settings(); return true; }
-  if (mode_ == Mode::Listening) cancel_listening("local settings");
-  else if (mode_ == Mode::Thinking || mode_ == Mode::Responding) cancel_turn();
+  // Settings never cancel a recording, a reply or remote work: they open when idle.
+  if (!settings_allowed()) {
+    if (!(ui_ && ui_->round_companion())) set_hint_flash("Settings open when idle");
+    update_model();
+    return false;
+  }
   stop_playback();
   dismiss_overlay();
   menu_ = Menu::Volume;
@@ -216,10 +268,11 @@ void App::settings_input(Button button, bool pressed) {
 void App::settings_tick() {
   if (talk_held_ && cancel_held_ && !settings_chord_fired_ &&
       now() - talk_down_at_ >= 1000 && now() - cancel_down_at_ >= 1000) {
-    if (open_settings()) {
-      settings_chord_fired_ = true;
-      cancel_long_fired_ = true;
-    }
+    // The chord is consumed even when settings refuse (busy, question, update), so its
+    // release can never fall through to Stop work or a prompt answer.
+    open_settings();
+    settings_chord_fired_ = true;
+    cancel_long_fired_ = true;
   }
   if (hardware_check_ == HardwareCheck::Speaker && !hal_.speaker->busy()) {
     hardware_check_ = HardwareCheck::None;
@@ -312,7 +365,7 @@ void App::settings_model() {
 bool App::start_wifi_setup() {
   if (!on_wifi_setup || prompt_showing() || ota_busy() || ota_ == Ota::Restarting) return false;
   if (mode_ == Mode::Listening) cancel_listening("Wi-Fi setup");
-  else if (mode_ != Mode::Idle) cancel_turn();
+  else if (work_active()) request_stop();  // explicit console action; outcome stays honest
   stop_playback();
   close_settings();
   wake_display();

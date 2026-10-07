@@ -63,19 +63,39 @@ def test_native_ui_known_symbols_match_source_font(rig,view):
                 s.send_fixture('turn.end',turn='font',outcome='success')
             else: s.send_fixture('audio.start',stream=92,rate=16000,format='pcm16')
     capture(s,'font-'+view)
-    if view in ('reading','controls'):
-        assert_text(s,'›  Swipe right to return',14,405,rgb(164,164,169))
-    elif view=='idle': assert_text(s,'↓  Controls',14,405,rgb(164,164,169))
-    elif view=='reply-ready': assert_text(s,'Read reply  ↑',18,372,rgb(240,239,235),rgb(32,32,35))
-    else: assert_text(s,'↑  Read reply',14,405,rgb(164,164,169))
+    dim,text,surface=rgb(164,164,169),rgb(240,239,235),rgb(32,32,35)
+    def pill(name,label):
+        from PIL import ImageFont
+        x,y,w,h=s.status()['ui']['controls'][name]
+        width=sum(round(ImageFont.truetype(str(ROOT/'assets/fonts/Geist-Regular.ttf'),18).getlength(c)) for c in label)
+        assert_text(s,label,18,y+(h-22)//2,text,surface,x=x+(w-width)//2)
+    # Interaction v1 replaced the swipe-only footers with visible tap routes; the same
+    # source-TTF oracle now checks their labels, and the reply body keeps ↑ ↓ › coverage.
+    if view=='reading':
+        assert_text(s,'Latest reply',14,61,dim)
+        # Measured 24px wrapping (303px) splits the fixture after "and".
+        assert_text(s,'Known arrows ↑ ↓ and',24,108,text,x=78)
+        assert_text(s,'chevron ›',24,142,text,x=78)
+        pill('stop','Stop work')
+    elif view=='controls':
+        assert_text(s,'Quick controls',14,61,dim)
+        pill('settings','Settings')
+    elif view=='idle': assert_text(s,'↓  Controls',14,405,dim)
+    elif view=='reply-ready': assert_text(s,'Read reply  ↑',18,372,text,surface)
+    else:
+        pill('silence','Silence')
+        pill('stop','Stop work')
 
 def test_native_reply_entire_intended_glyph_coverage(rig):
     s=rig
     s.send_fixture('turn.start',turn='font-coverage')
-    # Eight short lines/page; no wrap or scrolling changes the independent oracle.
+    # Short lines, one visible page at a time; no wrap or scrolling changes the oracle.
+    # The page size is the advertised row count (seven since interaction v1 reserved the
+    # bottom action row), so every intended codepoint is still compared.
+    rows=next(m for m in s.sent if m['type']=='hello')['caps']['display']['text_rows']
     lines=[''.join(map(chr,CODES[i:i+8])) for i in range(0,len(CODES),8)]
-    for start in range(0,len(lines),8):
-        page=lines[start:start+8]
+    for start in range(0,len(lines),rows):
+        page=lines[start:start+rows]
         s.send_fixture('reply',text='\n'.join(page))
         capture(s,'font-coverage-'+str(start))
         for row,label in enumerate(page):

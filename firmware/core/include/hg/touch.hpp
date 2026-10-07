@@ -31,8 +31,6 @@ class TouchGestures {
 
  private:
   enum class State : uint8_t { Idle, Pending, Settings, Talk, Swipe, Ignored };
-  void press(Button b);
-  void release(Button b);
 
   App& app_;
   Config cfg_;
@@ -41,7 +39,7 @@ class TouchGestures {
   uint32_t t0_ = 0;
   TouchView owner_ = TouchView::Other;
   TouchControl control_ = TouchControl::None;
-  uint32_t epoch_ = 0, reply_epoch_ = 0;
+  uint32_t epoch_ = 0, revision_ = 0;  // view epoch and the touched control's target revision
   bool moved_ = false;
 };
 

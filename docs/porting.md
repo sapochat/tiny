@@ -100,7 +100,7 @@ Boards like the ESP32-S3-BOX family and the ESP32-S3-Touch-AMOLED-1.75 route aud
 
 `App::on_button(Button, pressed)` takes four logical buttons: `Talk`, `Cancel`, `Up`, `Down`. Map any physical input onto them:
 
-- **Touch screen:** `hg::TouchGestures` (`firmware/core/include/hg/touch.hpp`) routes raw touch samples by their starting view: hold is `Talk`, vertical response gestures scroll, Home gestures open replies/quick controls, and approval decisions use rendered Yes/No hit targets. No navigation swipe synthesizes `Cancel`. See [touch navigation](using-gadget.md#touch-navigation). Feed it from the touch driver and set `DeviceProfile::touch_screen` so the hints say "Hold the screen to talk". `port_touch.cpp` does this for a CST9217.
+- **Touch screen:** `hg::TouchGestures` (`firmware/core/include/hg/touch.hpp`) routes raw touch samples by their starting view: a still hold on Home (or on an explicit Talk target) is a touch-owned `Talk` that never answers a question, vertical response gestures scroll, Home gestures open replies/quick controls, and approval decisions use rendered Yes/No hit targets. Each tap acts only if its target's revision (`App::control_revision`) is unchanged when the finger lifts. No navigation swipe synthesizes `Cancel`. See [touch navigation](using-gadget.md#touch-navigation). Feed it from the touch driver and set `DeviceProfile::touch_screen` so the hints say "Hold the screen to talk". `port_touch.cpp` does this for a CST9217.
 - **Rotary encoder:** detents → `Up` / `Down`; push → `Talk`.
 - **A single button:** `Talk` only. Long-press handling for `Cancel` belongs in the port.
 
