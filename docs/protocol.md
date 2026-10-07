@@ -123,7 +123,7 @@ If authentication fails, the server sends `{"type": "error", "code": "auth_faile
 
 | Message | Meaning |
 |---|---|
-| `{"type": "turn.start", "turn": "..."}` | Hermes started working on a message |
+| `{"type": "turn.start", "turn": "...", "request": "t3"}` | Hermes started working on a message. `request`, when present, is the `id` of the device's own `text` or `audio.start` this turn serves; it is absent for work the device did not ask for |
 | `{"type": "transcript", "text": "..."}` | What speech-to-text heard |
 | `{"type": "status", "text": "Searching the web"}` | Live working-state phrase (empty clears it) |
 | `{"type": "reply.delta", "turn": "...", "text": "partial..."}` | Streaming preview; `text` is cumulative |
@@ -159,11 +159,11 @@ Only a `turn.end` that names the same turn establishes what happened:
 - `cancelled` means the remaining work was stopped. Steps that already ran are not undone.
 - `success` or `failure` after a stop request means the turn ended without a confirmed stop. Hermes can report an interrupted turn either way, so devices do not show these as stopped.
 - A dropped connection before that `turn.end` leaves the outcome unknown. Nothing is resent after reconnecting; a later `turn.end` for the same turn still resolves it.
-- A stop sent before any `turn.start` named the work cannot be matched to a later turn, because `turn.start` does not identify the request it serves. Devices keep it pending only for the next turn that starts for that same request, then report its outcome as unknown. Sending a new request retires it, still unknown; it is never pending for the new request, which can be stopped on its own.
+- A stop sent before any `turn.start` named the work is matched through `request`: a `turn.start` naming the same request binds the stop to that turn, and its `turn.end` settles it like any other. A `turn.start` naming an earlier request is that earlier work, never the new request's, and its `turn.end` settles only the stop retired with it. From a server that omits `request`, devices keep the stop pending only for the next turn that starts, then report its outcome as unknown. Sending a new request retires a pending stop; it is never pending for the new request, which can be stopped on its own.
 - Once a device knows the current turn's id, a `turn.end` without a `turn` (or with a non-string one) cannot be attributed: it neither confirms a stop nor ends that work. A server that never names turns still ends its current unnamed turn this way.
 - A missing identity is never a wildcard: a `turn.end` that names any turn never ends a turn whose `turn.start` had no name. An end naming an earlier stopped turn settles only that earlier stop.
 - Final `reply` text is not an end. Work stays open until its `turn.end`; a device that receives nothing about the turn for three minutes reports the outcome as unknown, never as finished. A recording that is discarded, or too short to send, makes no request and leaves open work open.
-- `reply` and `reply.delta` text that names a turn other than the current one, or an earlier turn the device knows, is not shown as the current work's text. Text without a `turn` is shown as the latest work's. A device describes an ending only under text from that same work.
+- `reply` and `reply.delta` text that names a turn other than the current one, or an earlier turn the device knows, is not shown as the current work's text. The Hermes adapter tags each send with the turn of the run that produced it, so late output from a stopped run keeps that run's turn rather than the newer one's. Text without a `turn` is shown as the latest work's. A device describes an ending only under text from that same work.
 
 Messages arrive in order on the one connection, so a `turn.end` that a device receives after sending a new `text` or `audio.end`, but before the next `turn.start`, belongs to earlier work and never ends the new request.
 

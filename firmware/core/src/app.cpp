@@ -449,16 +449,35 @@ void App::h_unpaired(const json::Value&) {
 bool App::can_talk() const { return phase_ == Phase::Online && paired_ && ota_ != Ota::Receiving; }
 
 void App::h_turn_start(const json::Value& m) {
+  const std::string& turn = m["turn"].as_string();
+  // A host that names the request a turn serves ("request": the id of this device's text or
+  // audio.start) settles which work it is. Without that name, the first turn.start after a
+  // request is taken to be that request's turn; any other is new work.
+  const std::string& named = m.has("request") ? m["request"].as_string() : std::string();
+  if (!named.empty() && named != sent_request_) {
+    // An earlier request's late start: it belongs to the stop retired with that request.
+    if (earlier_stop_ == StopState::Unknown && named == earlier_stop_request_ && !turn.empty()) {
+      earlier_stop_turn_ = turn;
+      earlier_stop_request_.clear();
+    }
+    // While this device waits for its own request, another request's turn never stands in
+    // for it: its text and end stay with that other work.
+    if (work_ == Work::Requested) {
+      if (!turn.empty() && turn != earlier_stop_turn_) prior_turn_ = turn;
+      return;
+    }
+    if (!turn.empty() && turn == earlier_stop_turn_) return;
+  }
   ++touch_epoch_;  // an old Stop contact must not stop a new turn
   ++work_epoch_;
-  const std::string& turn = m["turn"].as_string();
-  // The first turn.start after a request is that request's turn; any other is new work.
   const bool requested = work_ == Work::Requested;
   // A stop sent before Hermes named the work belongs to the turn that starts for that
-  // same request: bound to it, though never matchable by id. Any other stop is for older
-  // work and is kept apart, so it can neither block nor relabel this turn.
+  // same request. It becomes matchable by id only when the host named the request; any
+  // other stop is for older work and is kept apart, so it can neither block nor relabel
+  // this turn.
   if (stop_ == StopState::Requested && requested && stop_turn_.empty()) {
     stop_turn_ = turn;
+    if (!named.empty() && named == stop_request_ && !turn.empty()) stop_matchable_ = true;
     if (silenced_ && silenced_turn_.empty()) silenced_turn_ = turn;  // its quiet binds too
   } else if (stop_ != StopState::None && (turn.empty() || turn != stop_turn_)) retire_stop();
   if (!requested) {
@@ -498,6 +517,7 @@ void App::h_turn_end(const json::Value& m) {
     earlier_stop_ = outcome == "cancelled" ? StopState::Stopped : outcome == "success" ? StopState::Finished
                     : outcome == "failure" ? StopState::Failed : StopState::Unknown;
     earlier_stop_turn_.clear();
+    earlier_stop_request_.clear();
     return;
   }
   // The channel is ordered: an end received after this device sent a newer request, but
@@ -1124,6 +1144,8 @@ void App::retire_stop() {
   const bool open = stop_ == StopState::Requested || stop_ == StopState::Unknown;
   earlier_stop_ = stop_ == StopState::Requested ? StopState::Unknown : stop_;
   earlier_stop_turn_ = open && stop_matchable_ ? stop_turn_ : std::string();
+  // A request-scoped stop can still be settled if a later turn.start names that request.
+  earlier_stop_request_ = open && !stop_matchable_ && stop_turn_.empty() ? stop_request_ : std::string();
   stop_ = StopState::None;
   stop_turn_.clear();
   stop_request_.clear();
