@@ -365,6 +365,7 @@ class App {
   // names its turn. Kept apart so it never relabels or blocks the current work.
   StopState earlier_stop_ = StopState::None;
   std::string earlier_stop_turn_;
+  std::string earlier_stop_request_;  // its request id, while no turn.start has named it
   // How the latest work ended, as far as this device knows; None while it is open.
   enum class Outcome : uint8_t { None, Finished, Stopped, Failed, Unknown };
   Outcome outcome_ = Outcome::None;

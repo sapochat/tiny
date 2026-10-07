@@ -261,8 +261,9 @@ class DeviceSession:
     async def send_notice(self, text: str, ttl_s: float = 8) -> None:
         await self.send_json(protocol.message("notice", text=text, ttl_s=ttl_s))
 
-    async def turn_start(self, turn: str) -> None:
-        await self.send_json(protocol.message("turn.start", turn=turn))
+    async def turn_start(self, turn: str, *, request: str | None = None) -> None:
+        """``request`` names the device's own ``text``/``audio.start`` id this turn serves."""
+        await self.send_json(protocol.message("turn.start", turn=turn, request=request))
 
     async def turn_end(self, turn: str, outcome: str = "success") -> None:
         await self.send_json(protocol.message("turn.end", turn=turn, outcome=outcome))

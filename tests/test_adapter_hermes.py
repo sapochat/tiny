@@ -8,6 +8,8 @@ Run with a Python that can import Hermes, e.g.:
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import math
 import struct
@@ -82,7 +84,10 @@ def gadget(loop_thread, tmp_path, monkeypatch):
         if event.source.user_id not in state.authorized:
             await adapter.send(event.source.chat_id, PAIRING_TEXT)
             return None
-        return state.reply(event)
+        result = state.reply(event)
+        if inspect.isawaitable(result):  # a test can stand in for a long-running agent
+            result = await result
+        return result
 
     adapter.set_message_handler(handler)
     assert loop_thread.run(adapter.connect())
@@ -401,7 +406,8 @@ def test_first_approved_device_becomes_the_home_channel(gadget, make_sim):
     assert first.wait_for(lambda: gadget.adapter.config.home_channel is not None, timeout=5)
     home = gadget.adapter.config.home_channel
     assert (home.chat_id, home.name, home.platform.value) == (first.status()["device_id"], "Desk", "gadget")
-    assert gadget.saved_homes == [home]
+    # The running config is set first; persisting runs on a worker thread after it.
+    assert first.wait_for(lambda: gadget.saved_homes == [home], timeout=5), gadget.saved_homes
 
     second = _paired_sim(gadget, make_sim, name="Kitchen", state="second")
     second.run_for(0.5)
@@ -470,3 +476,93 @@ def test_staged_firmware_the_device_refuses_is_dropped(gadget, make_sim, monkeyp
     status = queue.status(device_id)
     assert status["code"] == "wrong_board" and "built for esp32s3-breadboard" in status["error"]
     assert queue.pending() == [] and sim.update_image is None
+
+
+def test_late_text_from_stopped_work_keeps_its_own_turn(gadget, make_sim):
+    """Stop request A, ask B, then A's agent flushes late text (as a cancelled run's final send
+    or stream can). The text must be tagged as A's turn, never as B's, and turn.start must name
+    the device request it serves."""
+    import threading
+
+    sim = _paired_sim(gadget, make_sim)
+    release_late = threading.Event()
+    late_sent = threading.Event()
+
+    async def late_sender(event):
+        while not release_late.is_set():
+            await asyncio.sleep(0.01)
+        await gadget.adapter.send(event.source.chat_id, "late first", reply_to=event.message_id)
+        late_sent.set()
+
+    async def reply(event):
+        if event.text == "first":
+            asyncio.get_running_loop().create_task(late_sender(event))  # outlives the cancelled run
+            await asyncio.sleep(3600)
+        if event.text == "second":
+            while not late_sent.is_set():
+                await asyncio.sleep(0.01)
+            await asyncio.sleep(0.2)
+            return "second answer"
+        return None
+
+    gadget.reply = reply
+    sim.type_text("first")
+    assert sim.wait_for(lambda: sim.last_received("turn.start") is not None, timeout=5)
+    first_request = next(m["id"] for m in reversed(sim.sent) if m.get("type") == "text")
+    turn_a = sim.last_received("turn.start")
+    assert turn_a.get("request") == first_request
+
+    sim.tap("cancel")
+    assert sim.wait_for(lambda: (sim.last_received("turn.end") or {}).get("turn") == turn_a["turn"], timeout=10)
+    assert sim.last_received("turn.end")["outcome"] == "cancelled"
+
+    sim.type_text("second")
+    second_request = next(m["id"] for m in reversed(sim.sent) if m.get("type") == "text")
+    assert sim.wait_for(lambda: sim.last_received("turn.start")["turn"] != turn_a["turn"], timeout=5)
+    turn_b = sim.last_received("turn.start")
+    assert turn_b.get("request") == second_request
+
+    release_late.set()
+    assert sim.wait_for(lambda: any(m.get("text") == "late first" for m in sim.received), timeout=5)
+    late = next(m for m in sim.received if m.get("text") == "late first")
+    assert late.get("turn") == turn_a["turn"], f"late text from stopped work tagged {late.get('turn')!r}"
+
+    assert sim.wait_for(lambda: (sim.last_received("turn.end") or {}).get("turn") == turn_b["turn"], timeout=10)
+    final = sim.last_received("reply")
+    assert final["text"] == "second answer" and final.get("turn") == turn_b["turn"]
+    work = sim.status()["work"]
+    assert work["lifecycle"] == "ended" and work["outcome"] == "finished"
+
+
+def test_edits_of_a_stopped_runs_message_keep_its_turn(gadget, make_sim):
+    """An edit-based stream of run A that lands after run B started stays A's text."""
+    import threading
+
+    sim = _paired_sim(gadget, make_sim)
+    a = gadget.adapter
+    device_id = sim.status()["device_id"]
+    go = threading.Event()
+    sent = {}
+
+    async def reply(event):
+        if event.text == "first":
+            sent["id"] = (await a.send(device_id, "partial first", reply_to=event.message_id)).message_id
+            await asyncio.sleep(3600)
+        if event.text == "second":
+            while not go.is_set():
+                await asyncio.sleep(0.01)
+        return None
+
+    gadget.reply = reply
+    sim.type_text("first")
+    assert sim.wait_for(lambda: "id" in sent, timeout=5)
+    turn_a = sim.last_received("turn.start")["turn"]
+    sim.tap("cancel")
+    assert sim.wait_for(lambda: (sim.last_received("turn.end") or {}).get("turn") == turn_a, timeout=10)
+    sim.type_text("second")
+    assert sim.wait_for(lambda: sim.last_received("turn.start")["turn"] != turn_a, timeout=5)
+    gadget.run(a.edit_message(device_id, sent["id"], "final first", finalize=True))
+    assert sim.wait_for(lambda: any(m.get("text") == "final first" for m in sim.received), timeout=5)
+    edited = next(m for m in sim.received if m.get("text") == "final first")
+    go.set()
+    assert edited.get("turn") == turn_a, f"edit of stopped work tagged {edited.get('turn')!r}"

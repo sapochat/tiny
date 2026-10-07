@@ -62,6 +62,7 @@ MAX_MESSAGE_LENGTH = 4000
 PAIRING_TTL_S = 3600          # mirrors Hermes's pairing-code lifetime
 PAIRING_POLL_S = 2.0
 PAIRING_GRACE_S = 6.0
+KNOWN_TURNS = 32              # recent device-request turns remembered for late-send attribution
 UPDATE_POLL_S = 3.0           # how often staged firmware ('hermes gadget update') is looked for
 # Trigger text for Hermes's unauthorized-DM flow. Never reaches the agent while the
 # device is unpaired; if approval races it, it is a cheap read-only command.
@@ -153,7 +154,11 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         self._hub: Optional[DeviceHub] = None
         self._store: Optional[DeviceStore] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._turns: Dict[str, str] = {}
+        self._turns: Dict[str, str] = {}  # device id -> turn Hermes is running now
+        # turn id -> (device id, device request id) for recent turns, oldest first. Lets late
+        # sends from an interrupted run keep their own turn instead of the newer one's.
+        self._known_turns: Dict[str, Tuple[str, str]] = {}
+        self._sent_turns: Dict[str, str] = {}  # sent message id -> its turn, for later edits
         self._watch_task: Optional[asyncio.Task] = None
         self._update_task: Optional[asyncio.Task] = None
         self._installing: Dict[str, asyncio.Task] = {}  # device id -> staged update being installed
@@ -371,13 +376,37 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             text=text, source=self._source(session), message_id=self._message_id(session, msg_id),
             user_id=session.device_id, user_name=session.name, channel_prompt=session.prompt_context(), **kw)
 
+    def _remember_turn(self, turn: str, device_id: str, request: str) -> None:
+        self._known_turns.pop(turn, None)
+        self._known_turns[turn] = (device_id, request)
+        while len(self._known_turns) > KNOWN_TURNS:
+            self._known_turns.pop(next(iter(self._known_turns)))
+
+    def _turn_for(self, session: DeviceSession, reply_to: Optional[str] = None,
+                  metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """The turn an outbound send belongs to. Hermes anchors a run's sends on the message
+        that started it; when that names a turn this device started, it wins over whichever
+        turn is current, so late output from a stopped run is never labeled as newer work."""
+        for anchor in (reply_to, (metadata or {}).get("reply_to_message_id")):
+            known = self._known_turns.get(str(anchor)) if anchor else None
+            if known and known[0] == session.device_id:
+                return str(anchor)
+        return self._turns.get(session.device_id)
+
+    def _request_event(self, session: DeviceSession, msg_id: str, text: str, **kw) -> MessageEvent:
+        """A user request from the device: its turn is remembered with the request id."""
+        event = self._event(session, msg_id, text, **kw)
+        if msg_id:
+            self._remember_turn(event.message_id, session.device_id, msg_id)
+        return event
+
     async def on_text(self, session: DeviceSession, msg_id: str, text: str) -> None:
-        await self.handle_message(self._event(session, msg_id, text, message_type=MessageType.TEXT))
+        await self.handle_message(self._request_event(session, msg_id, text, message_type=MessageType.TEXT))
 
     async def on_utterance(self, session: DeviceSession, msg_id: str, wav: bytes, seconds: float) -> None:
         path = await cache_audio_from_bytes_async(wav, ".wav")
         logger.debug("[%s] %.1fs utterance from %s -> %s", self.name, seconds, session.device_id, path)
-        await self.handle_message(self._event(
+        await self.handle_message(self._request_event(
             session, msg_id, "", message_type=MessageType.VOICE, media_urls=[path], media_types=["audio/wav"]))
 
     async def on_cancel(self, session: DeviceSession) -> None:
@@ -408,13 +437,18 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             return
         turn = event.message_id or uuid.uuid4().hex[:12]
         self._turns[session.device_id] = turn
-        await session.turn_start(turn)
+        known = self._known_turns.get(turn)
+        request = known[1] if known and known[0] == session.device_id else None
+        await session.turn_start(turn, request=request or None)
 
     async def on_processing_complete(self, event: MessageEvent, outcome) -> None:
         session = self._session(event.source.chat_id)
         if session is None or not session.paired:
             return
-        turn = self._turns.pop(session.device_id, None) or event.message_id or ""
+        current = self._turns.get(session.device_id)
+        turn = event.message_id or current or ""
+        if current == turn or not event.message_id:
+            self._turns.pop(session.device_id, None)  # a late end of older work leaves the newer turn
         await session.turn_end(turn, getattr(outcome, "value", str(outcome)))
 
     def set_status_text(self, chat_id: str, text: Optional[str]) -> None:
@@ -448,10 +482,16 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             await session.send_transcript(textfmt.for_device(heard, session.charset))
             return SendResult(success=True, message_id=uuid.uuid4().hex[:12])
         text = textfmt.for_device(content, session.charset)
+        message_id = uuid.uuid4().hex[:12]
         if text:
             interim = bool((metadata or {}).get("_interim_send"))
-            await session.send_reply(text, turn=self._turns.get(session.device_id), interim=interim)
-        return SendResult(success=True, message_id=uuid.uuid4().hex[:12])
+            turn = self._turn_for(session, reply_to, metadata)
+            await session.send_reply(text, turn=turn, interim=interim)
+            if turn:
+                self._sent_turns[message_id] = turn
+                while len(self._sent_turns) > KNOWN_TURNS * 4:
+                    self._sent_turns.pop(next(iter(self._sent_turns)))
+        return SendResult(success=True, message_id=message_id)
 
     def supports_draft_streaming(self, chat_type=None, metadata=None, chat_id=None) -> bool:
         return True
@@ -461,7 +501,8 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         session = self._session(chat_id)
         if session is None or not session.paired:
             return SendResult(success=False, error="gadget not connected")
-        await session.send_delta(textfmt.for_device(content, session.charset), turn=self._turns.get(session.device_id))
+        await session.send_delta(textfmt.for_device(content, session.charset),
+                                 turn=self._turn_for(session, metadata=metadata))
         return SendResult(success=True)
 
     async def edit_message(self, chat_id: str, message_id: str, content: str, *, finalize: bool = False) -> SendResult:
@@ -475,7 +516,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             if text:
                 await session.send_notice(text, ttl_s=15)
             return SendResult(success=True, message_id=message_id)
-        turn = self._turns.get(session.device_id)
+        turn = self._sent_turns.get(str(message_id)) or self._turns.get(session.device_id)
         if finalize:
             await session.send_reply(text, turn=turn)
         else:
@@ -589,7 +630,8 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
             return True
         return super()._should_auto_tts_for_chat(chat_id)
 
-    async def _play_file(self, chat_id: str, path: str) -> SendResult:
+    async def _play_file(self, chat_id: str, path: str, reply_to: Optional[str] = None,
+                         metadata: Optional[Dict[str, Any]] = None) -> SendResult:
         session = self._session(chat_id)
         if session is None or not session.paired:
             return SendResult(success=False, error="gadget not connected")
@@ -600,18 +642,18 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         except Exception as exc:  # undecodable file, missing ffmpeg, I/O error
             logger.warning("[%s] cannot play %s: %s", self.name, path, exc)
             return SendResult(success=False, error=str(exc))
-        await session.play_pcm(pcm, session.speaker_rate, turn=self._turns.get(session.device_id))
+        await session.play_pcm(pcm, session.speaker_rate, turn=self._turn_for(session, reply_to, metadata))
         return SendResult(success=True, message_id=uuid.uuid4().hex[:12])
 
     async def play_tts(self, chat_id: str, audio_path: str, **kwargs) -> SendResult:
-        return await self._play_file(chat_id, audio_path)
+        return await self._play_file(chat_id, audio_path, kwargs.get("reply_to"), kwargs.get("metadata"))
 
     async def send_voice(self, chat_id: str, audio_path: str, caption: Optional[str] = None,
                          reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None,
                          **kwargs) -> SendResult:
-        result = await self._play_file(chat_id, audio_path)
+        result = await self._play_file(chat_id, audio_path, reply_to, metadata)
         if caption:
-            await self.send(chat_id, caption, metadata=metadata)
+            await self.send(chat_id, caption, reply_to=reply_to, metadata=metadata)
         return result
 
     def supports_streaming_tts(self, chat_id: str, audio_format: AudioFormat) -> bool:
@@ -625,7 +667,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         if session is None or not self.supports_streaming_tts(chat_id, audio_format):
             return None
         out = await session.open_audio(audio_format.sample_rate, audio_format.channels,
-                                       turn=self._turns.get(session.device_id))
+                                       turn=self._turn_for(session, metadata=metadata))
         return GadgetTTSHandle(chat_id=chat_id, audio_format=audio_format, out=out)
 
     async def write_streaming_tts(self, handle: StreamingTTSHandle, chunk: bytes) -> None:

@@ -200,9 +200,9 @@ class Rig:
         session = self.session
         self._deliver(lambda: session.send_json({'type': kind, **data}))
 
-    def turn_start(self, turn):
+    def turn_start(self, turn, request=None):
         session = self.session
-        self._deliver(lambda: session.turn_start(turn))
+        self._deliver(lambda: session.turn_start(turn, request=request))
 
     def turn_end(self, turn, outcome):
         session = self.session
