@@ -834,6 +834,7 @@ void App::h_prompt(const json::Value& m) {
   prompt_id_ = id;
   ++touch_epoch_;
   prompt_scroll_ = 0;
+  prompt_read_ = false;
   prompt_title_ = m["title"].as_string();
   prompt_text_ = m["text"].as_string();
   prompt_since_ = now();
@@ -850,7 +851,20 @@ bool App::prompt_showing() const { return !prompt_id_.empty() && mode_ != Mode::
 
 bool App::prompt_armed(uint32_t pressed_at) const {
   // Guards against a press meant for something else landing on a question that just appeared.
-  return static_cast<int32_t>(pressed_at - prompt_since_) >= static_cast<int32_t>(kPromptArmMs);
+  return prompt_read_ && static_cast<int32_t>(pressed_at - prompt_since_) >= static_cast<int32_t>(kPromptArmMs);
+}
+
+bool App::prompt_read() {
+  // Only the round companion's touch reader scrolls a question; other layouts keep their
+  // existing behaviour. The latch never resets for the same question: scrolling back is fine.
+  if (prompt_read_ || prompt_id_.empty()) return prompt_read_ = !prompt_id_.empty();
+  if (!ui_ || !ui_->round_companion() || !profile_.touch_screen) return prompt_read_ = true;
+  UiModel probe;
+  probe.screen = Screen::Prompt;
+  probe.touch_prompt = true;
+  const int total = static_cast<int>(ui_->body_lines(prompt_text_, probe).size());
+  prompt_read_ = prompt_scroll_ >= std::max(0, total - ui_->body_rows(probe));
+  return prompt_read_;
 }
 
 void App::answer_prompt(bool yes) {
@@ -965,7 +979,7 @@ void App::on_button(Button button, bool pressed) {
           return;
         }
         if (prompt_showing()) {
-          if (prompt_armed(now())) answer_prompt(true);
+          if (prompt_read() && prompt_armed(now())) answer_prompt(true);
           break;
         }
         start_listening(talk_mode_ == TalkMode::Tap);
@@ -997,7 +1011,7 @@ void App::on_button(Button button, bool pressed) {
       cancel_held_ = false;
       if (cancel_long_fired_) return;
       if (prompt_showing()) {
-        if (prompt_armed(cancel_down_at_)) answer_prompt(false);
+        if (prompt_read() && prompt_armed(cancel_down_at_)) answer_prompt(false);
       } else if (mode_ == Mode::Listening) discard_capture();
       else if (overlay_ != Overlay::None) dismiss_overlay();
       else if (work_active() || speaking()) request_stop();  // speech alone is only silenced
@@ -1689,6 +1703,7 @@ void App::update_model() {
   m.color_test = false;
   m.quick_controls = false;
   m.touch_prompt = false;
+  m.prompt_unread = false;
   m.unread_reply = false;
   m.reply_ready = reply_completed_ && unread_reply_;
   // Navigation-owned views are rebuilt every time: leaving one must not leave it drawn.
@@ -1808,6 +1823,7 @@ void App::update_model() {
     if (profile_.touch_screen) {
       m.hero = false;
       m.touch_prompt = true;
+      m.prompt_unread = !prompt_read();
       m.body = prompt_text_;
       m.detail.clear();
       m.scroll = prompt_scroll_;

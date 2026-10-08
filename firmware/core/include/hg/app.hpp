@@ -246,6 +246,8 @@ class App {
   bool prompt_showing() const;
   // True when a press that started at `pressed_at` may answer the question.
   bool prompt_armed(uint32_t pressed_at) const;
+  // A question that does not fit stays unanswerable until its end has been shown once.
+  bool prompt_read();
   void answer_prompt(bool yes);
   void clear_prompt();
   void flush_sensors();
@@ -270,6 +272,7 @@ class App {
   uint32_t touch_epoch_ = 0, reply_epoch_ = 0;
   TouchControl pressed_ = TouchControl::None;
   int prompt_scroll_ = 0;
+  bool prompt_read_ = false;  // the last line of the current question has been on screen
   bool unread_reply_ = false;
   bool reply_completed_ = false, reply_stopped_ = false;
   bool awaiting_reply_ = false;  // keep latest text readable until the next reply begins
