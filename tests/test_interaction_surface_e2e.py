@@ -48,7 +48,7 @@ TEXT, DIM, SURFACE, AMBER = rgb(240, 239, 235), rgb(164, 164, 169), rgb(32, 32, 
 SAFE_R = 228                      # the existing safe_target corner radius
 PORTRAIT = (137, 96, 192, 192)    # approved face position, compared with MP4 decodes elsewhere
 HEADLINE = (0, 286, 466, 56)      # 30px headline band (y299, or y289 above an action row)
-DETAIL = (0, 324, 466, 48)        # 17px detail band (y342, or y328 above an action row)
+DETAIL = (0, 324, 466, 48)        # 18px detail band (y342, or y328 above an action row)
 REQUESTS = {'text', 'audio.start', 'audio.end', 'audio.cancel', 'cancel', 'session.new', 'prompt.reply'}
 
 
@@ -264,7 +264,7 @@ class Rig:
         return self.shows(text, 30, TEXT, 0, HEADLINE)
 
     def detail(self, text):
-        return self.shows(text, 17, DIM, 0, DETAIL)
+        return self.shows(text, 18, DIM, 0, DETAIL)
 
     # evidence
     def snap(self, label):

@@ -15,7 +15,7 @@ pinned `1.4.2/OFL.txt` tag (the font's internal version is independently 1.800).
 
 Regenerate offline with `.venv/bin/python tools/build_geist.py` (Pillow 12.3.0).
 `manifest.json` records version, input/output hashes, glyph inventory and sizes.
-The five sizes are 14, 17, 18, 24 and 30 pixels. Coverage has 16 levels, encoded
+The four sizes are 14, 18, 24 and 30 pixels (17 was folded into 18 to reclaim flash). Coverage has 16 levels, encoded
 as one-byte runs (high nibble = length minus one, low nibble = coverage).
 No runtime font file, font engine, download, texture allocation or glyph cache
 is required. Each draw decodes directly into the existing RGB565 framebuffer.

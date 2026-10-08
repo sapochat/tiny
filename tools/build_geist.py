@@ -6,7 +6,7 @@ import hashlib, json
 from PIL import Image, ImageDraw, ImageFont, __version__
 ROOT=Path(__file__).resolve().parents[1]
 source=ROOT/'assets/fonts/Geist-Regular.ttf'
-sizes=[14,17,18,24,30]
+sizes=[14,18,24,30]
 # Runtime lookup uses std::lower_bound: all faces must share a strictly
 # increasing, duplicate-free table. Never rely on insertion order here.
 codes=sorted(set(list(range(32,127))+list(range(160,256))+[0x2013,0x2014,0x2018,0x2019,0x201c,0x201d,0x2026,0x2191,0x2193,0x203a,0xfffd]))

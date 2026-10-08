@@ -102,6 +102,8 @@ class App {
   TouchControl touch_hit(int x, int y) const;
   void touch_swipe(TouchView owner, int dx, int dy, TouchControl control);
   void touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at);
+  // Touch-down feedback only: lights a target under a still finger. Never acts.
+  void touch_press(TouchControl control);
   // A touch-owned TALK press. Unlike a physical TALK press it never answers a question.
   void on_touch_talk(bool pressed);
   // Returns true when this input only wakes a sleeping display.
@@ -266,6 +268,7 @@ class App {
   unsigned work_page_ = 0, shelf_epoch_ = 0;
   Navigation navigation_ = Navigation::Auto;
   uint32_t touch_epoch_ = 0, reply_epoch_ = 0;
+  TouchControl pressed_ = TouchControl::None;
   int prompt_scroll_ = 0;
   bool unread_reply_ = false;
   bool reply_completed_ = false, reply_stopped_ = false;

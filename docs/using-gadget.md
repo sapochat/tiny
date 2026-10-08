@@ -3,11 +3,22 @@
 ## Recent results
 
 On the 466px round touchscreen, swipe down from Home to Quick controls and tap
-**Recent**. The shelf shows up to eight recent jobs, with the host's stage and a
-short excerpt of its final reply. Tap a row to read; vertical swipes scroll using
-the normal reading layout. **Next** cycles through groups of three. Tap the title
-or swipe right to return (result → shelf → controls → Home). Navigation does not
-submit, cancel, approve, or record anything.
+**Recent**. The shelf shows up to eight recent jobs as cards, three at a time.
+Each card leads with a small coloured status mark and word (**Finished** green,
+**Failed** red, **Stopped** amber for a cancelled job, **Working** blue,
+**Unknown** grey), then up to two lines of the host's own final-reply excerpt,
+ending in "…" when longer. A job with no text says **No text from Hermes**. Tap a
+card to read it; vertical swipes scroll using the normal reading layout, and the
+reader's bottom line names the outcome in the same words. With more than three
+jobs, a **More ›** pill and page dots appear; on the last page the pill reads
+**Back to top**. An empty shelf says **No recent work**. Tap the title or swipe
+right to return (result → shelf → controls → Home). Navigation does not submit,
+cancel, approve, or record anything.
+
+Every round-screen target lights while a still finger rests on it. Only that
+target's rows are redrawn. Moving the finger past the slop distance or lifting
+it clears the highlight; the highlight never acts. Quick controls show each
+slider's value inside its track, clear of the **Recent** pill.
 
 A result already open stays on its existing revision and scroll position when a
 new revision arrives. Return to the shelf and open it again to see the newer text.
@@ -118,7 +129,7 @@ Approval prioritizes the complete scrollable question and existing Yes/No semant
 
 The face-first layout places the original 192px animated character at (137,96),
 with smooth proportional Geist text: a small HERMES label, 30px state at y299,
-and 17px support at y342. When a support line and action targets share the face,
+and 18px support at y342. When a support line and action targets share the face,
 the two lines move up to y289 and y328 so neither touches the targets. Idle says
 **Hold to talk** or **Tap to talk** according to the configured mode, with a
 **↓ Controls** link. Listening says **Release to finish** for a touch hold,

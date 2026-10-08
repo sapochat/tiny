@@ -77,6 +77,12 @@ void App::touch_swipe(TouchView owner, int dx, int dy, TouchControl control) {
   update_model();
 }
 
+void App::touch_press(TouchControl control) {
+  if (control == pressed_) return;
+  pressed_ = control;
+  update_model();
+}
+
 uint32_t App::control_revision(TouchControl control) const {
   if (control >= TouchControl::Recent) return shelf_epoch_;
   switch (control) {
