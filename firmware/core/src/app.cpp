@@ -1679,6 +1679,7 @@ void App::tick() {
   flush_sensors();
 
   if (ui_ && ui_->transitioning()) { model_.time_ms = t; ui_->render(model_); }
+  if (ui_) if (const int frames = ui_->take_motion_frames()) set_sensor("perf_motion_frames", frames);
   if (t - frame_at_ >= kFrameMs) {
     frame_at_ = t;
     ++model_.frame;

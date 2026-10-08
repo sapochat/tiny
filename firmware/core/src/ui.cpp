@@ -303,7 +303,7 @@ void Ui::render_motion(const UiModel& m) {
   const int view = urgent ? -1 : m.recent ? 3 : m.result ? 4 : m.quick_controls ? 2 : m.hero ? 0 : 1;
   if (view != motion_view_) {
     if (view >= 0 && motion_view_ >= 0 && valid_ && m.navigation != motion_navigation_) {
-      motion_active_ = true; motion_start_ = m.time_ms;
+      motion_active_ = true; motion_start_ = m.time_ms; motion_frames_ = 0;
       const bool vertical = view == 0 || motion_view_ == 0;
       motion_dx_ = vertical ? 0 : (view > motion_view_ ? 32 : -32);
       motion_dy_ = vertical ? (view == 2 || motion_view_ == 1 ? -32 : 32) : 0;
@@ -341,7 +341,8 @@ void Ui::render_motion(const UiModel& m) {
     if (changed && start<0) start=y;
     if (!changed && start>=0) { display_.flush(start,y); start=-1; }
   }
-  if (elapsed==220) motion_active_=false;
+  ++motion_frames_;
+  if (elapsed==220) { motion_active_=false; motion_report_=motion_frames_; }
 }
 
 void Ui::render_companion(const UiModel& m) {
