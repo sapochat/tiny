@@ -662,7 +662,8 @@ def test_stop_work_reachable_from_reading_and_controls(ix, view):
     tap(s, x, y)
     assert [c.get('turn') for c in r.sent_since(m, 'cancel')] == ['work-3']
     assert ui(s)['view'] == view and ui(s)['activity'] == 'streaming'
-    r.require_label('stop', 'Stop requested', fg=DIM, bg=0)
+    r.require_label('stop', 'Stop task', fg=DIM, bg=0)   # pass 3: inert pill keeps its action name
+    assert r.shows('Stop requested · waiting for Hermes', 18, DIM)   # status on its own line
     tap(s, x, y)
     assert len(r.sent_since(m, 'cancel')) == 1
     r.snap(f'{view}-pending')
@@ -954,7 +955,7 @@ def test_settings_never_cancel_active_work(ix, state):
     swipe(s, dy=100)
     assert ui(s)['view'] == 'controls'
     assert 'settings' not in ui(s)['controls']
-    assert r.shows('Settings open when idle', 18, DIM, 0, (0, 380, 466, 60))
+    assert r.shows('Settings open when idle', 18, DIM, 0, (0, 302, 466, 32))   # pass 3: own status line
     m = r.mark()
     tap(s, 233, 405)
     # Quick controls also report Screen::Settings; the legacy menu would be view 'other'.
@@ -1169,7 +1170,7 @@ def test_new_controls_fit_safe_circle_and_render_supported_glyphs(ix):
     assert r.wait(lambda: ui(s)['speaking'])
     check('home-speaking-working', {'silence', 'stop'})
     tap(s, *r.control('stop'))
-    check('home-stop-pending', {'stop'}, {'stop': ('Requested', 18, DIM, 0)})
+    check('home-stop-pending', {'stop'}, {'stop': ('Stop task', 18, DIM, 0)})
     r.turn_end('geo', 'cancelled')
     assert r.wait(lambda: ui(s)['activity'] == 'idle')
     s.press('talk')
@@ -1189,7 +1190,8 @@ def test_new_controls_fit_safe_circle_and_render_supported_glyphs(ix):
     # Remediation F5: once work has ended, the inert Stop target names its ending
     # (completed_reading ends with success), still an exact source-TTF raster.
     assert 'stop' not in ui(s)['controls']
-    assert r.shows('Finished',18,DIM,0,(238,329,160,52))
+    assert r.shows('Last task: Finished',18,DIM,0,(0,302,466,32))   # pass 3: own status line
+    assert not r.shows('Finished',18,DIM,0,(238,329,160,60))
     check('controls-idle', {'silence', 'settings', 'home'},
           {'silence': ('Mute voice', 18, DIM, 0),
            'home': ('Quick controls', 24, TEXT, 0)}, hero=False)

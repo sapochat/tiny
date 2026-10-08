@@ -1693,6 +1693,8 @@ void App::update_model() {
   m.code.clear();
   m.detail.clear();
   m.body.clear();
+  m.value.clear();
+  m.code.clear();
   m.yes.clear();
   m.no.clear();
   m.hero = false;
@@ -1804,6 +1806,12 @@ void App::update_model() {
       m.detail = "Asking Hermes for a pairing code...";
     }
     m.hint = "waiting for approval";
+    if (ui_ && ui_->round_companion()) {
+      // Round companion: the code is drawn large; the command gets its own lines.
+      if (!pairing_code_.empty()) { m.detail = "On the Hermes host, run:"; m.body = pairing_command_; }
+      else m.detail = "Asking Hermes for a code…";
+      m.hint = "Waiting for approval";
+    }
   } else if (mode_ == Mode::Listening) {
     m.screen = Screen::Listening;
     m.hero = true;

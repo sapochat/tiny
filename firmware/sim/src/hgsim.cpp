@@ -209,6 +209,11 @@ hgsim* hgsim_create(const hgsim_config* cfg, const hgsim_host* host) {
     profile.extra_settings = {"touch_cancel"};
   }
   sim->app = std::make_unique<hg::App>(sim->hal, profile);
+  // Synthetic temporary-network instructions (no radio in the simulator), so the Wi-Fi
+  // setup screen and its close gesture can be exercised end to end.
+  sim->app->on_wifi_setup = [] {
+    return std::string("Network: Hermes-SIM\nPassword: sim-only\nOpen http://192.168.4.1\nAvailable for 10 minutes.");
+  };
   if (cfg->touch) {
     sim->touch = std::make_unique<hg::TouchGestures>(*sim->app);
     sim->app->on_setting_changed = [sim](std::string_view key) {

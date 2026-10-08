@@ -40,17 +40,41 @@ inline uint16_t blend(uint16_t fg,uint16_t bg,unsigned a) {
   return static_cast<uint16_t>(((((fg>>11)*a+(bg>>11)*b+7)/15)<<11)|
       (((((fg>>5)&63)*a+((bg>>5)&63)*b+7)/15)<<5)|(((fg&31)*a+(bg&31)*b+7)/15));
 }
+inline void draw(Canvas& c,int x,int y,const geist_data::Glyph& g,uint16_t fg,uint16_t bg) {
+  unsigned i=0, offset=g.offset;
+  while(i<g.w*g.h) {
+    const unsigned token=geist_data::pixels[offset++], a=token&15;
+    const unsigned end=std::min<unsigned>(g.w*g.h,i+(token>>4)+1);
+    for(;i<end;++i) if(a) c.pixel(x+g.x+i%g.w,y+g.y+i/g.w,blend(fg,bg,a));
+  }
+}
 inline void text(Canvas& c,int x,int y,std::string_view s,int size,uint16_t fg,uint16_t bg=0) {
   size_t p=0;
   while(p<s.size()) {
     const auto& g=glyph(next(s,p),size);
-    unsigned i=0, offset=g.offset;
-    while(i<g.w*g.h) {
-      const unsigned token=geist_data::pixels[offset++], a=token&15;
-      const unsigned end=std::min<unsigned>(g.w*g.h,i+(token>>4)+1);
-      for(;i<end;++i) if(a) c.pixel(x+g.x+i%g.w,y+g.y+i/g.w,blend(fg,bg,a));
-    }
+    draw(c,x,y,g,fg,bg);
     x+=g.advance;
+  }
+}
+// The large display face holds only code characters (digits, capitals, '-').
+inline const geist_data::Glyph* display_glyph(uint32_t cp) {
+  auto first=geist_data::display_codes, last=first+geist_data::display_count;
+  auto it=std::lower_bound(first,last,cp);
+  return it!=last && *it==cp ? &geist_data::display_glyphs[it-first] : nullptr;
+}
+// Width of `s` in the display face, or -1 when any character is not in it.
+inline int display_width(std::string_view s) {
+  int w=0; size_t p=0;
+  while(p<s.size()) { const auto* g=display_glyph(next(s,p)); if(!g) return -1; w+=g->advance; }
+  return w;
+}
+inline void display_text(Canvas& c,int x,int y,std::string_view s,uint16_t fg,uint16_t bg=0) {
+  size_t p=0;
+  while(p<s.size()) {
+    const auto* g=display_glyph(next(s,p));
+    if(!g) return;
+    draw(c,x,y,*g,fg,bg);
+    x+=g->advance;
   }
 }
 // Every source byte is retained in a line (except explicit newline delimiters).

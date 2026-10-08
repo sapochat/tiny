@@ -396,7 +396,70 @@ void App::settings_model() {
       break;
     case Menu::Closed: break;
   }
+  if (ui_ && ui_->round_companion()) round_settings_model();
   if (!check_result_.empty()) m.body += "\n" + check_result_;
+}
+
+void App::round_settings_model() {
+  // Same rows and input semantics as the legacy menu; the round face shows the current
+  // value large, a one-line description, the row position and the row's own action.
+  UiModel& m = model_;
+  const bool checking = hardware_check_ != HardwareCheck::None;
+  std::string action = "Tap to change";
+  switch (menu_) {
+    case Menu::Volume:
+      if (hal_.speaker) { m.value = std::to_string(volume_) + "%"; m.body = "Changes are saved."; }
+      break;
+    case Menu::Brightness:
+      if (hal_.display && hal_.display->info().has_backlight) {
+        m.value = std::to_string(brightness_) + "%";
+        m.body = "Changes are saved.";
+      }
+      break;
+    case Menu::TalkMode:
+      if (hal_.mic) {
+        m.value = talk_mode_ == TalkMode::Hold ? "Hold" : "Tap";
+        m.body = talk_mode_ == TalkMode::Hold ? "Hold to record; release to send." : "Tap to record; pause or tap to send.";
+      }
+      break;
+    case Menu::Microphone:
+      if (hardware_check_ == HardwareCheck::Microphone) {
+        m.value = "Level " + std::to_string(level_) + "%";
+        m.body = "Speak now. Local only; nothing is sent.";
+      }
+      action = checking ? "Tap to stop" : "Tap to start";
+      break;
+    case Menu::Speaker:
+    case Menu::Display:
+      action = checking ? "Tap to stop" : "Tap to start";
+      break;
+    case Menu::Inputs:
+      action = checking ? "Hold the title to leave" : "Tap to start";
+      break;
+    case Menu::IdleTimer:
+      m.value = screen_timeout_ms_ ? std::to_string(screen_timeout_ms_ / 1000) + " seconds" : "Always on";
+      m.body = screen_timeout_ms_ ? "Dims halfway; first input wakes." : "Tap to enable dimming and screen sleep.";
+      break;
+    case Menu::PowerOff: action = "Tap to power off"; break;
+    case Menu::WifiSetup: action = "Tap to start"; break;
+    case Menu::Back: action = "Tap to close"; m.body = "Return to Hermes."; break;
+    case Menu::Info:
+    case Menu::Power: action.clear(); break;
+    case Menu::Closed: break;
+  }
+  m.hint = action.empty() ? "Swipe for next" : action + " · Swipe for next";
+  // Row position among the rows this board actually offers.
+  const bool can_power_off = hal_.power && hal_.power->can_power_off();
+  unsigned index = 0, count = 0;
+  for (int i = static_cast<int>(Menu::Volume); i <= static_cast<int>(Menu::Back); ++i) {
+    const auto row = static_cast<Menu>(i);
+    if ((row == Menu::Power && !hal_.power) || (row == Menu::PowerOff && !can_power_off) ||
+        (row == Menu::WifiSetup && !on_wifi_setup)) continue;
+    if (row == menu_) index = count;
+    ++count;
+  }
+  m.work_page = static_cast<uint8_t>(index);
+  m.work_pages = static_cast<uint8_t>(count);
 }
 
 bool App::start_wifi_setup() {

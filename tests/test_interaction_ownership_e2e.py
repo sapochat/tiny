@@ -22,7 +22,7 @@ from test_touch_navigation import LONG, swipe, tap, ui
 
 pytestmark = requires_sim
 
-OUTCOME_BAND = (0, 400, 466, 66)   # the compact reading outcome line on the round board
+OUTCOME_BAND = (0, 90, 466, 45)   # the reading outcome header line on the round board (pass 3)
 NEW_TEXT = 'NEW partial answer.'
 OLD_TEXT = 'OLD reply for old turn.'
 OLD_LATE = 'OLD late text, old turn.'
@@ -58,7 +58,7 @@ def settings_open_and_close(s):
 
 
 def reading_outcome(r, line):
-    return r.shows(line, 14, DIM, 0, OUTCOME_BAND)
+    return r.shows(line, 18, DIM, 0, OUTCOME_BAND)
 
 
 def open_reading(r):

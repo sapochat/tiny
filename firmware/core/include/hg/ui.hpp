@@ -59,6 +59,7 @@ struct UiModel {
   std::string detail;    // secondary line (status phrase, URL, error)
   std::string body;      // main text (reply, card body)
   std::string code;      // pairing code
+  std::string value;     // round settings: the current row's value, shown large
   int scroll = -1;       // first visible body line; -1 pins to the end
   uint8_t level = 0;     // microphone level 0..100
   bool speaking = false;
@@ -67,7 +68,8 @@ struct UiModel {
   bool prompt_unread = false;  // touch question not yet read to its end: answers are inert
   bool work_available = false, recent = false, result = false;
   std::vector<std::string> work_rows;   // "stage\nglance" for the visible shelf page
-  uint8_t work_page = 0, work_pages = 0;  // shelf page index and count (paging shows when > 1)
+  uint8_t work_page = 0, work_pages = 0;  // shelf page index and count (paging shows when > 1);
+                                          // round settings reuse them for the row position
   // The target under a finger that has not yet moved or lifted; drawn lit, flushed alone.
   TouchControl pressed = TouchControl::None;
   bool unread_reply = false;
@@ -138,6 +140,13 @@ class Ui {
  private:
   uint16_t background() const { return panel_.round ? 0 : rgb565(10, 14, 20); }
   bool companion_model(const UiModel& m) const;
+  // Pairing, local settings (not quick controls) and Wi-Fi setup: local screens that keep
+  // their own input semantics; the round companion draws them in its own design.
+  static bool local_screen(const UiModel& m) {
+    return !m.quick_controls && (m.screen == Screen::Pairing || m.screen == Screen::Settings || m.screen == Screen::Setup);
+  }
+  void render_local(Canvas& c, const UiModel& m);
+  static constexpr UiRect kQuickSilence{74,340,154,48}, kQuickStop{238,340,154,48}, kQuickSettings{163,398,140,40};
   static UiRect prompt_answer_rect(bool yes) { return yes ? UiRect{238,296,150,96} : UiRect{78,296,150,96}; }
   // The 466px companion's shared bottom action row (Home, recording and reading):
   // at most two targets, in priority order. Drawing and hit testing both use it.
