@@ -64,6 +64,7 @@ struct UiModel {
   bool speaking = false;
   bool color_test = false;
   bool quick_controls = false, touch_prompt = false;
+  bool prompt_unread = false;  // touch question not yet read to its end: answers are inert
   bool work_available = false, recent = false, result = false;
   std::vector<std::string> work_rows;   // "stage\nglance" for the visible shelf page
   uint8_t work_page = 0, work_pages = 0;  // shelf page index and count (paging shows when > 1)
@@ -137,6 +138,7 @@ class Ui {
  private:
   uint16_t background() const { return panel_.round ? 0 : rgb565(10, 14, 20); }
   bool companion_model(const UiModel& m) const;
+  static UiRect prompt_answer_rect(bool yes) { return yes ? UiRect{238,296,150,96} : UiRect{78,296,150,96}; }
   // The 466px companion's shared bottom action row (Home, recording and reading):
   // at most two targets, in priority order. Drawing and hit testing both use it.
   int action_slots(const UiModel& m, TouchControl (&slots)[2]) const;

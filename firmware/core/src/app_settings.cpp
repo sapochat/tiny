@@ -48,6 +48,7 @@ void App::touch_swipe(TouchView owner, int dx, int dy, TouchControl control) {
     int total = static_cast<int>(ui_->body_lines(prompt_text_, model_).size());
     int last = std::max(0, total - ui_->body_rows(model_));
     prompt_scroll_ = std::clamp(prompt_scroll_ + (dy < 0 ? 3 : -3), 0, last);
+    prompt_read();
   } else if (!can_talk() || ota_busy() || ota_ == Ota::Restarting) return;
   else if (owner == TouchView::Result) {
     if (dx > 0) navigation_ = Navigation::Recent;
@@ -110,7 +111,7 @@ void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) 
   if (owner == TouchView::Other && settings_open()) {
     settings_input(Button::Talk, false);
   } else if (owner == TouchView::Approval) {
-    if (prompt_armed(pressed_at) && (control == TouchControl::Yes || control == TouchControl::No))
+    if (prompt_read() && prompt_armed(pressed_at) && (control == TouchControl::Yes || control == TouchControl::No))
       answer_prompt(control == TouchControl::Yes);
   } else if (owner == TouchView::Recording) {
     // Only a free hand can tap: tap mode, or a physical TALK hold. A touch hold owns the screen.

@@ -191,6 +191,12 @@ def test_approval_requires_rendered_button_and_scrolls(rig):
     swipe(s, dx=-100)
     swipe(s, dy=100)
     tap(s, 233, 200)
+    # Design pass 3 (B1): a question that does not fit is answerable only once its end
+    # has been shown; read to the end, then come back up before answering.
+    assert 'yes' not in ui(s)['controls'] and 'no' not in ui(s)['controls']
+    for _ in range(25):
+        swipe(s, dy=-100)
+    swipe(s, dy=100)
     x, y = control(s, 'yes')
     s.touch(True, x, y)
     s.touch(True, 600, 600)

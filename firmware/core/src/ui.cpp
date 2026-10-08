@@ -351,7 +351,7 @@ void Ui::render_companion(const UiModel& m) {
   const bool visible = m.hero && !m.quick_controls && !m.touch_prompt;
   const uint32_t key = Hash().val(m.screen).val(m.link).val(m.hero)
       .add(m.headline).add(m.detail).add(m.body).add(m.hint).val(m.scroll)
-      .val(m.quick_controls).val(m.touch_prompt).val(m.unread_reply).val(m.reply_ready)
+      .val(m.quick_controls).val(m.touch_prompt).val(m.prompt_unread).val(m.unread_reply).val(m.reply_ready)
       .val(m.volume).val(m.brightness).val(m.speaking).val(m.has_reply).val(m.can_stop)
       .val(m.can_silence).val(m.stop_pending).val(m.capture).val(m.talk_control).val(m.tap_talk)
       .val(m.settings_ready).val(m.work_available).val(m.recent).val(m.result)
@@ -382,8 +382,7 @@ void Ui::render_companion(const UiModel& m) {
   // Every target is drawn from control_rect, the same rectangle hit testing uses.
   // Available actions are filled; unavailable ones stay in place, outlined and dimmed.
   // A finger resting on an available target lights it until it moves or lifts.
-  auto pill = [&](TouchControl control,std::string_view label,bool enabled) {
-    const auto r=control_rect(control,m);
+  auto pill_at = [&](UiRect r,TouchControl control,std::string_view label,bool enabled) {
     if(!r.w) return;
     const int radius=r.h/2;
     const uint16_t fill=control==m.pressed ? lit : surface;
@@ -394,6 +393,9 @@ void Ui::render_companion(const UiModel& m) {
     }
     geist::text(c,r.x+(r.w-geist::width(label,18))/2,r.y+(r.h-22)/2,label,18,
                 enabled?text:dim,enabled?fill:0);
+  };
+  auto pill = [&](TouchControl control,std::string_view label,bool enabled) {
+    pill_at(control_rect(control,m),control,label,enabled);
   };
   auto draw_control = [&](TouchControl control) {
     switch(control) {
@@ -551,8 +553,15 @@ void Ui::render_companion(const UiModel& m) {
       if(m.settings_ready) draw_control(TouchControl::Settings);
       else center(400,"Settings open when idle",18,dim);
     } else if(m.touch_prompt) {
-      draw_control(TouchControl::No);
-      draw_control(TouchControl::Yes);
+      if(m.prompt_unread) {
+        // Unread question: both answers stay in place, equally inert, until its end is shown.
+        pill_at(prompt_answer_rect(false),TouchControl::None,"No",false);
+        pill_at(prompt_answer_rect(true),TouchControl::None,"Yes",false);
+        center(404,"Scroll to read all",18,dim);
+      } else {
+        draw_control(TouchControl::No);
+        draw_control(TouchControl::Yes);
+      }
     } else {
       for(int i=0;i<n;++i) draw_control(slots[i]);
       // The reading view's own outcome line, under the action row: no navigation needed.
@@ -1013,9 +1022,11 @@ UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
   if (round_companion()) {
     if (!companion_model(m)) return {};
     if (m.touch_prompt) {
-      // Equal targets, as large as the circle allows below five readable rows.
-      if (control == TouchControl::Yes) return {238,296,150,96};
-      if (control == TouchControl::No) return {78,296,150,96};
+      // Equal targets, as large as the circle allows below five readable rows; none
+      // while the question has not been read to its end.
+      if (m.prompt_unread) return {};
+      if (control == TouchControl::Yes) return prompt_answer_rect(true);
+      if (control == TouchControl::No) return prompt_answer_rect(false);
       return {};
     }
     if (m.recent) {
