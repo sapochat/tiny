@@ -374,7 +374,7 @@ void Ui::render_companion(const UiModel& m) {
     back("Recent");
     if (m.work_rows.empty()) {
       center(196,"No recent work",18,text);
-      center(228,"Finished requests appear here",14,dim);
+      center(228,"Your requests appear here",14,dim);
     }
     for (unsigned i=0;i<m.work_rows.size() && i<3;++i) {
       const auto control=static_cast<TouchControl>(unsigned(TouchControl::Work0)+i);
