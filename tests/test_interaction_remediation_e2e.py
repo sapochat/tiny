@@ -158,7 +158,8 @@ def test_f3_final_text_without_turn_end_keeps_work_open_past_settle(ix, stop_fir
     assert s.console('settings').startswith('@error'), 'busy settings were re-enabled'
     s.step()
     if stop_first:
-        r.require_label('stop', 'Stop requested', fg=DIM, bg=0)
+        r.require_label('stop', 'Stop task', fg=DIM, bg=0)   # pass 3: inert pill keeps its action name
+        assert r.shows('Stop requested · waiting for Hermes', 18, DIM)   # status on its own line
     else:
         r.require_label('stop', 'Stop task')
     s.tap('cancel')
@@ -267,7 +268,7 @@ def test_f5_reading_and_controls_show_compact_outcome_in_place(ix, case):
     s.run_for(0.3)
     r.snap(f'reading-{case}')
     assert ui(s)['view'] == 'response' and ui(s)['scroll'] == scroll, 'outcome moved the reader'
-    rect = text_rect(s, line, 14, DIM, (0, 400, 466, 66))
+    rect = text_rect(s, line, 18, DIM, (0, 90, 466, 45))   # pass 3: 18px header line above the text
     assert rect, (case, line, 'compact outcome not rendered exactly in reading')
     assert inside_circle(rect), rect
     for name, other in ui(s)['controls'].items():
@@ -277,7 +278,8 @@ def test_f5_reading_and_controls_show_compact_outcome_in_place(ix, case):
     assert ui(s)['view'] == 'controls'
     r.snap(f'controls-{case}')
     assert 'stop' not in ui(s)['controls']
-    assert r.shows(word,18,DIM,0,(238,329,160,52))
+    assert r.shows('Last task: ' + word, 18, DIM, 0, (0, 302, 466, 32))   # pass 3: own status line
+    assert not r.shows(word, 18, DIM, 0, (238, 329, 160, 60)), 'outcome word in the Stop slot'
 
 
 # == Order: Silence and Stop keep one position across views ===================================

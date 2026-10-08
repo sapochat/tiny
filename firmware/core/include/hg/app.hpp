@@ -186,6 +186,7 @@ class App {
   void settings_input(Button button, bool pressed);
   void settings_tick();
   void settings_model();
+  void round_settings_model();
   void stop_hardware_check();
   void power_tick();
   json::Value power_value() const;

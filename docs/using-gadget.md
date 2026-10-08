@@ -174,21 +174,47 @@ curved position marker; the seventh row ends above the action row. The complete
 reply is scrollable; reading position and bottom-follow behavior are unchanged.
 Long approval text uses five rows above equally sized **150×96px No / Yes**
 buttons with the same fill and text colour; neither answer is emphasized.
+**A question that does not fit must be read to the end before it can be
+answered.** Until its last line has been on screen once, No and Yes stay in
+place but outlined and dimmed, they are not touch targets, and the screen says
+**Scroll to read all ↓**; the physical TALK (yes) and CANCEL (no) buttons are
+refused the same way. Scrolling back up after reaching the end keeps the answers
+available. A replacement question starts unread again. Questions that fit on one
+screen are unaffected, and the arm delay before a new question accepts input is
+unchanged.
 Generic questions are not relabeled as permissions. Unsupported characters have
 a visible replacement glyph; full Unicode shaping and browser kerning are not
 implemented. Native results do not establish physical readability.
 
-Quick controls use **72×143px** rounded filled tracks labeled **Volume** and
-**Brightness**, with actual percentages, then **160×56px Stop task** and
-**Mute voice** targets that stay in place (outlined when unavailable), and
-**Settings** when idle. **‹ Quick controls** returns Home. Drawing and hit
+Quick controls use **72×124px** rounded filled tracks labeled **Volume** and
+**Brightness**, with actual percentages, then **Recent**, a status line of its
+own, **154×48px Mute voice** and **Stop task** targets, and **Settings**. All
+three actions always stay in the same place and are outlined when unavailable;
+status is never written inside a button. The status line says **Settings open
+when idle** while busy, **Stop requested · waiting for Hermes** after Stop, and
+**Last task: Finished / Stopped / Error / Unknown** afterwards. On Home and in
+the reader, Stop task always holds the right slot of the action row while work
+is open (the left slot is Mute voice, or Read reply when a reply is waiting); a
+requested stop leaves it outlined and the status moves to the headline or the
+reader header. The reader shows how the last task ended as an 18px line above
+the text, never under the actions. **‹ Quick controls** returns Home. Drawing and hit
 testing share the same rectangles; stale contacts still cannot decide
 replacement targets. Setup, images and cards retain their safe inscribed area,
 and other display sizes keep their renderer.
 
+Pairing, Settings and Wi-Fi setup use the same design on the round board: Geist
+on true black, no pixel font. Pairing shows the code in a large 44px face with
+the host command beneath it. Settings show one row at a time on a rounded card:
+the row name, its current value large, a one-line description, a dot for each
+row, and **Tap to change · Swipe for next** / **Hold the title to close**. The
+rows, values, tap/swipe/hold behaviour, the display check and the Wi-Fi setup
+flow are unchanged; Wi-Fi setup instructions are never truncated. Rectangular
+boards keep their existing renderer. Functional text on the round board is at
+least 18px Geist in a grey no darker than (164,164,169).
+
 Assuming the full 1.75-inch circle is active display (0.095 mm per pixel), the
 approval buttons are nominally 14.3×9.2 mm, the shared action row 5.2 mm tall,
-and the quick-control actions 5.3 mm tall. These are geometric conversions, not
+and the quick-control actions 4.6 mm tall. These are geometric conversions, not
 measurements: only the approval buttons reach the 9–12 mm range explored in the
 review, and none of these sizes has been checked on a physical board.
 
