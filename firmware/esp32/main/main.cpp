@@ -255,7 +255,8 @@ extern "C" void app_main(void) {
   for (;;) {
     hgp::Event ev;
     // Block briefly for events, then run the core's timers and animations.
-    if (hgp::events::receive(ev, pdMS_TO_TICKS(10))) {
+    // Mid-slide, draw the next frame as soon as the last one is out (the flush wait yields).
+    if (hgp::events::receive(ev, app.animating() ? 0 : pdMS_TO_TICKS(10))) {
       do {
         const int64_t started = esp_timer_get_time();
         dispatch(app, ev);

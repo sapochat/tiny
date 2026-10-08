@@ -22,7 +22,8 @@ namespace {
 
 const char* TAG = "hg.amoled";
 constexpr spi_host_device_t kHost = SPI2_HOST;
-constexpr int kBounceRows = 16;  // even, so every chunk keeps the window even
+// Largest single SPI DMA transaction (2^18 bits); esp_lcd chains these with CS held.
+constexpr int kMaxTransfer = 32 * 1024 - 64;
 
 constexpr uint32_t command_word(uint8_t cmd) { return (0x02u << 24) | (static_cast<uint32_t>(cmd) << 8); }
 constexpr uint32_t kRamWrite = (0x32u << 24) | (0x2Cu << 8);
@@ -75,8 +76,7 @@ bool AmoledDisplay::begin(const AmoledConfig& cfg) {
   cfg_ = cfg;
   const size_t px = static_cast<size_t>(cfg.width) * cfg.height;
   fb_ = static_cast<uint16_t*>(heap_caps_malloc(px * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  bounce_ = static_cast<uint16_t*>(heap_caps_malloc(static_cast<size_t>(cfg.width) * kBounceRows * 2, MALLOC_CAP_DMA));
-  if (!fb_ || !bounce_) {
+  if (!fb_) {
     ESP_LOGE(TAG, "not enough memory for a %ux%u framebuffer (is PSRAM enabled?)", cfg.width, cfg.height);
     return false;
   }
@@ -93,7 +93,7 @@ bool AmoledDisplay::begin(const AmoledConfig& cfg) {
   bus.data5_io_num = -1;
   bus.data6_io_num = -1;
   bus.data7_io_num = -1;
-  bus.max_transfer_sz = cfg.width * kBounceRows * 2 + 16;
+  bus.max_transfer_sz = kMaxTransfer;
   bus.flags = SPICOMMON_BUSFLAG_QUAD;
   ESP_ERROR_CHECK(spi_bus_initialize(kHost, &bus, SPI_DMA_CH_AUTO));
 
@@ -106,6 +106,8 @@ bool AmoledDisplay::begin(const AmoledConfig& cfg) {
   io_cfg.lcd_cmd_bits = 32;
   io_cfg.lcd_param_bits = 8;
   io_cfg.flags.quad_mode = 1;
+  // DMA reads the framebuffer in PSRAM directly: one window, one RAMWR, no copies.
+  io_cfg.flags.psram_dma_direct = 1;
   io_cfg.on_color_trans_done = &AmoledDisplay::on_trans_done;
   io_cfg.user_ctx = this;
   ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(static_cast<esp_lcd_spi_bus_handle_t>(kHost), &io_cfg, &io_));
@@ -145,19 +147,18 @@ void AmoledDisplay::flush(uint16_t y0, uint16_t y1) {
   int top = y0 & ~1;
   int bottom = std::min(h, (y1 + 1) & ~1);
   const int x0 = cfg_.gap_x, x1 = cfg_.gap_x + w - 1;
-  for (int y = top; y < bottom; y += kBounceRows) {
-    const int rows = std::min(kBounceRows, bottom - y);
-    std::memcpy(bounce_, fb_ + static_cast<size_t>(y) * w, static_cast<size_t>(rows) * w * 2);
-    const int ya = y + cfg_.gap_y, yb = y + rows - 1 + cfg_.gap_y;
+  if (bottom > top) {
+    const int ya = top + cfg_.gap_y, yb = bottom - 1 + cfg_.gap_y;
     const uint8_t cols[4] = {static_cast<uint8_t>(x0 >> 8), static_cast<uint8_t>(x0), static_cast<uint8_t>(x1 >> 8),
                              static_cast<uint8_t>(x1)};
     const uint8_t lines[4] = {static_cast<uint8_t>(ya >> 8), static_cast<uint8_t>(ya), static_cast<uint8_t>(yb >> 8),
                               static_cast<uint8_t>(yb)};
     command(0x2A, cols, 4);
     command(0x2B, lines, 4);
-    esp_lcd_panel_io_tx_color(io_, static_cast<int>(kRamWrite), bounce_, static_cast<size_t>(rows) * w * 2);
-    // The bounce buffer is reused: wait until the DMA transfer has finished.
-    xSemaphoreTake(done_, pdMS_TO_TICKS(100));
+    // The caller draws into these rows next: wait until DMA has read them.
+    if (esp_lcd_panel_io_tx_color(io_, static_cast<int>(kRamWrite), fb_ + static_cast<size_t>(top) * w,
+                                  static_cast<size_t>(bottom - top) * w * 2) == ESP_OK)
+      xSemaphoreTake(done_, pdMS_TO_TICKS(200));
   }
   const auto us = static_cast<uint32_t>(esp_timer_get_time() - started);
   ++perf_.calls;
