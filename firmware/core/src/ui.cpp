@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <new>
 #include <vector>
 
 #include "hg/font.hpp"
@@ -297,13 +298,13 @@ void Ui::snap_transition() {
 
 void Ui::render_motion(const UiModel& m) {
   // Arrival motion, not a second scene: destination owns input from the first tick.
-  // 220ms cubic ease-out, 32px travel. Transform in place; only changed rows flush.
+  // 220ms cubic ease-out, 32px travel. The destination is drawn once; frames are shifted copies.
   const bool urgent = m.capture || m.touch_prompt || m.speaking || m.screen == Screen::Error ||
       m.screen == Screen::Offline || m.screen == Screen::Connecting || local_screen(m);
   const int view = urgent ? -1 : m.recent ? 3 : m.result ? 4 : m.quick_controls ? 2 : m.hero ? 0 : 1;
   if (view != motion_view_) {
     if (view >= 0 && motion_view_ >= 0 && valid_ && m.navigation != motion_navigation_) {
-      motion_active_ = true; motion_start_ = m.time_ms; motion_frames_ = 0;
+      motion_active_ = true; motion_start_ = m.time_ms; motion_frames_ = 0; motion_cache_ready_ = false;
       const bool vertical = view == 0 || motion_view_ == 0;
       motion_dx_ = vertical ? 0 : (view > motion_view_ ? 32 : -32);
       motion_dy_ = vertical ? (view == 2 || motion_view_ == 1 ? -32 : 32) : 0;
@@ -313,36 +314,80 @@ void Ui::render_motion(const UiModel& m) {
   motion_navigation_ = m.navigation;
   if (urgent) snap_transition();
   if (!motion_active_) { render_companion(m); return; }
+  constexpr int W = 466;
   auto* fb = display_.framebuffer();
-  for (int y=0;y<466;++y) row_hash_[y] = Hash().add(fb+y*466,932).get();
+  // Rows holding anything but black; [0,0) when empty.
+  auto content = [](const uint16_t* buf, int& top, int& bottom) {
+    auto lit = [&](int y) { const auto* r = buf+y*W; for (int x=0;x<W;++x) if (r[x]) return true; return false; };
+    top = 0; while (top<W && !lit(top)) ++top;
+    bottom = W; while (bottom>top && !lit(bottom-1)) --bottom;
+    if (top==W) top = bottom = 0;
+  };
+  auto join = [](int a0, int a1, int b0, int b1, int& y0, int& y1) {
+    if (a1<=a0) { y0=b0; y1=b1; return; }
+    if (b1<=b0) { y0=a0; y1=a1; return; }
+    y0=std::min(a0,b0); y1=std::max(a1,b1);
+  };
+  // The first frame must also rewrite rows where the destination was drawn unshifted.
+  const bool first = !motion_cache_ready_;
+  if (!motion_cache_ready_) {
+    if (!motion_cache_) motion_cache_.reset(new (std::nothrow) uint16_t[W*W]);
+    if (!motion_cache_) { snap_transition(); render_companion(m); return; }
+    content(fb, motion_prev_top_, motion_prev_bottom_);  // what the panel shows now
+    valid_ = false; motion_flush_ = true;
+    render_companion(m);
+    motion_flush_ = false;
+    std::memcpy(motion_cache_.get(), fb, W*W*2);
+    content(motion_cache_.get(), motion_top_, motion_bottom_);
+    if (!motion_span_[W/2]) for (int y=0;y<W;++y) {
+      const int d = y-233, r2 = 233*233-d*d;
+      int h = 0; while ((h+1)*(h+1) <= r2) ++h;
+      motion_span_[y] = static_cast<int16_t>(h);
+    }
+    motion_cache_ready_ = true;
+  }
   const uint32_t elapsed = std::min<uint32_t>(220,m.time_ms-motion_start_);
   const int remaining = 220-elapsed;
   const int dx = motion_dx_*remaining*remaining*remaining/(220*220*220);
   const int dy = motion_dy_*remaining*remaining*remaining/(220*220*220);
-  valid_ = false; motion_flush_ = true;
-  render_companion(m);
-  motion_flush_ = false;
-  if (dy) {
-    const int rows = 466-std::abs(dy);
-    std::memmove(fb+std::max(0,dy)*466,fb+std::max(0,-dy)*466,rows*932);
-    std::fill(fb+(dy>0?0:rows)*466,fb+(dy>0?dy:466)*466,0);
+  int top = 0, bottom = 0, y0 = 0, y1 = 0;
+  if (elapsed == 220) {
+    // Land on a fresh static render, so live changes during the slide are not lost.
+    valid_ = false; motion_flush_ = true;
+    render_companion(m);
+    motion_flush_ = false;
+    content(fb, top, bottom);
+    join(top, bottom, motion_prev_top_, motion_prev_bottom_, y0, y1);
+  } else {
+    if (motion_bottom_ > motion_top_) {
+      top = std::clamp(motion_top_+dy, 0, W);
+      bottom = std::clamp(motion_bottom_+dy, 0, W);
+    }
+    join(top, bottom, motion_prev_top_, motion_prev_bottom_, y0, y1);
+    if (first) join(y0, y1, motion_top_, motion_bottom_, y0, y1);
+    compose_motion(dx, dy, y0, y1);
   }
-  if (dx) for (int y=0;y<466;++y) {
-    auto* row = fb+y*466;
-    std::memmove(row+std::max(0,dx),row+std::max(0,-dx),(466-std::abs(dx))*2);
-    std::fill(row+(dx>0?0:466+dx),row+(dx>0?dx:466),0);
-  }
-  // Pixels outside the actual round glass remain true black, including during motion.
-  if (dx || dy) for (int y=0;y<466;++y) for (int x=0;x<466;++x)
-    if ((x-233)*(x-233)+(y-233)*(y-233)>233*233) fb[y*466+x]=0;
-  int start = -1;
-  for (int y=0;y<=466;++y) {
-    const bool changed = y<466 && row_hash_[y]!=Hash().add(fb+y*466,932).get();
-    if (changed && start<0) start=y;
-    if (!changed && start>=0) { display_.flush(start,y); start=-1; }
-  }
+  if (y1 > y0) display_.flush(static_cast<uint16_t>(y0), static_cast<uint16_t>(y1));
+  motion_prev_top_ = top; motion_prev_bottom_ = bottom;
   ++motion_frames_;
-  if (elapsed==220) { motion_active_=false; motion_report_=motion_frames_; }
+  if (elapsed==220) { motion_active_=false; motion_cache_ready_=false; motion_report_=motion_frames_; }
+}
+
+void Ui::compose_motion(int dx, int dy, int y0, int y1) {
+  // Rows [y0,y1) of the panel become the cache shifted by (dx,dy). Pixels outside the
+  // round glass stay true black, so nothing is drawn where the panel has no pixels.
+  constexpr int W = 466;
+  auto* fb = display_.framebuffer();
+  const uint16_t* cache = motion_cache_.get();
+  for (int y=y0;y<y1;++y) {
+    auto* row = fb+y*W;
+    const int sy = y-dy, h = motion_span_[y];
+    const int lo = std::max({233-h, dx, 0}), hi = std::min({233+h+1, W+dx, W});
+    if (sy < 0 || sy >= W || hi <= lo) { std::fill(row, row+W, 0); continue; }
+    std::fill(row, row+lo, 0);
+    std::memcpy(row+lo, cache+sy*W+lo-dx, static_cast<size_t>(hi-lo)*2);
+    std::fill(row+hi, row+W, 0);
+  }
 }
 
 void Ui::render_companion(const UiModel& m) {

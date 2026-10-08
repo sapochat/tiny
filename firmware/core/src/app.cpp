@@ -1687,6 +1687,8 @@ void App::tick() {
   }
 }
 
+bool App::animating() const { return ui_ && ui_->transitioning(); }
+
 void App::update_model() {
   UiModel& m = model_;
   m.time_ms = now();

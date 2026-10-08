@@ -91,6 +91,8 @@ class App {
   bool open_settings();
   void close_settings();
   bool settings_open() const { return menu_ != Menu::Closed; }
+  // True while the screen is mid-animation; ports should poll without idling.
+  bool animating() const;
   bool settings_title_hit(int x, int y) const;
   // Navigation never synthesizes Cancel or changes the activity state.
   TouchView touch_view() const;

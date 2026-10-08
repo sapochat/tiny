@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -190,8 +191,14 @@ class Ui {
   uint32_t motion_start_ = 0, motion_navigation_ = 0;
   bool motion_active_ = false, motion_flush_ = false;
   int motion_frames_ = 0, motion_report_ = 0;
-  uint32_t row_hash_[466] = {};  // 1,864 bytes, no second framebuffer
+  // Slides render the destination once into this cache, then each frame is a shifted,
+  // round-masked copy of it. Allocated on first use (PSRAM on the device).
+  std::unique_ptr<uint16_t[]> motion_cache_;
+  bool motion_cache_ready_ = false;
+  int motion_top_ = 0, motion_bottom_ = 0, motion_prev_top_ = 0, motion_prev_bottom_ = 0;
+  int16_t motion_span_[466] = {};  // half-width of the round glass per row
   void render_motion(const UiModel& m);
+  void compose_motion(int dx, int dy, int y0, int y1);
   uint32_t companion_hash_ = 0;
   TouchControl companion_pressed_ = TouchControl::None;
   int companion_level_ = -1;
