@@ -8,6 +8,7 @@ void TouchGestures::tick(uint32_t now_ms) {
   if (state_ != State::Pending && state_ != State::Settings) return;
   if (epoch_ != app_.touch_epoch()) {
     if (state_ != State::Talk) state_ = State::Ignored;
+    app_.touch_press(TouchControl::None);  // the lit target belongs to the old view
     return;
   }
   if (state_ == State::Settings) {
@@ -35,6 +36,7 @@ void TouchGestures::tick(uint32_t now_ms) {
 
 void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
   if (!touching) {
+    app_.touch_press(TouchControl::None);  // feedback ends before the tap acts
     if (state_ == State::Talk) app_.on_touch_talk(false);  // normal push-to-talk release only
     else if (state_ == State::Pending && !moved_ && epoch_ == app_.touch_epoch() &&
              app_.control_revision(control_) == revision_)
@@ -54,11 +56,19 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
     state_ = owner_ == TouchView::Recording ? (capture_control ? State::Pending : State::Ignored) :
              app_.settings_title_hit(x, y) ? State::Settings : State::Pending;
     x0_ = x; y0_ = y; t0_ = now_ms;
+    if (state_ == State::Pending) app_.touch_press(control_);
     return;
   }
-  if (epoch_ != app_.touch_epoch() && state_ != State::Talk) { state_ = State::Ignored; return; }
+  if (epoch_ != app_.touch_epoch() && state_ != State::Talk) {
+    state_ = State::Ignored;
+    app_.touch_press(TouchControl::None);
+    return;
+  }
   const int dx = x - x0_, dy = y - y0_;
-  if (std::abs(dx) > cfg_.slop_px || std::abs(dy) > cfg_.slop_px) moved_ = true;
+  if (std::abs(dx) > cfg_.slop_px || std::abs(dy) > cfg_.slop_px) {
+    moved_ = true;
+    app_.touch_press(TouchControl::None);  // a moving finger is not pressing anything
+  }
   if (state_ == State::Talk) return;  // movement while recording never submits/discards
   if (state_ != State::Pending && state_ != State::Settings) return;
   // Require a clear dominant axis. Ambiguous diagonals cannot become taps/holds.

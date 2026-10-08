@@ -1,11 +1,10 @@
 {
   "font_version": "1.800",
   "font_sha256": "ccce59465ae5c61930ada5453834f60500fbd95084d85db63e0e65fad0125455",
-  "atlas_sha256": "126971f7525f3177bcc066a9cb58a4c6810f8953bcecd100a53d61daad384636",
+  "atlas_sha256": "a1dd332b18eda96921fe24bba91be6091e626cac6120ed6ef5519f9aaba27e6a",
   "pillow": "12.3.0",
   "sizes": [
     14,
-    17,
     18,
     24,
     30
@@ -214,7 +213,7 @@
     8595,
     65533
   ],
-  "coverage_bytes": 80287,
-  "glyphs": 1010,
+  "coverage_bytes": 67791,
+  "glyphs": 808,
   "format": "RLE gray4 (4-bit run minus one, 4-bit coverage), integer hinted advances, ascender anchor"
 }

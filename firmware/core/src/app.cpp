@@ -1689,6 +1689,11 @@ void App::update_model() {
   m.touch_prompt = false;
   m.unread_reply = false;
   m.reply_ready = reply_completed_ && unread_reply_;
+  // Navigation-owned views are rebuilt every time: leaving one must not leave it drawn.
+  m.work_available = m.recent = m.result = false;
+  m.work_rows.clear();
+  m.work_page = m.work_pages = 0;
+  m.pressed = pressed_;
 
   switch (phase_) {
     case Phase::NoNetwork:
@@ -1871,6 +1876,8 @@ void App::update_model() {
       m.body.clear(); m.detail.clear();
       for (unsigned i = work_page_; i < recent_.size() && i < work_page_ + 3; ++i)
         m.work_rows.push_back(recent_[i].stage + "\n" + recent_[i].glance);
+      m.work_page = static_cast<uint8_t>(work_page_ / 3);
+      m.work_pages = static_cast<uint8_t>((recent_.size() + 2) / 3);
     } else if (navigation_ == Navigation::Result && work_available_) {
       m.screen = Screen::Ready; m.hero = false; m.result = true;
       m.body = reading_work_.glance; m.detail.clear();
@@ -1986,7 +1993,7 @@ void App::update_model() {
   if (m.screen == Screen::Ready && m.hero && power_status_ && power_status_->battery_percent &&
       *power_status_->battery_percent <= 10 && power_status_->external_power == false)
     m.detail = "Low battery: connect USB";
-  if (m.result) { m.talk_control = false; m.outcome = reading_work_.stage; }
+  if (m.result) { m.talk_control = false; m.outcome = stage_word(reading_work_.stage); }
   if (!hint_flash_.empty()) m.hint = hint_flash_;
   if (ui_ && !display_sleeping_) ui_->render(m);
 }
@@ -2035,7 +2042,7 @@ json::Value App::status_value() const {
       .set("scroll", model_.scroll).set("headline", model_.headline).set("detail", model_.detail)
       .set("hint", model_.hint).set("speaking", speaking());
     const char* captures[] = {"none", "touch", "button", "tap"};
-    u.set("capture", captures[model_.capture & 3]);
+    u.set("capture", captures[model_.capture & 3]).set("pressed", control_name(pressed_));
     if (ui_) for (unsigned i = 1; i < kTouchControls; ++i) {
       auto r = ui_->control_rect(static_cast<TouchControl>(i), model_);
       if (!r.w || !r.h) continue;

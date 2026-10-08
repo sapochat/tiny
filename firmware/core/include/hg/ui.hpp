@@ -42,6 +42,8 @@ enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No, Rep
                                     Talk, Controls, Home, Settings, Recent, Work0, Work1, Work2, Next };
 constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::Next) + 1;
 const char* control_name(TouchControl c);
+// The word a host work stage reads as on screen (\"cancelled\" reads \"Stopped\").
+const char* stage_word(const std::string& stage);
 struct UiRect {
   int x = 0, y = 0, w = 0, h = 0;
   bool contains(int px, int py) const { return px >= x && py >= y && px < x+w && py < y+h; }
@@ -63,7 +65,10 @@ struct UiModel {
   bool color_test = false;
   bool quick_controls = false, touch_prompt = false;
   bool work_available = false, recent = false, result = false;
-  std::vector<std::string> work_rows;
+  std::vector<std::string> work_rows;   // "stage\nglance" for the visible shelf page
+  uint8_t work_page = 0, work_pages = 0;  // shelf page index and count (paging shows when > 1)
+  // The target under a finger that has not yet moved or lifted; drawn lit, flushed alone.
+  TouchControl pressed = TouchControl::None;
   bool unread_reply = false;
   bool has_reply = false, can_stop = false;
   bool reply_ready = false;  // success-only completed text; never inferred from a label
@@ -165,6 +170,7 @@ class Ui {
   void update_expression(const UiModel& m);
   void draw_expression(Canvas& c, int x, int y, int size) const;
   uint32_t companion_hash_ = 0;
+  TouchControl companion_pressed_ = TouchControl::None;
   int companion_level_ = -1;
   bool valid_ = false;
 };
