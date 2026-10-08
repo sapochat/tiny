@@ -443,7 +443,13 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
 
     async def on_processing_complete(self, event: MessageEvent, outcome) -> None:
         session = self._session(event.source.chat_id)
-        if session is None or not session.paired:
+        if session is None:
+            device = event.source.chat_id
+            if self._hub and self._store.key_for(device) and self._authorized(device) is not False:
+                self._hub.work.observe(device, {"type": "turn.end", "turn": event.message_id,
+                                               "outcome": getattr(outcome, "value", str(outcome))})
+            return
+        if not session.paired:
             return
         current = self._turns.get(session.device_id)
         turn = event.message_id or current or ""
@@ -472,6 +478,19 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
                    metadata: Optional[Dict[str, Any]] = None) -> SendResult:
         session = self._session(chat_id)
         if session is None:
+            if (metadata or {}).get("_interim_send"):
+                return SendResult(success=False, error="gadget not connected; interim text not retained")
+            anchor = reply_to or (metadata or {}).get("reply_to_message_id")
+            if self._hub and self._store.key_for(chat_id) and self._authorized(chat_id) is not False and anchor:
+                records = self._hub.work.items(chat_id)
+                if any(r["origin"]["turn"] == anchor for r in records):
+                    self._hub.work.observe(chat_id, {"type": "reply", "turn": anchor,
+                        "text": textfmt.for_device(content), "interim": bool((metadata or {}).get("_interim_send"))})
+                    message_id = uuid.uuid4().hex[:12]
+                    self._sent_turns[message_id] = str(anchor)
+                    while len(self._sent_turns) > KNOWN_TURNS * 4:
+                        self._sent_turns.pop(next(iter(self._sent_turns)))
+                    return SendResult(success=True, message_id=message_id)
             return SendResult(success=False, error=f"gadget {chat_id} is not connected")
         if not session.paired:
             await self._forward_unpaired(session, content)
@@ -507,6 +526,10 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
 
     async def edit_message(self, chat_id: str, message_id: str, content: str, *, finalize: bool = False) -> SendResult:
         session = self._session(chat_id)
+        if session is None and finalize:
+            turn = self._sent_turns.get(str(message_id))
+            if turn:
+                return await self.send(chat_id, content, reply_to=turn)
         if session is None or not session.paired:
             return SendResult(success=False, error="gadget not connected")
         text = textfmt.for_device(content, session.charset)

@@ -1,5 +1,30 @@
 # Developing the SDK
 
+## Recent work E2E
+
+`tests/test_work_shelf_e2e.py` uses the existing interaction rig: real native core,
+production loopback DeviceHub, synthetic text and disposable state directories.
+`tests/test_adapter_hermes.py::test_recent_outcome_after_disconnect_is_durable`
+exercises real Hermes base classes without a provider.
+
+```sh
+export TMPDIR=/home/santi/.hermes/cache/scratch/workshelf
+mkdir -p "$TMPDIR"
+export HERMES_HOME="$TMPDIR/test-home"
+PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=python .venv/bin/python -m hermes_gadget build-sim --test
+export HGSIM_LIBRARY="$PWD/build/host/libhgsim.so"
+IX_ARTIFACTS=artifacts/work-shelf/fresh .venv/bin/python -m pytest tests/test_work_shelf_e2e.py -v --junitxml=artifacts/work-shelf/fresh.xml
+```
+
+Compatibility lanes require a frozen pre-M3 native library (`WORK_LEGACY_NATIVE=1`
+with `HGSIM_LIBRARY` pointing to it, run only `-k legacy_native_gets`) and a frozen
+pre-M3 `plugin/hub.py` (`WORK_LEGACY_HUB=/absolute/path/hub.py`, current native library).
+The compatibility tests skip without these explicit fixtures. Do not substitute a
+new library for the frozen one. The evidence directory contains the baseline hash,
+red logs, later fixture corrections, native receipts/captures, and final JUnit.
+
+
+
 ## Layout
 
 ```

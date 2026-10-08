@@ -1,5 +1,33 @@
 # Talk, type, and interrupt
 
+## Recent results
+
+On the 466px round touchscreen, swipe down from Home to Quick controls and tap
+**Recent**. The shelf shows up to eight recent jobs, with the host's stage and a
+short excerpt of its final reply. Tap a row to read; vertical swipes scroll using
+the normal reading layout. **Next** cycles through groups of three. Tap the title
+or swipe right to return (result → shelf → controls → Home). Navigation does not
+submit, cancel, approve, or record anything.
+
+A result already open stays on its existing revision and scroll position when a
+new revision arrives. Return to the shelf and open it again to see the newer text.
+Positions are local RAM, not a cross-device bookmark. Results themselves live on
+the host and return after device or host restart; nothing is re-executed. A running
+job interrupted by disconnect or restart is **unknown**, not finished.
+
+History is device-specific, bounded to eight records and seven days. It requires
+support from both ends; older hosts and non-touch boards retain their old behavior.
+Only a short final-text glance is retained, not audio, full conversation history,
+attachments, device keys or access credentials. Credential-shaped final text is
+replaced with an omission notice; this is not a general semantic secret detector.
+Do not ask Tiny to retain secrets in results.
+
+Administrative explicit clearing is available through the host's
+`hub.work.clear(device_id)` API (the running DeviceHub owner); then request a fresh
+`work.list` or reconnect. There is no on-device Clear button in this v1.
+
+
+
 Wait for the device to show Ready. On the LCD board, BOOT is TALK and PLUS is CANCEL. On the round touchscreen, hold Home to talk. Navigation swipes never cancel a turn or answer a question.
 
 ## Touch navigation

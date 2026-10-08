@@ -191,9 +191,12 @@ class Rig:
         return self.lt.run(coro)
 
     def _deliver(self, make, count=1):
+        # Count only the fixture's own frames: a host with recent work may also send `work`
+        # snapshots, which must not satisfy this fence before the intended frame arrives.
         n = len(self.s.received)
         self.run(make())
-        assert self.s.wait_for(lambda: len(self.s.received) >= n + count, timeout=5), 'fixture not delivered'
+        own = lambda: sum(m.get('type') != 'work' for m in self.s.received[n:])
+        assert self.s.wait_for(lambda: own() >= count, timeout=5), 'fixture not delivered'
         self.s.step()
 
     def send(self, kind, **data):

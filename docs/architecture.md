@@ -1,5 +1,23 @@
 # Architecture
 
+## Recent work ownership
+
+`DeviceHub` owns `plugin.work.WorkStore` beside its `DeviceStore`: versioned
+`work.json` in the plugin-data directory, never the plugin installation tree.
+Both the Hermes adapter and provider-free development delegate use the same
+DeviceSession lifecycle/final-reply observer. The adapter also records matching
+outcomes/final text arriving after a device disconnects. This is a journal, not a
+second task orchestrator: it cannot run, resume, cancel or schedule tasks.
+
+Publication uses a unique mode-0600 temporary file, fsync and atomic replacement.
+Malformed/schema-invalid stores are quarantined as `work.json.corrupt-*` and logged,
+not silently replaced. Startup marks running records unknown. Enrollment generations
+isolate forgotten devices; snapshot reads check enrollment and current pairing.
+The journal retains eight records per device for seven days from creation. Explicit
+clear uses `DeviceHub.work.clear(device_id)` on the owner; do not modify its file
+with a second writer while the hub runs.
+
+
 ```
  ┌──────────────── device (ESP32 or simulator) ───────────────┐        ┌──────────── Hermes host ───────────────────────────┐
  │                                                            │        │                                                    │

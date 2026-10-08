@@ -534,6 +534,68 @@ def test_late_text_from_stopped_work_keeps_its_own_turn(gadget, make_sim):
     assert work["lifecycle"] == "ended" and work["outcome"] == "finished"
 
 
+def test_recent_outcome_after_disconnect_is_durable(gadget, make_sim):
+    import threading
+    sim = _paired_sim(gadget, make_sim, board='sim-466x466-round')
+    gate = threading.Event()
+    events = []
+
+    async def reply(event):
+        events.append(event)
+        while not gate.is_set():
+            await asyncio.sleep(.01)
+        return 'Synthetic offline result'
+
+    gadget.reply = reply
+    sim.type_text('offline work')
+    assert sim.wait_for(lambda: bool(events) and sim.last_received('turn.start') is not None)
+    device = sim.status()['device_id']
+    sim.set_network(False)
+    assert sim.wait_screen('offline', timeout=5)
+    gate.set()
+    store = gadget.adapter.hub.work
+    assert sim.wait_for(lambda: any(r['stage'] == 'finished' for r in store.items(device)), timeout=10)
+    assert store.items(device)[0]['result']['glance'] == 'Synthetic offline result'
+
+
+@pytest.mark.parametrize('kind', ['interim', 'edit'])
+def test_recent_offline_stream_receipts(gadget, make_sim, kind):
+    import threading
+    sim = _paired_sim(gadget, make_sim, board='sim-466x466-round')
+    a = gadget.adapter
+    gate = threading.Event()
+    started = {}
+
+    async def reply(event):
+        started['event'] = event
+        sent = await a.send(event.source.chat_id, 'Interim text', reply_to=event.message_id,
+                            metadata={'_interim_send': True})
+        started['message'] = sent.message_id
+        while not gate.is_set():
+            await asyncio.sleep(.01)
+        return None
+
+    gadget.reply = reply
+    sim.type_text('stream work')
+    try:
+        assert sim.wait_for(lambda: 'message' in started)
+        device = sim.status()['device_id']
+        sim.set_network(False)
+        assert sim.wait_screen('offline', timeout=5)
+        assert sim.wait_for(lambda: a.hub.get(device) is None)
+        if kind == 'interim':
+            result = gadget.run(a.send(device, 'More interim text', reply_to=started['event'].message_id,
+                                       metadata={'_interim_send': True}))
+            assert not result.success
+            assert a.hub.work.items(device)[0]['result']['revision'] == 0
+        else:
+            result = gadget.run(a.edit_message(device, started['message'], 'Final offline edit', finalize=True))
+            assert result.success
+            assert a.hub.work.items(device)[0]['result']['glance'] == 'Final offline edit'
+    finally:
+        gate.set()
+
+
 def test_edits_of_a_stopped_runs_message_keep_its_turn(gadget, make_sim):
     """An edit-based stream of run A that lands after run B started stays A's text."""
     import threading
