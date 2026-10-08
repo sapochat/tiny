@@ -929,7 +929,7 @@ void App::on_button(Button button, bool pressed) {
     return;
   }
   const auto bit = static_cast<uint8_t>(1u << static_cast<unsigned>(button));
-  if (pressed && wake_display()) { wake_buttons_ |= bit; return; }
+  if (pressed && wake_display(true)) { wake_buttons_ |= bit; return; }
   if (wake_buttons_ & bit) {
     if (!pressed) wake_buttons_ &= static_cast<uint8_t>(~bit);
     return;
@@ -1664,6 +1664,7 @@ void App::tick() {
 
   flush_sensors();
 
+  if (ui_ && ui_->transitioning()) { model_.time_ms = t; ui_->render(model_); }
   if (t - frame_at_ >= kFrameMs) {
     frame_at_ = t;
     ++model_.frame;
@@ -1673,6 +1674,7 @@ void App::tick() {
 
 void App::update_model() {
   UiModel& m = model_;
+  m.time_ms = now();
   m.title = name_;
   m.code.clear();
   m.detail.clear();
@@ -1971,7 +1973,8 @@ void App::update_model() {
                                                                                 : "Release " + talk + " to finish";
     }
     if (m.unread_reply && !m.speaking && mode_ != Mode::Thinking) {
-      m.headline = reply_completed_ ? "Reply ready" : reply_stopped_ ? "Reply stopped" : "New text";
+      m.headline = reply_completed_ ? "Reply ready" : reply_stopped_ ?
+          (outcome_ == Outcome::Failed ? "Couldn’t finish" : "Reply stopped") : "New text";
       m.detail.clear();
     }
     if (m.stop_pending) {
@@ -1993,6 +1996,19 @@ void App::update_model() {
   if (m.screen == Screen::Ready && m.hero && power_status_ && power_status_->battery_percent &&
       *power_status_->battery_percent <= 10 && power_status_->external_power == false)
     m.detail = "Low battery: connect USB";
+  if (round && (m.screen==Screen::Offline || m.screen==Screen::Connecting || m.screen==Screen::Error)) {
+    if(m.screen==Screen::Offline) {
+      m.detail = interrupted_ || outcome_==Outcome::Unknown ? "Task status unknown" : "Hermes is out of reach";
+      m.hint = "Hold title for Settings";
+    } else if(m.screen==Screen::Connecting) {
+      m.headline = "Connecting";
+      m.detail = interrupted_ || outcome_==Outcome::Unknown ? "Task status unknown" : "Waiting for Hermes";
+      m.hint = "Retrying automatically";
+    } else {
+      m.detail = "Cannot connect to Hermes";
+      m.hint = "Check connection setup via USB";
+    }
+  }
   if (m.result) { m.talk_control = false; m.outcome = stage_word(reading_work_.stage); }
   if (!hint_flash_.empty()) m.hint = hint_flash_;
   if (ui_ && !display_sleeping_) ui_->render(m);
@@ -2054,6 +2070,9 @@ json::Value App::status_value() const {
       json::Value animation = json::Value::object();
       animation.set("clip", ui_->expression_name()).set("frame", ui_->expression_frame());
       u.set("animation", animation);
+      json::Value transition = json::Value::object();
+      transition.set("active", ui_->transitioning());
+      u.set("transition", transition);
     }
     u.set("controls", controls);
     s.set("ui", u);

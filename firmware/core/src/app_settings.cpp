@@ -25,6 +25,7 @@ TouchControl App::touch_hit(int x, int y) const {
 }
 
 void App::touch_swipe(TouchView owner, int dx, int dy, TouchControl control) {
+  const auto previous_navigation = navigation_;
   if (mode_ == Mode::Listening || !ui_) return;
   // Preserve the separate, explicit legacy setup/check workflow. Quick controls
   // never enter this menu and never use its Cancel/new-session button path.
@@ -74,6 +75,7 @@ void App::touch_swipe(TouchView owner, int dx, int dy, TouchControl control) {
     else if (dy && control == TouchControl::Brightness && hal_.display && hal_.display->info().has_backlight)
       console("set brightness " + std::to_string(std::clamp(int(brightness_) - dy / 4, 10, 100)));
   }
+  if (navigation_ != previous_navigation) ++model_.navigation;
   update_model();
 }
 
@@ -103,6 +105,7 @@ void App::on_touch_talk(bool pressed) {
 }
 
 void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) {
+  const auto previous_navigation = navigation_;
   if (owner != touch_view()) return;
   if (owner == TouchView::Other && settings_open()) {
     settings_input(Button::Talk, false);
@@ -149,6 +152,7 @@ void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) 
     on_touch_talk(true);
     on_touch_talk(false);
   }
+  if (navigation_ != previous_navigation) ++model_.navigation;
   update_model();
 }
 

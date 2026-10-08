@@ -7,9 +7,10 @@ On the 466px round touchscreen, swipe down from Home to Quick controls and tap
 Each card leads with a small coloured status mark and word (**Finished** green,
 **Failed** red, **Stopped** amber for a cancelled job, **Working** blue,
 **Unknown** grey), then up to two lines of the host's own final-reply excerpt,
-ending in "…" when longer. A job with no text says **No text from Hermes**. Tap a
+ending in "…" when longer. A job with no text says **No reply text**. Tap a
 card to read it; vertical swipes scroll using the normal reading layout, and the
-reader's bottom line names the outcome in the same words. With more than three
+reader leads with the stage mark and word above the body. It shows six text rows
+below that header; vertical swipes still reach the entire retained excerpt. With more than three
 jobs, a **More ›** pill and page dots appear; on the last page the pill reads
 **Back to top**. An empty shelf says **No recent work**. Tap the title or swipe
 right to return (result → shelf → controls → Home). Navigation does not submit,
@@ -45,6 +46,18 @@ Wait for the device to show Ready. On the LCD board, BOOT is TALK and PLUS is CA
 
 Views and activity are independent: you can navigate while Hermes is thinking, streaming, or speaking without stopping it.
 
+On the 466px companion, explicit navigation uses a short 220ms ease-out arrival:
+vertical between Home and Controls/Reader, horizontal through Recent and results.
+The destination owns input immediately. A new touch or button press snaps it into
+place; recording, speech, approval, offline and errors never wait for motion.
+Navigation during speech is immediate. Text scrolling and paging stay immediate.
+
+Offline, connecting and connection-error screens use the same companion typography.
+They name the state, its consequence, and the next step. On offline screens, hold
+**HERMES** at the top for Settings, then use the existing Wi-Fi setup flow where
+supported. USB connection setup remains available. Pairing, detailed Settings,
+Wi-Fi setup, cards and images retain their existing functional layouts.
+
 | Starting view | Up / down | Right | Left |
 |---|---|---|---|
 | Home | Up opens the latest reply; down opens quick controls | No action | No action |
@@ -55,19 +68,19 @@ Views and activity are independent: you can navigate while Hermes is thinking, s
 
 Tap the rendered **Yes** or **No** button to decide an approval. Existing physical CANCEL and console cancellation remain available; no swipe starts a new session or resets the device.
 
-Several swipes also have a visible tap route on the 466px round display, when there is room for it: **↓ Controls** on the idle face (only when no action fills the action row) opens quick controls, the **‹ Latest reply** and **‹ Quick controls** titles return to Home, and **Read reply** opens unread text. These routes are not universal: while Silence and Stop work fill the two action slots there is no Read reply or Controls target, and a reply you have already read is reopened by swiping up. Swipe down from Home for quick controls at any time.
+Several swipes also have a visible tap route on the 466px round display, when there is room for it: **↓ Controls** on the idle face (only when no action fills the action row) opens quick controls, the **‹ Latest reply** and **‹ Quick controls** titles return to Home, and **Read reply** opens unread text. These routes are not universal: while Mute voice and Stop task fill the two action slots there is no Read reply or Controls target, and a reply you have already read is reopened by swiping up. Swipe down from Home for quick controls at any time.
 
-### Silence, Stop work and Discard
+### Mute voice, Stop task and Discard
 
 These are separate actions with separate targets:
 
 | Action | What it does | What it never does |
 |---|---|---|
-| **Silence** | Stops the speaker immediately. Later audio for the same reply stays quiet until a new turn starts or you ask something new. | Send anything to Hermes, open the microphone, or stop Hermes working |
-| **Stop work** | Sends one stop request for the current work, quiets its speech, and shows **Stop requested** | Claim the work has stopped |
+| **Mute voice** | Stops the speaker immediately. Later audio for the same reply stays quiet until a new turn starts or you ask something new. | Send anything to Hermes, open the microphone, or stop Hermes working |
+| **Stop task** | Sends one stop request for the current work, quiets its speech, and shows **Stop requested** | Claim the work has stopped |
 | **Discard** | Ends a recording without making a request | Recall audio that already streamed |
 
-On the 466px display, **Silence** appears whenever speech is playing and **Stop work** whenever Hermes is working, on Home, the reading view and quick controls, always with Silence on the left and Stop work on the right. Quick controls keep both in place and outline the one that is unavailable. Pressing Stop work again, or CANCEL, sends nothing more. Final reply text is not the end of the work: Stop work stays available until Hermes ends the turn.
+On the 466px display, **Mute voice** appears whenever speech is playing and **Stop task** whenever Hermes is working, on Home, the reading view and quick controls, always with Mute voice on the left and Stop task on the right. Quick controls keep their positions stable. An unavailable Mute voice is outlined; after work ends, its outcome replaces Stop task as plain status text, not a button or hit target. Pending stop requests are also plain status text. Pressing Stop task again, or CANCEL, sends nothing more. Final reply text is not the end of the work: Stop task stays available until Hermes ends the turn.
 
 **Stop requested** stays until Hermes reports how that work ended:
 
@@ -81,7 +94,7 @@ On the 466px display, **Silence** appears whenever speech is playing and **Stop 
 | An ending that does not name the stopped turn | Nothing changes: still **Stop requested** |
 | Nothing about the turn for three minutes | **Outcome unknown** · No ending from Hermes |
 
-A stop request is not an undo: actions that already ran stay done. The outcome stays on the idle face until the next activity rather than disappearing after a few seconds. A turn that ends after you have asked something new belongs to the earlier work; it never ends or relabels the new request. Asking something new also leaves an earlier unconfirmed stop behind as unknown: the new request gets its own **Stop work**, never an inherited **Stop requested**. Work that Hermes never ends is not shown as finished; after three minutes without word from Hermes about it, Tiny says **Task status unknown** · No ending from Hermes. If the connection drops while Hermes is working, the offline screen and the idle face say **Task status unknown**; reconnecting does not resend anything.
+A stop request is not an undo: actions that already ran stay done. The outcome stays on the idle face until the next activity rather than disappearing after a few seconds. A turn that ends after you have asked something new belongs to the earlier work; it never ends or relabels the new request. Asking something new also leaves an earlier unconfirmed stop behind as unknown: the new request gets its own **Stop task**, never an inherited **Stop requested**. Work that Hermes never ends is not shown as finished; after three minutes without word from Hermes about it, Tiny says **Task status unknown** · No ending from Hermes. If the connection drops while Hermes is working, the offline screen and the idle face say **Task status unknown**; reconnecting does not resend anything.
 
 ### Recording
 
@@ -93,13 +106,13 @@ Hold Home anywhere that is not a button to talk. Audio streams to Hermes while y
 - Discard sends `audio.cancel`. The hub drops the partial upload and makes no request, but audio that already streamed during the recording did reach the host.
 - Touch Talk targets never answer a question. The physical BOOT/TALK button keeps its existing meaning during a question (yes, after the 0.6 s arm delay); this release does not remap it.
 
-Home shows a quiet tappable reply indicator when text changes while the response is not visible: **New text**. A matching successful `turn.end` changes it to **Reply ready**; a non-success ending shows **Reply stopped** instead. On the 466px face-first display these are the state label above a **Read reply** pill; legacy displays retain the combined footer label. A final text snapshot alone is not completion. A turn without new text cannot mark a retained previous reply complete. Opening the response clears unread status (it does not claim every line was read); later hidden text changes make it unread again. This is local, in-memory status for the latest reply, not a notification history.
+Home shows a quiet tappable reply indicator when text changes while the response is not visible: **New text**. A matching successful `turn.end` changes it to **Reply ready**; a failed ending shows **Couldn’t finish** on the round Home face, while a cancelled ending shows **Reply stopped** instead. On the 466px face-first display these are the state label above a **Read reply** pill; legacy displays retain the combined footer label. A final text snapshot alone is not completion. A turn without new text cannot mark a retained previous reply complete. Opening the response clears unread status (it does not claim every line was read); later hidden text changes make it unread again. This is local, in-memory status for the latest reply, not a notification history.
 
 Tap that footer to open the response at its retained reading position, without starting audio. It does not replace approval, recording, settings or overlays, and completion does not change your selected view. Holding the footer also does not start recording; hold elsewhere on Home to talk. A contact begun on an older reply cannot open replacement text. The existing up/down navigation remains available while the footer temporarily replaces its hint.
 
 Streaming follows new text only while at the bottom. Scrolling up holds your reading position, including after the final text arrives and when returning from Home. Scroll back to the bottom to follow again. Home retains the current activity indicator, and the previous reply remains readable while the next turn is thinking.
 
-A gesture belongs to its starting view and to the revision of the target it touched: a Silence contact cannot quiet a newer stream, a Stop work contact cannot stop a newer turn, and a Discard or Finish contact cannot act on a later recording. A newly arrived/replaced approval cannot consume an older contact, and a control that appears under a resting finger does not take it. Ambiguous diagonals and drags outside a button do not decide anything. A stationary hold on Home starts push-to-talk after 120 ms; once recording has started, movement is ignored and lifting the original talk contact finishes normally. Another contact during recording does nothing unless it taps a visible Discard or Finish target.
+A gesture belongs to its starting view and to the revision of the target it touched: a Mute voice contact cannot quiet a newer stream, a Stop task contact cannot stop a newer turn, and a Discard or Finish contact cannot act on a later recording. A newly arrived/replaced approval cannot consume an older contact, and a control that appears under a resting finger does not take it. Ambiguous diagonals and drags outside a button do not decide anything. A stationary hold on Home starts push-to-talk after 120 ms; once recording has started, movement is ignored and lifting the original talk contact finishes normally. Another contact during recording does nothing unless it taps a visible Discard or Finish target.
 
 Quick controls are separate from the legacy settings/hardware-check menu. When Tiny is idle, quick controls show **Settings**; otherwise they say **Settings open when idle**. Holding the HERMES title on Home for one second **while idle** still opens the menu, as do the physical chord and console command when idle. On the offline, connecting and pairing screens, holding the title (the top bar on rectangular touch boards) opens it too, because there is no other on-device route to Wi-Fi and server settings there; this works even when the last task's outcome is unknown, and never cancels or resends that work. Settings never stop a recording, speech or work: the chord and console are refused while busy, and a refused chord is consumed rather than acting as CANCEL. A pending title hold is consumed if its view or idle eligibility changes; it cannot cancel a recording or speech that starts later. Starting a recording also invalidates older navigation contacts, without changing the original touch-owned TALK release. Its local item-navigation and Wi-Fi setup gestures are unchanged.
 
@@ -140,7 +153,7 @@ phrase appears only when Hermes sends one.
 
 Home, recording and reading share one action row below the text: one
 **210×55px** target, or two **138×55px** targets side by side. In priority
-order it holds Discard/Finish while recording, otherwise Silence, Stop work
+order it holds Discard/Finish while recording, otherwise Mute voice, Stop task
 and Read reply (Home), or Hold to talk (reading, when idle). Decorative brackets
 stop above it. Unread completion is a **Reply ready** state and a **Read reply**
 target; new text and stopped replies remain distinct. Outcomes such as
@@ -153,7 +166,7 @@ the reading view adds one line under its action row (**Stopped · may be partial
 target (**Stopped**, **Error**, **Unknown**, **Finished**). The reading line
 appears only for text from that work (text a newer turn sends for older work is
 not shown in its place); your scroll position is kept. Discarding a recording
-does not end work that is still open: Stop work stays available.
+does not end work that is still open: Stop task stays available.
 
 The reading view removes the face, labels the content **‹ Latest reply** (tap it
 to return Home), and uses 24px Geist, measured wrapping, seven 34px rows and a
@@ -166,8 +179,8 @@ a visible replacement glyph; full Unicode shaping and browser kerning are not
 implemented. Native results do not establish physical readability.
 
 Quick controls use **72×143px** rounded filled tracks labeled **Volume** and
-**Brightness**, with actual percentages, then **160×56px Stop work** and
-**Silence** targets that stay in place (outlined when unavailable), and
+**Brightness**, with actual percentages, then **160×56px Stop task** and
+**Mute voice** targets that stay in place (outlined when unavailable), and
 **Settings** when idle. **‹ Quick controls** returns Home. Drawing and hit
 testing share the same rectangles; stale contacts still cannot decide
 replacement targets. Setup, images and cards retain their safe inscribed area,

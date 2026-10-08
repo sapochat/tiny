@@ -143,7 +143,7 @@ def test_shelf_cards_have_status_hierarchy(ix):
     for name, (stage, glance) in rows.items():
         rect = tuple(ui(r.s)['controls'][name])
         word, colour = STAGES[stage]
-        assert find_text(r.s, word, 14, colour, SURFACE, rect), (name, word)
+        assert find_text(r.s, word, 18, colour, SURFACE, rect), (name, word)
         assert find_text(r.s, glance, 18, TEXT, SURFACE, rect), (name, glance)
         assert not find_text(r.s, stage, 18, TEXT, SURFACE, rect), (name, 'raw lowercase stage still shown')
     assert 'next' not in ui(r.s)['controls'], 'a single page needs no paging control'
@@ -181,7 +181,7 @@ def test_result_outcome_reads_as_a_word(ix):
     to_recent(r)
     tap(r.s, *r.control('work0'))
     assert ui(r.s)['view'] == 'result'
-    assert r.shows('Failed', 14, DIM, 0, (0, 400, 466, 66))
+    assert r.shows('Failed', 18, STAGES['failed'][1], 0, (78, 90, 310, 45))
     assert not r.shows('failed', 14, DIM, 0, (0, 400, 466, 66))
 
 

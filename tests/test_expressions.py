@@ -56,6 +56,7 @@ def test_expression_hub_workflow_and_static_outline(rig):
     assert not np.array_equal(ready,thinking)
     # Hidden controls do not reset a completed hold or consume unread status.
     retained=face(s); swipe(s,dy=100); advance(3); swipe(s,dx=100)
+    advance(3)  # let the 220 ms arrival slide finish on the frozen clock before sampling
     assert np.array_equal(retained,face(s))
     out=Path('artifacts/video-v2/expression-regressions');out.mkdir(parents=True,exist_ok=True)
     captures[0].save(out/'native-transitions.gif',save_all=True,append_images=captures[1:],duration=100,loop=0)

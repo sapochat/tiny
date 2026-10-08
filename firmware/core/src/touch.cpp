@@ -45,7 +45,7 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
     return;
   }
   if (state_ == State::Idle) {
-    if (app_.wake_display()) { state_ = State::Ignored; return; }
+    if (app_.wake_display(true)) { state_ = State::Ignored; return; }
     owner_ = app_.touch_view();
     epoch_ = app_.touch_epoch();
     control_ = app_.touch_hit(x, y);
