@@ -107,7 +107,7 @@ class App {
   // A touch-owned TALK press. Unlike a physical TALK press it never answers a question.
   void on_touch_talk(bool pressed);
   // Returns true when this input only wakes a sleeping display.
-  bool wake_display();
+  bool wake_display(bool input = false);
   bool start_wifi_setup();
   void close_wifi_setup();
   bool wifi_setup_open() const { return !wifi_setup_text_.empty(); }

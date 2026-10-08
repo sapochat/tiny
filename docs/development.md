@@ -249,6 +249,29 @@ visible tap routes. `test_face_first.py` and `test_face_first_font.py` assert th
 new rectangles and labels against the same source-TTF oracle, and the glyph
 coverage test pages by the advertised `text_rows`.
 
+### Round companion navigation motion
+
+The 466px renderer uses a 220ms integer cubic ease-out arrival translation,
+32 pixels vertically for Home/Controls/Reader and horizontally for the Recent
+stack. Only explicit user navigation starts motion. The destination is the sole
+input model from the first frame; input or a priority activity snaps immediately.
+The app tick supplies milliseconds independently of the 100ms expression tick.
+
+Rendering uses the existing framebuffer, an in-place memmove, and 466 row hashes
+(1,864 bytes); there is no second full framebuffer or new font atlas. The 1.75C
+has 8MB octal PSRAM and the existing RGB565 framebuffer lives there. Changed row
+runs alone are flushed; the final transform is zero and pixel-identical to the
+static view. The existing panel flush may wait for DMA: hardware frame timing
+and audio contention have not been measured. No animation sleep or input lock
+is introduced.
+
+`tests/test_design_pass2_e2e.py` exercises motion, static convergence, row flushes,
+mid-motion input, stale approval contact, speech/recording preemption, offline
+recovery, outcome hit targets, time-token wrapping and result headers against
+the native core plus production loopback DeviceHub. Older navigation helpers
+wait on observable transition completion before pixel assertions; raw-contact
+workflows test interruption without waiting.
+
 ### Releases
 
 `tools/package_release.py` turns PlatformIO builds into release files. For each board:

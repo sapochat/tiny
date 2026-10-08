@@ -91,7 +91,7 @@ def test_f1_prestart_stop_never_owns_the_next_request(ix, old_events):
     assert r.wait(lambda: work(s)['active'])
     r.snap(f'{old_events}-second-turn')
     assert not r.headline('Stop requested'), 'new work inherited the old pending stop'
-    r.require_label('stop', 'Stop work')
+    r.require_label('stop', 'Stop task')
     m2 = r.mark()
     tap(s, *r.control('stop'))
     assert [c.get('turn') for c in r.sent_since(m2, 'cancel')] == ['second-turn'], r.sent_since(m2)
@@ -160,7 +160,7 @@ def test_f3_final_text_without_turn_end_keeps_work_open_past_settle(ix, stop_fir
     if stop_first:
         r.require_label('stop', 'Stop requested', fg=DIM, bg=0)
     else:
-        r.require_label('stop', 'Stop work')
+        r.require_label('stop', 'Stop task')
     s.tap('cancel')
     s.step()
     assert [c.get('turn') for c in r.sent_since(m, 'cancel')] == ['unfinished']
@@ -276,7 +276,8 @@ def test_f5_reading_and_controls_show_compact_outcome_in_place(ix, case):
     swipe(s, dy=100)
     assert ui(s)['view'] == 'controls'
     r.snap(f'controls-{case}')
-    r.require_label('stop', word, fg=DIM, bg=0)
+    assert 'stop' not in ui(s)['controls']
+    assert r.shows(word,18,DIM,0,(238,329,160,52))
 
 
 # == Order: Silence and Stop keep one position across views ===================================

@@ -36,18 +36,31 @@ def rig(devserver, make_sim, loop_thread, request):
     }, indent=2))
 
 
+def settle(s):
+    """Let a view transition finish on the live clock.
+
+    Tests that freeze the native clock (they replace ``now_ms``) own time themselves and
+    advance it explicitly; a 220 ms transition cannot end without that, so don't wait here.
+    """
+    if 'now_ms' in vars(s):
+        return
+    assert s.wait_for(lambda: not ui(s).get("transition", {}).get("active", False), timeout=1)
+
+
 def swipe(s, dx=0, dy=0, x=233, y=220):
     s.touch(True, x, y)
     s.touch(True, x + dx // 3, y + dy // 3)
     s.touch(True, x + dx, y + dy)
     s.touch(False, -999, -999)  # release coordinates from controllers are undefined
     s.step()
+    settle(s)
 
 
 def tap(s, x, y):
     s.touch(True, x, y)
     s.touch(False)
     s.step()
+    settle(s)
 
 
 def ui(s):

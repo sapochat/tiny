@@ -70,7 +70,20 @@ inline std::vector<std::string> wrap(std::string_view s,int max_width,int size=2
       start=end; p=end; w=0; space=std::string_view::npos; continue;
     }
     w+=advance;
-    if(cp==' ' && before>start) space=p;
+    if(cp==' ' && before>start) {
+      // Keep short number+unit tokens together where they fit on a line.
+      // Preserve source bytes; no NBSP substitution or new glyph needed.
+      size_t n=before;
+      while(n>start && s[n-1]!=' ' && s[n-1]!='\n') --n;
+      size_t end=p;
+      while(end<s.size() && s[end]!=' ' && s[end]!='\n') ++end;
+      auto unit=s.substr(p,end-p);
+      while(!unit.empty() && (unit.back()==':' || unit.back()==',' || unit.back()=='.')) unit.remove_suffix(1);
+      const bool number=n<before && s[n]>='0' && s[n]<='9';
+      const bool paired=number && (unit=="am" || unit=="pm" || unit=="AM" || unit=="PM" ||
+          unit=="min" || unit=="minutes" || unit=="hours" || unit=="degrees" || unit=="kg" || unit=="km");
+      if(!paired || width(s.substr(n,end-n),size)>max_width) space=p;
+    }
   }
   if(start<s.size() || out.empty() || (!s.empty() && s.back()=='\n')) out.emplace_back(s.substr(start));
   return out;

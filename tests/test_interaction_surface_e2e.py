@@ -453,7 +453,7 @@ def test_silence_quiets_real_hub_stream_without_cancelling_work(ix):
     assert r.wait(lambda: r.speaker_bytes() >= 3200 and ui(s)['speaking'])
     r.snap('speaking')
     x, y = r.control('silence')
-    r.require_label('silence', 'Silence')
+    r.require_label('silence', 'Mute voice')
     m = r.mark()
     tap(s, x, y)
     r.snap('silenced')
@@ -501,9 +501,9 @@ def test_silence_is_reachable_in_reading_and_controls_views(ix, view):
     assert r.wait(lambda: ui(s)['speaking'])
     assert ui(s)['view'] == view
     x, y = r.control('silence')
-    r.require_label('silence', 'Silence')
+    r.require_label('silence', 'Mute voice')
     r.control('stop')
-    r.require_label('stop', 'Stop work')
+    r.require_label('stop', 'Stop task')
     r.snap(f'{view}-speaking')
     m = r.mark()
     tap(s, x, y)
@@ -601,7 +601,7 @@ def test_stop_work_on_home_requests_once_and_awaits_matching_outcome(ix, outcome
     r.turn_start('work-1')
     assert ui(s)['view'] == 'home'
     x, y = r.control('stop')
-    r.require_label('stop', 'Stop work')
+    r.require_label('stop', 'Stop task')
     m = r.mark()
     tap(s, x, y)
     cancels = r.sent_since(m, 'cancel')
@@ -634,7 +634,7 @@ def test_stop_after_final_text_is_not_relabelled_cancelled(ix):
     r.reply('Final text before the turn ends.', turn='work-2')
     assert ui(s)['view'] == 'response'
     x, y = r.control('stop')
-    r.require_label('stop', 'Stop work')
+    r.require_label('stop', 'Stop task')
     m = r.mark()
     tap(s, x, y)
     assert [c.get('turn') for c in r.sent_since(m, 'cancel')] == ['work-2']
@@ -657,7 +657,7 @@ def test_stop_work_reachable_from_reading_and_controls(ix, view):
         swipe(s, dy=100)
     assert ui(s)['view'] == view
     x, y = r.control('stop')
-    r.require_label('stop', 'Stop work')
+    r.require_label('stop', 'Stop task')
     m = r.mark()
     tap(s, x, y)
     assert [c.get('turn') for c in r.sent_since(m, 'cancel')] == ['work-3']
@@ -678,7 +678,7 @@ def test_old_turn_end_after_new_request_cannot_end_new_work(ix):
     s.run_for(0.3)
     assert ui(s)['activity'] == 'thinking', 'an old turn.end ended the new request'
     assert r.headline('Thinking')
-    r.require_label('stop', 'Stop work')
+    r.require_label('stop', 'Stop task')
     r.turn_start('new-turn')
     r.reply('Newer answer', turn='new-turn')
     r.turn_end('new-turn', 'success')
@@ -695,7 +695,7 @@ def test_old_stop_outcome_cannot_relabel_new_request(ix):
     s.type_text('changed my mind, new question')
     assert r.wait(lambda: r.brain.count('text') == 1)
     assert r.headline('Thinking')
-    r.require_label('stop', 'Stop work')
+    r.require_label('stop', 'Stop task')
     r.turn_end('old-turn', 'cancelled')
     s.run_for(0.3)
     assert ui(s)['activity'] == 'thinking' and r.headline('Thinking') and not r.headline('Stopped')
@@ -918,15 +918,15 @@ def test_controls_and_return_have_visible_tap_routes(ix, talk_mode):
     s.console(f'set talk_mode {talk_mode}')
     m = r.mark()
     x, y = r.control('controls')
-    assert r.label('controls', '↓  Controls', 14, DIM, 0)
+    assert r.label('controls', '↓  Controls', 18, DIM, 0)
     tap(s, x, y)
     assert ui(s)['view'] == 'controls'
     hx, hy = r.control('home')
-    assert r.label('home', 'Quick controls', 14, DIM, 0)
+    assert r.label('home', 'Quick controls', 24, TEXT, 0)
     tap(s, hx, hy)
     assert ui(s)['view'] == 'home'
     completed_reading(r)
-    assert r.label('home', 'Latest reply', 14, DIM, 0)
+    assert r.label('home', 'Latest reply', 24, TEXT, 0)
     tap(s, *r.control('home'))
     assert ui(s)['view'] == 'home'
     assert not (r.sent_types(m) & {'audio.start', 'cancel', 'session.new'})
@@ -954,7 +954,7 @@ def test_settings_never_cancel_active_work(ix, state):
     swipe(s, dy=100)
     assert ui(s)['view'] == 'controls'
     assert 'settings' not in ui(s)['controls']
-    assert r.shows('Settings open when idle', 14, DIM, 0, (0, 380, 466, 60))
+    assert r.shows('Settings open when idle', 18, DIM, 0, (0, 380, 466, 60))
     m = r.mark()
     tap(s, 233, 405)
     # Quick controls also report Screen::Settings; the legacy menu would be view 'other'.
@@ -1083,8 +1083,8 @@ def test_active_audio_with_pending_work_shows_both_and_stop_also_silences(ix):
     r.turn_start('both')
     out = r.play(tone(3.0), turn='both')
     assert r.wait(lambda: ui(s)['speaking'])
-    r.require_label('silence', 'Silence')
-    r.require_label('stop', 'Stop work')
+    r.require_label('silence', 'Mute voice')
+    r.require_label('stop', 'Stop task')
     assert not overlap(r.rect('silence'), r.rect('stop'))
     m = r.mark()
     tap(s, *r.control('stop'))
@@ -1130,10 +1130,10 @@ def test_legacy_rectangular_board_cancel_capture_and_chord(ix):
 
 
 LABELS = {
-    'silence': ('Silence', 18, TEXT, SURFACE), 'stop': ('Stop work', 18, TEXT, SURFACE),
+    'silence': ('Mute voice', 18, TEXT, SURFACE), 'stop': ('Stop task', 18, TEXT, SURFACE),
     'discard': ('Discard', 18, TEXT, SURFACE), 'finish': ('Finish', 18, TEXT, SURFACE),
     'talk': ('Hold to talk', 18, TEXT, SURFACE), 'settings': ('Settings', 18, TEXT, SURFACE),
-    'reply': ('Read reply  ↑', 18, TEXT, SURFACE), 'controls': ('↓  Controls', 14, DIM, 0),
+    'reply': ('Read reply  ↑', 18, TEXT, SURFACE), 'controls': ('↓  Controls', 18, DIM, 0),
     'yes': ('Yes', 18, TEXT, SURFACE), 'no': ('No', 18, TEXT, SURFACE),
 }
 
@@ -1183,14 +1183,16 @@ def test_new_controls_fit_safe_circle_and_render_supported_glyphs(ix):
     tap(s, *r.control('discard'))
     s.console('set talk_mode hold')
     completed_reading(r, 'geo-read')
-    check('reading-idle', {'talk', 'home'}, {'home': ('Latest reply', 14, DIM, 0)}, hero=False)
+    check('reading-idle', {'talk', 'home'}, {'home': ('Latest reply', 24, TEXT, 0)}, hero=False)
     tap(s, *r.control('home'))
     tap(s, *r.control('controls'))
     # Remediation F5: once work has ended, the inert Stop target names its ending
     # (completed_reading ends with success), still an exact source-TTF raster.
-    check('controls-idle', {'stop', 'silence', 'settings', 'home'},
-          {'stop': ('Finished', 18, DIM, 0), 'silence': ('Silence', 18, DIM, 0),
-           'home': ('Quick controls', 14, DIM, 0)}, hero=False)
+    assert 'stop' not in ui(s)['controls']
+    assert r.shows('Finished',18,DIM,0,(238,329,160,52))
+    check('controls-idle', {'silence', 'settings', 'home'},
+          {'silence': ('Mute voice', 18, DIM, 0),
+           'home': ('Quick controls', 24, TEXT, 0)}, hero=False)
     r.send('prompt', id='geo-q', title='Permission', text='Allow?')
     s.run_for(0.7)
     check('approval', {'yes', 'no'}, hero=False)

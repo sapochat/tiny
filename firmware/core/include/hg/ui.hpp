@@ -84,6 +84,8 @@ struct UiModel {
   // Authored clip entry, selected from activity BEFORE navigation overrides.
   uint8_t expression = 0;
   int volume = 0, brightness = 0;
+  uint32_t navigation = 0;  // explicit navigation generation
+  uint32_t time_ms = 0;  // app clock; motion never sleeps or owns input
   uint32_t frame = 0;    // animation frame, advanced by the app
   std::string hint;      // bottom bar
   std::string yes, no;   // answer buttons under the hero caption (Prompt screen)
@@ -109,6 +111,8 @@ class Ui {
   void render(const UiModel& model);
   // Forces a full redraw on the next render (after something else drew).
   void invalidate();
+  void snap_transition();
+  bool transitioning() const { return motion_active_; }
   const UiLayout& layout() const { return layout_; }
   // The legacy/image safe area: whole rectangular panel, or inscribed square.
   // The 466px round companion face additionally draws in the safe perimeter.
@@ -169,6 +173,11 @@ class Ui {
   bool face_changed_ = false;
   void update_expression(const UiModel& m);
   void draw_expression(Canvas& c, int x, int y, int size) const;
+  int motion_view_ = -1, motion_dx_ = 0, motion_dy_ = 0;
+  uint32_t motion_start_ = 0, motion_navigation_ = 0;
+  bool motion_active_ = false, motion_flush_ = false;
+  uint32_t row_hash_[466] = {};  // 1,864 bytes, no second framebuffer
+  void render_motion(const UiModel& m);
   uint32_t companion_hash_ = 0;
   TouchControl companion_pressed_ = TouchControl::None;
   int companion_level_ = -1;

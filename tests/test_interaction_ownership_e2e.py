@@ -79,7 +79,7 @@ def test_v2_1_tagged_end_cannot_end_newer_unnamed_work(ix, end):
     r.send('turn.start')                     # newer work that Hermes does not name
     r.delta(NEW_TEXT)
     assert r.wait(lambda: work(s)['active'])
-    r.require_label('stop', 'Stop work')     # the old stop is not pending for this work
+    r.require_label('stop', 'Stop task')     # the old stop is not pending for this work
     tag = 'old-target' if end == 'known-stopped' else 'never-seen'
     r.turn_end(tag, 'cancelled')
     s.run_for(0.3)
@@ -89,7 +89,7 @@ def test_v2_1_tagged_end_cannot_end_newer_unnamed_work(ix, end):
     assert w['earlier_stop'] == ('stopped' if end == 'known-stopped' else 'unknown'), w
     assert ui(s)['view'] == 'response' and r.shows(NEW_TEXT, 24, TEXT)
     assert not reading_outcome(r, 'Stopped · may be partial'), 'old outcome rendered under new text'
-    r.require_label('stop', 'Stop work')
+    r.require_label('stop', 'Stop task')
     assert 'talk' not in ui(s)['controls']
     assert settings_refused(s), 'settings opened while new work is open'
     m2 = r.mark()
@@ -151,7 +151,7 @@ def test_v2_2a_discarded_capture_never_ends_open_remote_work(ix, during):
         return
     w = work(s)
     assert w['active'] and w['outcome'] == 'none', ('a discarded capture ended remote work', w)
-    r.require_label('stop', 'Stop work')
+    r.require_label('stop', 'Stop task')
     assert 'talk' not in ui(s)['controls']
     assert not r.headline('Discarded'), 'Home claims nothing is happening while work is open'
     assert settings_refused(s), 'settings opened over open remote work'
@@ -195,7 +195,7 @@ def test_v2_2b_final_without_start_never_inherits_an_older_ending(ix, stop_first
     open_reading(r)
     assert r.shows('New final answer.', 24, TEXT), 'legacy untagged text must stay readable'
     assert not reading_outcome(r, 'Finished')
-    r.require_label('stop', 'Stop work')
+    r.require_label('stop', 'Stop task')
     assert 'talk' not in ui(s)['controls']
     assert settings_refused(s), 'settings opened while the new request is open'
     m = r.mark()

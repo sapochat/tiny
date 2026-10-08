@@ -72,19 +72,19 @@ def test_native_ui_known_symbols_match_source_font(rig,view):
     # Interaction v1 replaced the swipe-only footers with visible tap routes; the same
     # source-TTF oracle now checks their labels, and the reply body keeps ↑ ↓ › coverage.
     if view=='reading':
-        assert_text(s,'Latest reply',14,61,dim)
+        assert_text(s,'Latest reply',24,55,text)
         # Measured 24px wrapping (303px) splits the fixture after "and".
         assert_text(s,'Known arrows ↑ ↓ and',24,108,text,x=78)
         assert_text(s,'chevron ›',24,142,text,x=78)
-        pill('stop','Stop work')
+        pill('stop','Stop task')
     elif view=='controls':
-        assert_text(s,'Quick controls',14,61,dim)
+        assert_text(s,'Quick controls',24,55,text)
         pill('settings','Settings')
-    elif view=='idle': assert_text(s,'↓  Controls',14,405,dim)
+    elif view=='idle': assert_text(s,'↓  Controls',18,402,dim)
     elif view=='reply-ready': assert_text(s,'Read reply  ↑',18,372,text,surface)
     else:
-        pill('silence','Silence')
-        pill('stop','Stop work')
+        pill('silence','Mute voice')
+        pill('stop','Stop task')
 
 def test_native_reply_entire_intended_glyph_coverage(rig):
     s=rig

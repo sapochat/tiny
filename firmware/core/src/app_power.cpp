@@ -4,7 +4,8 @@
 
 namespace hg {
 
-bool App::wake_display() {
+bool App::wake_display(bool input) {
+  if (input && ui_ && ui_->transitioning()) { ui_->snap_transition(); update_model(); }
   activity_at_ = now();
   const bool sleeping = display_sleeping_;
   if (display_dimmed_ || sleeping) {
