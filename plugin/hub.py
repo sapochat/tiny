@@ -21,6 +21,7 @@ from typing import Any
 
 from . import audio, protocol
 from .store import DeviceStore
+from .work import WorkStore
 
 log = logging.getLogger("hermes_gadget.hub")
 
@@ -197,6 +198,8 @@ class DeviceSession:
         self.last_rx = time.monotonic()
         self.closed = False
         self._send_lock = asyncio.Lock()
+        self._work_turns: set[str] = set()
+        self._work_enrollment = hub.store.devices().get(self.device_id, {}).get("enrolled_at")
         self._upload: _Upload | None = None
         self._audio_out: AudioOut | None = None
         self._stream_counter = 0
@@ -237,10 +240,39 @@ class DeviceSession:
 
     # -- outbound -----------------------------------------------------------------
 
+    @property
+    def has_work(self) -> bool:
+        return self.caps.get("work") == {"v": 1}
+
+    async def work_snapshot(self) -> None:
+        if not self.has_work:
+            return
+        enrolled = self.hub.store.devices().get(self.device_id)
+        allowed = enrolled and self.paired and await self.hub.delegate.is_paired(self)
+        items = self.hub.work.items(self.device_id) if allowed else []
+        await self.send_json(protocol.message("work", items=items))
+
     async def send_json(self, obj: dict) -> None:
+        changed = False
+        enrolled = self.hub.store.devices().get(self.device_id, {})
+        allowed = self.has_work and self.paired and enrolled.get("enrolled_at") == self._work_enrollment and bool(enrolled)
+        if allowed and not (self.closed and obj.get("type") == "turn.start"):
+            changed = self.hub.work.observe(self.device_id, obj)
+            if obj.get("type") == "turn.start" and isinstance(obj.get("turn"), str):
+                self._work_turns.add(obj["turn"])
+                retained = {r["origin"]["turn"] for r in self.hub.work.items(self.device_id)}
+                self._work_turns.intersection_update(retained)
+        if self.closed:
+            current = self.hub.get(self.device_id)
+            if changed and current is not None and current is not self:
+                await current.work_snapshot()
+            if obj.get("type") in ("turn.start", "turn.end", "reply"):
+                return  # journal-only receipt, never a replay
         payload = json.dumps({k: v for k, v in obj.items() if v is not None}, separators=(",", ":"))
         async with self._send_lock:
             await self._ws.send(payload)
+        if changed:
+            await self.work_snapshot()
 
     async def send_binary(self, data: bytes) -> None:
         async with self._send_lock:
@@ -276,6 +308,7 @@ class DeviceSession:
             return
         self.paired = paired
         await self.send_json(protocol.message("paired" if paired else "unpaired"))
+        await self.work_snapshot()
 
     async def ask(self, prompt_id: str, title: str, text: str, ttl_s: float | None = None) -> None:
         """Show a yes/no question; the answer arrives as ``on_prompt_reply``."""
@@ -376,6 +409,8 @@ class DeviceSession:
         if self._ota_inbox is not None:
             self._ota_inbox.put_nowait(
                 protocol.message("ota.error", code="disconnected", message=f"{self.name} disconnected"))
+        # History last: live teardown has already happened if journaling misbehaves.
+        self.hub.work.interrupt(self.device_id, self._work_turns)
         if self._audio_out and self._audio_out._task:
             self._audio_out._task.cancel()
 
@@ -433,6 +468,7 @@ class DeviceHub:
         max_utterance_s: float = 60.0,
     ):
         self.store = store
+        self.work = WorkStore(store.path.parent)
         self.delegate = delegate
         self.host, self.port, self.path = host, port, "/" + path.strip("/")
         self.access_token = access_token or None
@@ -566,6 +602,7 @@ class DeviceHub:
                 await ws.close(1008, r.code)
                 return
 
+            self.work.bind(hello["device_id"], self.store.devices()[hello["device_id"]]["enrolled_at"])
             session = DeviceSession(self, ws, hello)
             previous = self.sessions.get(session.device_id)
             self.sessions[session.device_id] = session
@@ -574,7 +611,9 @@ class DeviceHub:
             session.paired = bool(await self.delegate.is_paired(session))
             await session.send_json(protocol.message(
                 "welcome", session=session.session_id, paired=session.paired,
-                heartbeat_s=self.heartbeat_s, server="hermes", proto=protocol.VERSION))
+                heartbeat_s=self.heartbeat_s, server="hermes", proto=protocol.VERSION,
+                work={"v": 1} if session.has_work else None))
+            await session.work_snapshot()
             log.info("device %s (%s) online, paired=%s", session.device_id, session.name, session.paired)
             await self.delegate.on_ready(session)
             heartbeat = asyncio.create_task(self._heartbeat(session))
@@ -624,6 +663,9 @@ class DeviceHub:
             log.debug("[%s] malformed frame", session.device_id)
             return
         if not isinstance(msg, dict):
+            return
+        if msg.get("type") == "work.list":
+            await session.work_snapshot()
             return
         handler = self._routes.get(str(msg.get("type")))
         if handler is None:

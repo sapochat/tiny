@@ -306,6 +306,8 @@ void App::send(const json::Value& msg) {
 
 void App::send_hello() {
   json::Value caps = json::Value::object();
+  if (profile_.touch_screen && ui_ && ui_->round_companion())
+    caps.set("work", json::Value::object().set("v", 1));
   if (hal_.display) {
     DisplayInfo di = hal_.display->info();
     json::Value d = json::Value::object();
@@ -375,6 +377,7 @@ void App::on_transport_text(std::string_view text) {
     return;
   }
   const std::string& type = msg["type"].as_string();
+  if (type == "work") { h_work(msg); update_model(); return; }
   for (const auto& r : kRoutes) {
     if (type == r.type) {
       (this->*r.handler)(msg);
@@ -405,6 +408,13 @@ void App::h_welcome(const json::Value& m) {
   online_since_ = now();
   attempts_ = 0;
   paired_ = m["paired"].as_bool();
+  work_available_ = profile_.touch_screen && ui_ && ui_->round_companion() && m["work"]["v"].as_int() == 1;
+  recent_.clear();
+  if (!work_available_ || !paired_) { reading_work_ = {}; work_page_ = 0; }
+  ++shelf_epoch_;
+  if (work_available_) send(proto::message("work.list"));
+  if ((!work_available_ || !paired_) && (navigation_ == Navigation::Recent || navigation_ == Navigation::Result))
+    navigation_ = Navigation::Home;
   int hb = static_cast<int>(m["heartbeat_s"].as_int(20));
   heartbeat_ms_ = static_cast<uint32_t>(std::max(5, std::min(300, hb))) * 1000u;
   if (paired_) {
@@ -417,6 +427,30 @@ void App::h_welcome(const json::Value& m) {
     hal_.updater->confirm();
     log(LogLevel::Info, "new firmware " + profile_.firmware + " reached Hermes; keeping it");
   }
+}
+
+void App::h_work(const json::Value& m) {
+  if (!work_available_ || !paired_) return;
+  std::vector<WorkItem> items;
+  for (const auto& r : m["items"].elements()) {
+    if (items.size() == 8) break;
+    WorkItem item;
+    item.id = r["work_id"].as_string();
+    item.stage = r["stage"].as_string();
+    item.glance = r["result"]["glance"].as_string();
+    item.revision = r["result"]["revision"].as_int();
+    if (item.id.empty() || item.id.size() > 64 || item.glance.size() > 960) continue;
+    for (const auto& old : recent_)
+      if (old.id == item.id && old.revision == item.revision) item.scroll = old.scroll;
+    items.push_back(std::move(item));
+  }
+  if (navigation_ == Navigation::Result && std::none_of(items.begin(), items.end(),
+      [&](const WorkItem& item) { return item.id == reading_work_.id; })) {
+    reading_work_ = {}; navigation_ = Navigation::Recent; ++touch_epoch_;
+  }
+  recent_ = std::move(items);
+  if (work_page_ >= recent_.size()) work_page_ = 0;
+  ++shelf_epoch_;
 }
 
 void App::h_pairing(const json::Value& m) {
@@ -434,6 +468,8 @@ void App::h_paired(const json::Value&) {
 
 void App::h_unpaired(const json::Value&) {
   paired_ = false;
+  recent_.clear(); reading_work_ = {}; work_page_ = 0; ++shelf_epoch_;
+  if (navigation_ == Navigation::Recent || navigation_ == Navigation::Result) navigation_ = Navigation::Home;
   if (work_open()) {  // no longer followed: never assumed done
     work_ = Work::Lost;
     outcome_ = Outcome::Unknown;
@@ -1829,7 +1865,17 @@ void App::update_model() {
       m.reply_ready ? 5 : display_dimmed_ ? 11 : 0;
   if (profile_.touch_screen && can_talk() && !ota_busy() && ota_ != Ota::Restarting &&
       fatal_.empty() && mode_ != Mode::Listening && !prompt_showing() && overlay_ == Overlay::None) {
-    if (navigation_ == Navigation::Controls) {
+    m.work_available = work_available_;
+    if (navigation_ == Navigation::Recent && work_available_) {
+      m.screen = Screen::Ready; m.hero = false; m.recent = true;
+      m.body.clear(); m.detail.clear();
+      for (unsigned i = work_page_; i < recent_.size() && i < work_page_ + 3; ++i)
+        m.work_rows.push_back(recent_[i].stage + "\n" + recent_[i].glance);
+    } else if (navigation_ == Navigation::Result && work_available_) {
+      m.screen = Screen::Ready; m.hero = false; m.result = true;
+      m.body = reading_work_.glance; m.detail.clear();
+      m.scroll = reading_work_.scroll;
+    } else if (navigation_ == Navigation::Controls) {
       m.screen = Screen::Settings;
       m.hero = false;
       m.quick_controls = true;
@@ -1940,6 +1986,7 @@ void App::update_model() {
   if (m.screen == Screen::Ready && m.hero && power_status_ && power_status_->battery_percent &&
       *power_status_->battery_percent <= 10 && power_status_->external_power == false)
     m.detail = "Low battery: connect USB";
+  if (m.result) { m.talk_control = false; m.outcome = reading_work_.stage; }
   if (!hint_flash_.empty()) m.hint = hint_flash_;
   if (ui_ && !display_sleeping_) ui_->render(m);
 }
@@ -1980,7 +2027,7 @@ json::Value App::status_value() const {
       .set("earlier_stop", stops[static_cast<unsigned>(earlier_stop_)]);
   s.set("work", work);
   if (profile_.touch_screen) {
-    const char* views[] = {"home", "response", "controls", "approval", "recording", "other"};
+    const char* views[] = {"home", "response", "controls", "approval", "recording", "other", "recent", "result"};
     json::Value u = json::Value::object(), controls = json::Value::object();
     u.set("view", views[static_cast<unsigned>(touch_view())])
       .set("activity", mode_ == Mode::Listening ? "recording" : speaking() ? "speaking" :

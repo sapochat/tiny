@@ -143,7 +143,7 @@ const char* screen_name(Screen s) {
 
 const char* control_name(TouchControl c) {
   static const char* const names[kTouchControls] = {"none", "volume", "brightness", "stop", "yes", "no", "reply",
-      "silence", "discard", "finish", "talk", "controls", "home", "settings"};
+      "silence", "discard", "finish", "talk", "controls", "home", "settings", "recent", "work0", "work1", "work2", "next"};
   const auto i = static_cast<unsigned>(c);
   return i < kTouchControls ? names[i] : "none";
 }
@@ -283,7 +283,9 @@ void Ui::render_companion(const UiModel& m) {
       .val(m.quick_controls).val(m.touch_prompt).val(m.unread_reply).val(m.reply_ready)
       .val(m.volume).val(m.brightness).val(m.speaking).val(m.has_reply).val(m.can_stop)
       .val(m.can_silence).val(m.stop_pending).val(m.capture).val(m.talk_control).val(m.tap_talk)
-      .val(m.settings_ready).add(m.outcome).add(m.outcome_word).get();
+      .val(m.settings_ready).val(m.work_available).val(m.recent).val(m.result)
+      .add(m.work_rows.empty() ? "" : m.work_rows[0]).add(m.work_rows.size()>1 ? m.work_rows[1] : "")
+      .add(m.work_rows.size()>2 ? m.work_rows[2] : "").add(m.outcome).add(m.outcome_word).get();
   Canvas c(display_.framebuffer(),panel_.width,panel_.height,panel_.swap_bytes);
   const int level = (m.level/5)*5;
   auto portrait = [&]() { draw_expression(c,137,96,192); };
@@ -343,6 +345,22 @@ void Ui::render_companion(const UiModel& m) {
     const int x=(466-geist::width(title,14))/2-14;
     for(int i=0;i<6;++i) { c.fill_rect(x+i,69-i,2,2,dim); c.fill_rect(x+i,69+i,2,2,dim); }
   };
+  if (m.recent) {
+    back("Recent");
+    if (m.work_rows.empty()) center(180,"No recent work",18,dim);
+    for (unsigned i=0;i<m.work_rows.size();++i) {
+      const auto r=control_rect(static_cast<TouchControl>(unsigned(TouchControl::Work0)+i),m);
+      c.fill_round_rect(r.x,r.y,r.w,r.h,12,surface);
+      const auto lines=geist::wrap(m.work_rows[i],r.w-24,18);
+      for(unsigned j=0;j<lines.size() && j<2;++j)
+        geist::text(c,r.x+12,r.y+10+j*24,lines[j],18,text,surface);
+    }
+    pill(control_rect(TouchControl::Next,m),"Next",true);
+    display_.flush(0,466);
+    return;
+  }
+  if (m.quick_controls && m.work_available)
+    pill(control_rect(TouchControl::Recent,m),"Recent",true);
   TouchControl slots[2];
   const int n=action_slots(m,slots);
   // Decorative perimeter marks stop above an action row instead of crossing its targets.
@@ -366,7 +384,7 @@ void Ui::render_companion(const UiModel& m) {
   } else {
     if(m.quick_controls) back("Quick controls");
     else if(m.touch_prompt) center(61,m.headline,14,dim);
-    else back("Latest reply");
+    else back(m.result ? "Recent result" : "Latest reply");
     if(!m.quick_controls) {
       const auto lines=body_lines(m.body,m);
       const int rows=body_rows(m),total=static_cast<int>(lines.size());
@@ -867,7 +885,15 @@ UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
       if (control == TouchControl::No) return {78,296,150,96};
       return {};
     }
+    if (m.recent) {
+      if (control == TouchControl::Home) return {133,40,200,52};
+      if (control == TouchControl::Next) return {163,364,140,46};
+      int i = int(control) - int(TouchControl::Work0);
+      if (i >= 0 && i < int(m.work_rows.size())) return {90,108+i*80,286,72};
+      return {};
+    }
     if (m.quick_controls) {
+      if (control == TouchControl::Recent && m.work_available) return {163,284,140,34};
       if (control == TouchControl::Volume && m.volume >= 0) return {122,138,72,143};
       if (control == TouchControl::Brightness && m.brightness >= 0) return {272,138,72,143};
       // Stable positions: unavailable actions stay visible but inert. Silence, then Stop,

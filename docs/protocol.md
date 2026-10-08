@@ -1,5 +1,32 @@
 # Hermes Gadget Protocol, version 1
 
+## Recent work (optional v1)
+
+The protocol remains version 1. A round touch client advertises `caps.work: {"v":1}`
+in hello. Only a host that recognizes it includes `work: {"v":1}` in welcome.
+Without that mutual negotiation no work messages are sent and the shelf is hidden.
+
+- Device → host: `{"type":"work.list"}` requests the bounded snapshot.
+- Host → device: `{"type":"work","items":[...]}` after connection and changes.
+- Each item has `work_id` (independent host UUID), `device_id`,
+  `origin: {request, turn}`, `stage`, `result: {revision, glance}`, and Unix-second
+  `created_at`, `updated_at`, `expires_at`. A glance is at most 240 characters.
+- Stages are `running`, `finished`, `failed`, `cancelled`, `unknown`. Only matched
+  turn lifecycle evidence establishes an outcome; final reply text is not completion.
+  Disconnect/startup makes running records unknown. A duplicate start cannot revive
+  unknown work; a matching terminal outcome can resolve it.
+- Snapshots contain only the authenticated, enrolled, currently paired device's
+  records, at most eight, newest update first, retained for seven days from creation.
+  An unpaired or forgotten device receives no records. A new enrollment generation
+  cannot inherit the previous enrollment's records.
+- Result revisions increment on changed final (not interim) text. Opening a result
+  pins that text/revision locally; a later snapshot cannot move the active reader.
+- This is a journal, not a queue: reconnect never replays reply/audio/turn traffic
+  or dispatches requests. This v1 does not implement work.get, work.result,
+  work.update, work-targeted cancellation or artifact references.
+
+
+
 This is the contract between a device and the gadget plugin running inside the Hermes gateway. The device side lives in `firmware/core` (C++) and the server side in `plugin/hub.py` (Python). Both test suites pin the same vectors, so the two sides cannot drift apart without a test failing.
 
 ## Transport

@@ -11,6 +11,8 @@ TouchView App::touch_view() const {
   if (settings_open() || wifi_setup_open() || !can_talk() || ota_busy() ||
       ota_ == Ota::Restarting || !fatal_.empty()) return TouchView::Other;
   if (overlay_ != Overlay::None) return TouchView::Other;
+  if (navigation_ == Navigation::Recent) return TouchView::Recent;
+  if (navigation_ == Navigation::Result) return TouchView::Result;
   if (navigation_ == Navigation::Controls) return TouchView::Controls;
   if (navigation_ == Navigation::Home) return TouchView::Home;
   if (navigation_ == Navigation::Response || (!model_.hero &&
@@ -46,7 +48,17 @@ void App::touch_swipe(TouchView owner, int dx, int dy, TouchControl control) {
     int last = std::max(0, total - ui_->body_rows(model_));
     prompt_scroll_ = std::clamp(prompt_scroll_ + (dy < 0 ? 3 : -3), 0, last);
   } else if (!can_talk() || ota_busy() || ota_ == Ota::Restarting) return;
-  else if (owner == TouchView::Home) {
+  else if (owner == TouchView::Result) {
+    if (dx > 0) navigation_ = Navigation::Recent;
+    else if (dy) {
+      const int last = std::max(0, int(ui_->body_lines(reading_work_.glance, model_).size()) - ui_->body_rows(model_));
+      reading_work_.scroll = std::clamp(reading_work_.scroll + (dy < 0 ? 3 : -3), 0, last);
+      for (auto& item : recent_)
+        if (item.id == reading_work_.id && item.revision == reading_work_.revision) item.scroll = reading_work_.scroll;
+    }
+  } else if (owner == TouchView::Recent) {
+    if (dx > 0) navigation_ = Navigation::Controls;
+  } else if (owner == TouchView::Home) {
     if (dy > 0) navigation_ = Navigation::Controls;
     else if (dy < 0 && !reply_.empty()) navigation_ = Navigation::Response;
   } else if (owner == TouchView::Response) {
@@ -66,6 +78,7 @@ void App::touch_swipe(TouchView owner, int dx, int dy, TouchControl control) {
 }
 
 uint32_t App::control_revision(TouchControl control) const {
+  if (control >= TouchControl::Recent) return shelf_epoch_;
   switch (control) {
     case TouchControl::Reply: return reply_epoch_;
     case TouchControl::Silence: return output_epoch_;
@@ -94,6 +107,19 @@ void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) 
     // Only a free hand can tap: tap mode, or a physical TALK hold. A touch hold owns the screen.
     if (control == TouchControl::Discard && model_.capture >= 2) discard_capture();
     else if (control == TouchControl::Finish && model_.capture == 3 && hands_free_) finish_listening();
+  } else if (control == TouchControl::Recent && work_available_) {
+    navigation_ = Navigation::Recent;
+  } else if (owner == TouchView::Recent) {
+    if (control == TouchControl::Home) navigation_ = Navigation::Controls;
+    else if (control == TouchControl::Next) {
+      work_page_ = work_page_ + 3 < recent_.size() ? work_page_ + 3 : 0;
+      ++shelf_epoch_;
+    } else if (control >= TouchControl::Work0 && control <= TouchControl::Work2) {
+      unsigned i = work_page_ + unsigned(control) - unsigned(TouchControl::Work0);
+      if (i < recent_.size()) { reading_work_ = recent_[i]; navigation_ = Navigation::Result; }
+    }
+  } else if (owner == TouchView::Result && control == TouchControl::Home) {
+    navigation_ = Navigation::Recent;
   } else if (control == TouchControl::Silence) {
     if (model_.can_silence) silence();
   } else if (control == TouchControl::Stop) {

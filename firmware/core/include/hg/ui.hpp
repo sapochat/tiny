@@ -36,11 +36,11 @@ enum class Screen : uint8_t {
 
 enum class Link : uint8_t { Offline, Network, Connecting, Online };
 
-enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, Other };
+enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, Other, Recent, Result };
 // Stop means "Stop work" (a cancellation request). Silence only quiets local playback.
 enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No, Reply, Silence, Discard, Finish,
-                                    Talk, Controls, Home, Settings };
-constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::Settings) + 1;
+                                    Talk, Controls, Home, Settings, Recent, Work0, Work1, Work2, Next };
+constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::Next) + 1;
 const char* control_name(TouchControl c);
 struct UiRect {
   int x = 0, y = 0, w = 0, h = 0;
@@ -62,6 +62,8 @@ struct UiModel {
   bool speaking = false;
   bool color_test = false;
   bool quick_controls = false, touch_prompt = false;
+  bool work_available = false, recent = false, result = false;
+  std::vector<std::string> work_rows;
   bool unread_reply = false;
   bool has_reply = false, can_stop = false;
   bool reply_ready = false;  // success-only completed text; never inferred from a label

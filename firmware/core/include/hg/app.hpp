@@ -146,6 +146,7 @@ class App {
   // server message handlers
   void h_challenge(const json::Value& m);
   void h_welcome(const json::Value& m);
+  void h_work(const json::Value& m);
   void h_pairing(const json::Value& m);
   void h_paired(const json::Value& m);
   void h_unpaired(const json::Value& m);
@@ -257,7 +258,12 @@ class App {
   DeviceProfile profile_;
   std::unique_ptr<Ui> ui_;
   UiModel model_;
-  enum class Navigation : uint8_t { Auto, Home, Response, Controls };
+  enum class Navigation : uint8_t { Auto, Home, Response, Controls, Recent, Result };
+  struct WorkItem { std::string id, stage, glance; int revision = 0, scroll = 0; };
+  std::vector<WorkItem> recent_;
+  WorkItem reading_work_;
+  bool work_available_ = false;
+  unsigned work_page_ = 0, shelf_epoch_ = 0;
   Navigation navigation_ = Navigation::Auto;
   uint32_t touch_epoch_ = 0, reply_epoch_ = 0;
   int prompt_scroll_ = 0;
