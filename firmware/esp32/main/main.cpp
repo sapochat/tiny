@@ -2,11 +2,13 @@
 // core (hg::App) and runs the app loop on the main task.
 #include "port.hpp"  // first: pulls in FreeRTOS.h ahead of task.h/queue.h
 
+#include <algorithm>
 #include <cstring>
 
 #include "driver/gpio.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_psram.h"
 #include "hg/touch.hpp"
 #include "nvs_flash.h"
@@ -248,18 +250,43 @@ extern "C" void app_main(void) {
   app.begin();
   hgp::console::begin();
 
+  // Display timing, reported as perf_* sensors only after the screen did work.
+  uint32_t perf_at = g_system.now_ms(), event_max_us = 0, tick_max_us = 0, busy_us = 0;
   for (;;) {
     hgp::Event ev;
     // Block briefly for events, then run the core's timers and animations.
     if (hgp::events::receive(ev, pdMS_TO_TICKS(10))) {
       do {
+        const int64_t started = esp_timer_get_time();
         dispatch(app, ev);
+        const auto spent = static_cast<uint32_t>(esp_timer_get_time() - started);
+        busy_us += spent;
+        event_max_us = std::max<uint32_t>(event_max_us, spent);
         hgp::events::release(ev);
       } while (hgp::events::receive(ev, 0));
     }
     g_buttons.poll(app);
     g_wifi.tick(app, g_system.now_ms());
     if (g_gestures) g_gestures->tick(g_system.now_ms());
+    const int64_t started = esp_timer_get_time();
     app.tick();
+    const auto ticked = static_cast<uint32_t>(esp_timer_get_time() - started);
+    busy_us += ticked;
+    tick_max_us = std::max<uint32_t>(tick_max_us, ticked);
+    if (hal.display == &g_amoled && g_system.now_ms() - perf_at >= 2000) {
+      perf_at = g_system.now_ms();
+      const auto p = g_amoled.take_perf();
+      if (p.calls) {
+        app.set_sensor("perf_flush_calls", p.calls);
+        app.set_sensor("perf_flush_rows", p.rows);
+        app.set_sensor("perf_flush_ms", p.us / 1000.0);
+        app.set_sensor("perf_flush_max_ms", p.max_us / 1000.0);
+        if (p.full_us) app.set_sensor("perf_full_flush_ms", p.full_us / 1000.0);
+        app.set_sensor("perf_event_max_ms", event_max_us / 1000.0);
+        app.set_sensor("perf_tick_max_ms", tick_max_us / 1000.0);
+        app.set_sensor("perf_busy_ms", busy_us / 1000.0);  // app work incl. rendering and flushes
+      }
+      event_max_us = tick_max_us = busy_us = 0;
+    }
   }
 }

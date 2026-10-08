@@ -14,6 +14,7 @@
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/task.h"
 
 namespace hgp {
@@ -60,6 +61,9 @@ constexpr InitCommand kInit[] = {
 bool AmoledDisplay::on_trans_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void* ctx) {
   BaseType_t woken = pdFALSE;
   xSemaphoreGiveFromISR(static_cast<AmoledDisplay*>(ctx)->done_, &woken);
+  // esp_lcd's SPI path ignores this callback's return value, so request the switch here.
+  // Without it the flushing task waits for the next 10 ms tick after every chunk.
+  if (woken == pdTRUE && xPortInIsrContext()) portYIELD_FROM_ISR();
   return woken == pdTRUE;
 }
 
@@ -135,6 +139,7 @@ hg::DisplayInfo AmoledDisplay::info() const {
 }
 
 void AmoledDisplay::flush(uint16_t y0, uint16_t y1) {
+  const int64_t started = esp_timer_get_time();
   const int w = cfg_.width, h = cfg_.height;
   // Even start and even span: widen the dirty rows by at most one on each side.
   int top = y0 & ~1;
@@ -154,6 +159,12 @@ void AmoledDisplay::flush(uint16_t y0, uint16_t y1) {
     // The bounce buffer is reused: wait until the DMA transfer has finished.
     xSemaphoreTake(done_, pdMS_TO_TICKS(100));
   }
+  const auto us = static_cast<uint32_t>(esp_timer_get_time() - started);
+  ++perf_.calls;
+  perf_.rows += static_cast<uint32_t>(std::max(0, bottom - top));
+  perf_.us += us;
+  perf_.max_us = std::max(perf_.max_us, us);
+  if (bottom - top >= h - 2) perf_.full_us = std::max(perf_.full_us, us);
 }
 
 void AmoledDisplay::set_backlight(uint8_t percent) {

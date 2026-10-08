@@ -204,8 +204,12 @@ class AmoledDisplay final : public hg::Display {
   uint16_t* framebuffer() override { return fb_; }
   void flush(uint16_t y0, uint16_t y1) override;
   void set_backlight(uint8_t percent) override;
+  // Flush timing since the last take_perf() (app task only).
+  struct Perf { uint32_t calls = 0, rows = 0, us = 0, max_us = 0, full_us = 0; };
+  Perf take_perf() { Perf p = perf_; perf_ = {}; return p; }
 
  private:
+  Perf perf_{};
   static bool on_trans_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t* edata, void* ctx);
   void command(uint8_t cmd, const uint8_t* data, size_t len);
   AmoledConfig cfg_{};

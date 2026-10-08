@@ -82,6 +82,9 @@ void set_aw9364(int pin, uint8_t value, uint8_t& level) {
 bool ParallelDisplay::on_trans_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void* ctx) {
   BaseType_t woken = pdFALSE;
   xSemaphoreGiveFromISR(static_cast<ParallelDisplay*>(ctx)->done_, &woken);
+  // esp_lcd's SPI path ignores this callback's return value, so request the switch here.
+  // Without it the flushing task waits for the next 10 ms tick after every chunk.
+  if (woken == pdTRUE && xPortInIsrContext()) portYIELD_FROM_ISR();
   return woken == pdTRUE;
 }
 
