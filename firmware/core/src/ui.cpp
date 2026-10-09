@@ -619,7 +619,7 @@ void Ui::render_companion(const UiModel& m) {
         if(!r.w) continue;
         const int value=control==TouchControl::Volume?m.volume:m.brightness;
         const char* label=control==TouchControl::Volume?"Volume":"Brightness";
-        geist::text(c,r.x+(r.w-geist::width(label,18))/2,r.y-30,label,18,dim);
+        geist::text(c,r.x+(r.w-geist::width(label,18))/2,r.y-34,label,18,dim);
         c.fill_round_rect(r.x,r.y,r.w,r.h,30,surface);
         // Clip the fill to the same rounded track without a scratch framebuffer.
         const int fill=r.h*value/100;
@@ -638,11 +638,11 @@ void Ui::render_companion(const UiModel& m) {
       draw_control(TouchControl::Stop);
       // Settings never interrupt work, speech or a recording: the target stays in place,
       // inert. Status has its own line above the actions and is never a target.
-      pill_at(kQuickSettings,TouchControl::Settings,"Settings",m.settings_ready);
+      pill_at(m.work_available?kQuickSettings:kQuickSettingsAlone,TouchControl::Settings,"Settings",m.settings_ready);
       const std::string status = m.stop_pending ? std::string("Stop requested · waiting for Hermes") :
           !m.settings_ready ? std::string("Settings open when idle") :
           m.outcome_word.empty() ? std::string() : "Last task: " + m.outcome_word;
-      if(!status.empty()) center(302,status,18,dim);
+      if(!status.empty()) center(282,status,18,dim);
     } else if(m.touch_prompt) {
       if(m.prompt_unread) {
         // Unread question: both answers stay in place, equally inert, until its end is shown.
@@ -1201,14 +1201,16 @@ UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
       return {};
     }
     if (m.quick_controls) {
-      if (control == TouchControl::Recent && m.work_available) return {163,246,140,40};
-      if (control == TouchControl::Volume && m.volume >= 0) return {122,122,72,110};
-      if (control == TouchControl::Brightness && m.brightness >= 0) return {272,122,72,110};
+      // Six rows: title, sliders, status, actions, then Recent beside Settings at the foot.
+      if (control == TouchControl::Recent && m.work_available) return {126,386,104,42};
+      if (control == TouchControl::Volume && m.volume >= 0) return {122,134,72,128};
+      if (control == TouchControl::Brightness && m.brightness >= 0) return {272,134,72,128};
       // Stable positions: unavailable actions stay visible but inert. Silence, then Stop,
       // in the same order as the Home and reading action row.
       if (control == TouchControl::Silence) return kQuickSilence;
       if (control == TouchControl::Stop && (m.can_stop || m.stop_pending || m.outcome_word.empty())) return kQuickStop;
-      if (control == TouchControl::Settings && m.settings_ready) return kQuickSettings;
+      if (control == TouchControl::Settings && m.settings_ready)
+        return m.work_available ? kQuickSettings : kQuickSettingsAlone;
       if (control == TouchControl::Home) return {108,44,250,52};
       return {};
     }

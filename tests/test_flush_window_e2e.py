@@ -75,6 +75,7 @@ def test_press_highlight_sends_only_the_target(ix):
     s.step()
     assert s.status()['ui']['pressed'] == 'settings'
     assert_glass_current(s, 'press highlight')
+    pressed_flushes = len(log)   # judge the press itself; sliding off a narrow pill can become a swipe
     # Slide off the target: the highlight clears, again through a narrow flush.
     s.touch(True, x + w // 2 + 60, y + h // 2)
     s.step()
@@ -83,7 +84,7 @@ def test_press_highlight_sends_only_the_target(ix):
     s.run_for(.5)
     assert_glass_current(s, 'after release')
     restore()
-    narrow = [f for f in per_flush(log, start) if f[0] == y and f[1] == y + h]
+    narrow = [f for f in per_flush(log, start)[:pressed_flushes] if f[0] == y and f[1] == y + h]
     assert narrow, 'no flush covered just the pressed target'
     for y0, y1, px in narrow:
         assert px <= (y1 - y0) * (w + 2), f'press flush sent {px} px for a {w}px wide target'

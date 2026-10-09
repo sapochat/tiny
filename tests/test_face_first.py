@@ -36,8 +36,8 @@ def test_approved_face_first(rig,state):
     elif state=='controls':
         swipe(s,dy=100)
         capture(s,'controls')
-        assert ui(s)['controls']['volume']==[122,122,72,110]   # pass 4: even gaps below the sliders
-        assert ui(s)['controls']['brightness']==[272,122,72,110]
+        assert ui(s)['controls']['volume']==[122,134,72,128]   # pass 5: six rows, taller sliders
+        assert ui(s)['controls']['brightness']==[272,134,72,128]
     elif state=='approval':
         s.send_fixture('prompt',id='face-question',title='Permission requested',text='Turn on the desk lamp?')
         s.run_for(.6)

@@ -117,9 +117,9 @@ def test_outcome_is_status_not_a_hit_target(ix):
     swipe(s,dx=100); swipe(s,dy=100); s.run_for(.3)
     assert 'stop' not in ui(s)['controls']
     # Pass 3: the outcome is a status line of its own; the Stop slot only ever holds Stop.
-    assert r.shows('Last task: Finished',18,DIM,0,(0,302,466,32))
+    assert r.shows('Last task: Finished',18,DIM,0,(0,282,466,32))
     assert not r.shows('Finished',18,DIM,0,(238,329,160,60))
-    m=r.mark(); tap(s,233,318); tap(s,318,364)
+    m=r.mark(); tap(s,233,292); tap(s,316,342)
     assert not (r.sent_types(m)&REQUESTS)
 
 
