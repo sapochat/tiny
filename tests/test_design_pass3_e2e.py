@@ -166,9 +166,10 @@ def test_wifi_setup_is_companion_rendered_and_closes(ix):
     assert s.device.screen() != 'setup'
 
 
-# == M3: quick-controls status has its own line ==============================================
+# == M3 / pass 6: status is never in an action slot; it lives in Home's title slot =========
 
-STATUS_BAND = (0, 282, 466, 32)   # its own line between the sliders/Recent and the action row
+STATUS_BAND = (0, 100, 466, 366)   # anywhere below the Quick controls title
+HOME_TITLE = (0, 44, 466, 40)
 
 
 def quick_controls(r):
@@ -186,18 +187,18 @@ def test_quick_controls_status_never_shares_an_action_slot(ix):
     r.turn_start('busy', request='req-busy')
     quick_controls(r)
     slots['busy'] = {k: ui(s)['controls'].get(k) for k in ('silence', 'stop')}
-    assert r.shows('Settings open when idle', 18, DIM, 0, STATUS_BAND)
+    assert not r.shows('Settings open when idle', 18, DIM, 0, STATUS_BAND)
     r.require_label('stop', 'Stop task')
     r.turn_end('busy', 'success')
     assert r.wait(lambda: not s.status()['work']['active'])
     s.run_for(0.3)
     r.snap('controls-after')
-    assert r.shows('Last task: Finished', 18, DIM, 0, STATUS_BAND)
+    assert not r.shows('Last task: Finished', 18, DIM, 0, STATUS_BAND)
     # The action row keeps both actions in their places; an inert Stop is outlined, not a word.
     assert r.shows('Stop task', 18, DIM, 0, tuple(slots['busy']['stop']))
     assert r.shows('Mute voice', 18, DIM, 0, tuple(slots['busy']['silence']))
-    for name, rect in ui(s)['controls'].items():
-        assert not overlap(rect, STATUS_BAND), (name, rect)
-    m = len(s.sent)
-    tap(s, 233, STATUS_BAND[1] + 12)
-    assert ui(s)['view'] == 'controls' and len(s.sent) == m
+    tap(s, *r.control('home'))
+    s.run_for(0.3)
+    assert ui(s)['view'] == 'home'
+    assert r.shows('Last task: Finished', 18, DIM, 0, HOME_TITLE)
+    assert not r.shows('HERMES', 18, DIM, 0, HOME_TITLE)

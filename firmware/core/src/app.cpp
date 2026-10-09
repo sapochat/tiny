@@ -1994,7 +1994,7 @@ void App::update_model() {
   if (round && m.hero && companion_screen) {
     if (m.screen == Screen::Ready) {
       m.headline = talk_mode_ == TalkMode::Tap ? "Tap to talk" : "Hold to talk";
-      m.detail = "I’m here.";
+      m.detail.clear();  // no filler line; status sits in the title slot
     } else if (m.screen == Screen::Listening) {
       // Samples stream while recording; release ends the capture and makes the request.
       m.detail = hands_free_ ? "Pause or tap Finish" : capture_ == Capture::Touch ? "Release to finish"

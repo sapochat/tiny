@@ -114,7 +114,7 @@ Streaming follows new text only while at the bottom. Scrolling up holds your rea
 
 A gesture belongs to its starting view and to the revision of the target it touched: a Mute voice contact cannot quiet a newer stream, a Stop task contact cannot stop a newer turn, and a Discard or Finish contact cannot act on a later recording. A newly arrived/replaced approval cannot consume an older contact, and a control that appears under a resting finger does not take it. Ambiguous diagonals and drags outside a button do not decide anything. A stationary hold on Home starts push-to-talk after 120 ms; once recording has started, movement is ignored and lifting the original talk contact finishes normally. Another contact during recording does nothing unless it taps a visible Discard or Finish target.
 
-Quick controls are separate from the legacy settings/hardware-check menu. When Tiny is idle, quick controls show **Settings**; otherwise they say **Settings open when idle**. Holding the HERMES title on Home for one second **while idle** still opens the menu, as do the physical chord and console command when idle. On the offline, connecting and pairing screens, holding the title (the top bar on rectangular touch boards) opens it too, because there is no other on-device route to Wi-Fi and server settings there; this works even when the last task's outcome is unknown, and never cancels or resends that work. Settings never stop a recording, speech or work: the chord and console are refused while busy, and a refused chord is consumed rather than acting as CANCEL. A pending title hold is consumed if its view or idle eligibility changes; it cannot cancel a recording or speech that starts later. Starting a recording also invalidates older navigation contacts, without changing the original touch-owned TALK release. Its local item-navigation and Wi-Fi setup gestures are unchanged.
+Quick controls are separate from the legacy settings/hardware-check menu. When Tiny is idle, quick controls show **Settings**; otherwise it is outlined and inert. Holding the title area at the top on Home for one second **while idle** still opens the menu, as do the physical chord and console command when idle. On the offline, connecting and pairing screens, holding the title (the top bar on rectangular touch boards) opens it too, because there is no other on-device route to Wi-Fi and server settings there; this works even when the last task's outcome is unknown, and never cancels or resends that work. Settings never stop a recording, speech or work: the chord and console are refused while busy, and a refused chord is consumed rather than acting as CANCEL. A pending title hold is consumed if its view or idle eligibility changes; it cannot cancel a recording or speech that starts later. Starting a recording also invalidates older navigation contacts, without changing the original touch-owned TALK release. Its local item-navigation and Wi-Fi setup gestures are unchanged.
 
 | What you want to do | Control |
 |---|---|
@@ -186,13 +186,15 @@ Generic questions are not relabeled as permissions. Unsupported characters have
 a visible replacement glyph; full Unicode shaping and browser kerning are not
 implemented. Native results do not establish physical readability.
 
-Quick controls use **72×124px** rounded filled tracks labeled **Volume** and
-**Brightness**, with actual percentages, then **Recent**, a status line of its
-own, **154×48px Mute voice** and **Stop task** targets, and **Settings**. All
-three actions always stay in the same place and are outlined when unavailable;
-status is never written inside a button. The status line says **Settings open
-when idle** while busy, **Stop requested · waiting for Hermes** after Stop, and
-**Last task: Finished / Stopped / Error / Unknown** afterwards. On Home and in
+Quick controls use **72×158px** rounded filled tracks labeled **Volume** and
+**Brightness**, with actual percentages, then **148×48px Mute voice** and **Stop
+task** targets, then **Recent** beside **Settings** (Settings alone, centred,
+when there is no recent work). All actions always stay in the same place and are
+outlined when unavailable; Quick controls carry no status line, and status is
+never written inside a button. Home's title slot, where it used to say HERMES,
+shows **OFFLINE** when disconnected and **Last task: Finished / Stopped / Error /
+Unknown** once work has ended; otherwise it is empty. Home's idle support line
+is gone. On Home and in
 the reader, Stop task always holds the right slot of the action row while work
 is open (the left slot is Mute voice, or Read reply when a reply is waiting); a
 requested stop leaves it outlined and the status moves to the headline or the
@@ -222,7 +224,7 @@ The perimeter is not a touch control, audio-volume scale or estimated progress. 
 
 ## Device settings and hardware checks
 
-Hold TALK and CANCEL together for one second to open or close device settings. On a touchscreen, tap **Settings** in quick controls or hold the title bar for one second. Settings also work while the device is offline. Settings open only when the device is idle: they never stop a recording, a reply or Hermes's work. While busy the request is refused (the round display says **Settings open when idle**).
+Hold TALK and CANCEL together for one second to open or close device settings. On a touchscreen, tap **Settings** in quick controls or hold the title bar for one second. Settings also work while the device is offline. Settings open only when the device is idle: they never stop a recording, a reply or Hermes's work. While busy the request is refused (on the round display, **Settings** stays outlined and inert).
 
 Tap CANCEL to move to the next item, then tap TALK to change it. On a touchscreen, swipe down for the next item and tap to select. Boards with Up and Down buttons can move in either direction. Select **Back to Hermes** to leave.
 
