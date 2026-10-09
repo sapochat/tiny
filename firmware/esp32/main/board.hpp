@@ -48,6 +48,7 @@ struct AmoledConfig {
   uint16_t width = 466, height = 466;
   int cs = -1, sclk = -1, d0 = -1, d1 = -1, d2 = -1, d3 = -1, rst = -1;
   int gap_x = 0, gap_y = 0;  // the controller's RAM is wider than the glass
+  int te = -1;               // tearing-effect output (one pulse per panel refresh), if wired
   int qspi_mhz = 40;
   bool round = false;
 };

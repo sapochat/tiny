@@ -292,6 +292,9 @@ screen is drawing: `perf_full_flush_ms` (slowest full-screen flush),
 `perf_app_core` (the CPU the app loop runs on). On the 1.75C the app loop
 (main task) is pinned to CPU1 (`boards/esp32s3-touch-amoled-175c/sdkconfig.defaults`),
 away from the Wi-Fi and esp_timer tasks on CPU0; other boards keep the ESP-IDF default.
+Boards that wire the panel's tearing-effect line (`AmoledConfig::te`; GPIO 13 on the
+1.75C) also report `perf_te_hz`, the panel refresh rate counted from TE pulses. It is a
+measurement only: flushes are not yet paced to TE, so a slide frame can still tear.
 Read them with `hermes gadget debug status`. Measured on the 1.75C at 40 MHz
 QSPI: a full-screen flush took 180 ms before the flush-completion interrupt
 woke the waiting task, 37 ms after that fix, and 41 ms with direct PSRAM DMA.

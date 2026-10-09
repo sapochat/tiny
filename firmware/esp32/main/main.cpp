@@ -253,6 +253,7 @@ extern "C" void app_main(void) {
   // Display timing, reported as perf_* sensors only after the screen did work.
   uint32_t perf_at = g_system.now_ms(), event_max_us = 0, tick_max_us = 0, busy_us = 0, gap_max_us = 0;
   int64_t ticked_at = 0;  // end of the last app.tick() while a slide was in progress; 0 otherwise
+  uint32_t te_at = perf_at;  // when the tearing-effect pulse count was last taken
   for (;;) {
     hgp::Event ev;
     // Block briefly for events, then run the core's timers and animations.
@@ -296,6 +297,10 @@ extern "C" void app_main(void) {
         app.set_sensor("perf_busy_ms", busy_us / 1000.0);  // app work incl. rendering and flushes
         if (gap_max_us) app.set_sensor("perf_slide_gap_max_ms", gap_max_us / 1000.0);  // between slide frames
         app.set_sensor("perf_app_core", xPortGetCoreID());  // the core this loop runs on
+        // Panel refresh rate from its tearing-effect line (boards that wire it).
+        if (const uint32_t te = g_amoled.take_te_pulses())
+          app.set_sensor("perf_te_hz", te * 1000.0 / std::max<uint32_t>(1, g_system.now_ms() - te_at));
+        te_at = g_system.now_ms();
       }
       event_max_us = tick_max_us = busy_us = gap_max_us = 0;
     }

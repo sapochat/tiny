@@ -92,6 +92,7 @@ BoardConfig make() {
   b.cancel_label = "Swipe down";
 #if CONFIG_HG_BOARD_AMOLED_175C
   b.amoled.rst = 1;
+  b.amoled.te = 13;  // LCD_TE on the 1.75C schematic
   b.touch.rst = 2;
   b.codec.mclk = 16;
   b.codec.mic_gain_db = 30.0f;  // ES7210 input gain; other boards retain 24 dB.
