@@ -276,6 +276,19 @@ Read them with `hermes gadget debug status`. Measured on the 1.75C at 40 MHz
 QSPI: a full-screen flush took 180 ms before the flush-completion interrupt
 woke the waiting task, 37 ms after that fix, and 41 ms with direct PSRAM DMA.
 Slide frame rates on hardware have not been measured yet.
+
+Round-companion touch boards also offer a `display.bench` device action. When
+the device is idle and its screen is awake, it runs Home → Quick controls →
+Home slides (plus Recent → Home when the host offers work) and five full
+redraws through the normal render path, then returns per-slide frame counts
+and per-frame milliseconds, the redraw times, and `min_frames`,
+`max_frame_ms`, `redraw_max_ms`. The same three values are also reported as
+`perf_bench_*` sensors. The device returns to the view it started on. It
+refuses while recording, speaking, answering a question, in settings or during
+an update. Invoke it like any device action (the `gadget_action` tool, or
+`DeviceSession.invoke_action("display.bench")`). The screen moves for about two
+seconds. `tests/test_display_bench_e2e.py` runs it through the loopback DeviceHub.
+
 `tests/test_smooth_motion_e2e.py` checks that every slide frame is a masked
 shift of the destination and that every changed row is flushed.
 
