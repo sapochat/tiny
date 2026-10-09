@@ -122,6 +122,11 @@ HGSIM_API int hgsim_status(hgsim* sim, char* out, size_t cap);
 HGSIM_API const char* hgsim_screen(hgsim* sim);
 /* RGB565, native byte order, width*height pixels. */
 HGSIM_API const uint16_t* hgsim_framebuffer(hgsim* sim, int* width, int* height);
+/* What the panel shows: only pixels inside flushed rectangles are copied from the
+ * framebuffer (same size and order). NULL for a headless device. */
+HGSIM_API const uint16_t* hgsim_panel(hgsim* sim);
+/* Pixels sent to the panel since creation (sum of flushed rectangle areas). */
+HGSIM_API uint64_t hgsim_flushed_px(hgsim* sim);
 
 #ifdef __cplusplus
 }

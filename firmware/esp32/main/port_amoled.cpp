@@ -151,16 +151,23 @@ hg::DisplayInfo AmoledDisplay::info() const {
   return di;
 }
 
-void AmoledDisplay::flush(uint16_t y0, uint16_t y1) {
+void AmoledDisplay::flush(uint16_t y0, uint16_t y1) { flush_rect(0, y0, cfg_.width, y1); }
+
+void AmoledDisplay::flush_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
   const int64_t started = esp_timer_get_time();
   const int w = cfg_.width, h = cfg_.height;
-  // Even start and even span: widen the dirty rows by at most one on each side.
+  // Even start and even span on both axes: widen the dirty area by at most one each side.
   int top = y0 & ~1;
   int bottom = std::min(h, (y1 + 1) & ~1);
-  const int x0 = cfg_.gap_x, x1 = cfg_.gap_x + w - 1;
-  const uint8_t cols[4] = {static_cast<uint8_t>(x0 >> 8), static_cast<uint8_t>(x0), static_cast<uint8_t>(x1 >> 8),
-                           static_cast<uint8_t>(x1)};
-  // Sets the row window. esp_lcd sends commands by polling, after every queued
+  int left = std::min<int>(x0, w) & ~1;
+  int right = std::min(w, (x1 + 1) & ~1);
+  // Without staging rows DMA reads the framebuffer itself, which needs whole rows.
+  if (!bounce_[0] || right <= left) { left = 0; right = w; }
+  const int cw = right - left;
+  const int xa = cfg_.gap_x + left, xb = cfg_.gap_x + right - 1;
+  const uint8_t cols[4] = {static_cast<uint8_t>(xa >> 8), static_cast<uint8_t>(xa), static_cast<uint8_t>(xb >> 8),
+                           static_cast<uint8_t>(xb)};
+  // Sets the window. esp_lcd sends commands by polling, after every queued
   // pixel transfer has finished, so this also waits for the previous chunk.
   auto window = [&](int y, int rows) {
     const int ya = y + cfg_.gap_y, yb = y + rows - 1 + cfg_.gap_y;
@@ -172,21 +179,32 @@ void AmoledDisplay::flush(uint16_t y0, uint16_t y1) {
   bool sent = false;
   if (bottom > top && bounce_[0]) {
     // Double-buffered: copy chunk N+1 while chunk N is on the wire. Each chunk has
-    // its own window, the framing the panel already accepted with one buffer.
+    // its own window, the framing the panel already accepted with one buffer. A
+    // narrow column span packs more rows into each staging buffer (kept even).
+    const int chunk = std::min(kMaxTransfer / (cw * 2), (w * kBounceRows) / cw) & ~1;
+    auto stage = [&](int b, int y, int rows) {
+      if (cw == w) {
+        std::memcpy(bounce_[b], fb_ + static_cast<size_t>(y) * w, static_cast<size_t>(rows) * w * 2);
+        return;
+      }
+      for (int r = 0; r < rows; ++r)
+        std::memcpy(bounce_[b] + static_cast<size_t>(r) * cw, fb_ + static_cast<size_t>(y + r) * w + left,
+                    static_cast<size_t>(cw) * 2);
+    };
     int buf = 0;
-    int rows = std::min(kBounceRows, bottom - top);
-    std::memcpy(bounce_[0], fb_ + static_cast<size_t>(top) * w, static_cast<size_t>(rows) * w * 2);
+    int rows = std::min(chunk, bottom - top);
+    stage(0, top, rows);
     for (int y = top; y < bottom;) {
       window(y, rows);  // waits until the other buffer's transfer is done
       xSemaphoreTake(done_, 0);  // completions so far are stale: wait for this chunk's
       sent = esp_lcd_panel_io_tx_color(io_, static_cast<int>(kRamWrite), bounce_[buf],
-                                       static_cast<size_t>(rows) * w * 2) == ESP_OK;
+                                       static_cast<size_t>(rows) * cw * 2) == ESP_OK;
       if (!sent) break;
       y += rows;
       if (y >= bottom) break;
-      rows = std::min(kBounceRows, bottom - y);
+      rows = std::min(chunk, bottom - y);
       buf ^= 1;
-      std::memcpy(bounce_[buf], fb_ + static_cast<size_t>(y) * w, static_cast<size_t>(rows) * w * 2);
+      stage(buf, y, rows);
     }
   } else if (bottom > top) {
     window(top, bottom - top);
@@ -200,9 +218,10 @@ void AmoledDisplay::flush(uint16_t y0, uint16_t y1) {
   const auto us = static_cast<uint32_t>(esp_timer_get_time() - started);
   ++perf_.calls;
   perf_.rows += static_cast<uint32_t>(std::max(0, bottom - top));
+  perf_.px += static_cast<uint32_t>(std::max(0, bottom - top) * cw);
   perf_.us += us;
   perf_.max_us = std::max(perf_.max_us, us);
-  if (bottom - top >= h - 2) perf_.full_us = std::max(perf_.full_us, us);
+  if (bottom - top >= h - 2 && cw == w) perf_.full_us = std::max(perf_.full_us, us);
 }
 
 void AmoledDisplay::set_backlight(uint8_t percent) {

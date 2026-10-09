@@ -203,9 +203,11 @@ class AmoledDisplay final : public hg::Display {
   hg::DisplayInfo info() const override;
   uint16_t* framebuffer() override { return fb_; }
   void flush(uint16_t y0, uint16_t y1) override;
+  // The CO5300 takes a column window too, so narrow updates send only their pixels.
+  void flush_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) override;
   void set_backlight(uint8_t percent) override;
   // Flush timing since the last take_perf() (app task only).
-  struct Perf { uint32_t calls = 0, rows = 0, us = 0, max_us = 0, full_us = 0, timeouts = 0; };
+  struct Perf { uint32_t calls = 0, rows = 0, px = 0, us = 0, max_us = 0, full_us = 0, timeouts = 0; };
   Perf take_perf() { Perf p = perf_; perf_ = {}; return p; }
 
  private:

@@ -280,6 +280,7 @@ extern "C" void app_main(void) {
       if (p.calls) {
         app.set_sensor("perf_flush_calls", p.calls);
         app.set_sensor("perf_flush_rows", p.rows);
+        app.set_sensor("perf_flush_px", p.px);  // pixels sent; narrow windows send fewer than rows x width
         app.set_sensor("perf_flush_ms", p.us / 1000.0);
         app.set_sensor("perf_flush_max_ms", p.max_us / 1000.0);
         if (p.full_us) app.set_sensor("perf_full_flush_ms", p.full_us / 1000.0);

@@ -187,6 +187,11 @@ def load_library(path: Path | None = None) -> ctypes.CDLL:
     lib.hgsim_screen.restype = c_char_p
     lib.hgsim_framebuffer.argtypes = [c_void_p, POINTER(c_int), POINTER(c_int)]
     lib.hgsim_framebuffer.restype = POINTER(c_uint16)
+    if hasattr(lib, "hgsim_panel"):  # older libraries predate the panel copy
+        lib.hgsim_panel.argtypes = [c_void_p]
+        lib.hgsim_panel.restype = POINTER(c_uint16)
+        lib.hgsim_flushed_px.argtypes = [c_void_p]
+        lib.hgsim_flushed_px.restype = ctypes.c_uint64
     return lib
 
 
@@ -406,6 +411,19 @@ class NativeDevice:
 
     def screen(self) -> str:
         return self._lib.hgsim_screen(self._handle).decode()
+
+    def panel_rows(self) -> bytes:
+        """Raw RGB565 the panel shows: only flushed rectangles reach it (b"" if unsupported)."""
+        if not hasattr(self._lib, "hgsim_panel"):
+            return b""
+        w, h = c_int(), c_int()
+        self._lib.hgsim_framebuffer(self._handle, ctypes.byref(w), ctypes.byref(h))
+        ptr = self._lib.hgsim_panel(self._handle)
+        return ctypes.string_at(ptr, w.value * h.value * 2) if ptr else b""
+
+    def flushed_px(self) -> int:
+        """Pixels sent to the panel so far (0 if the library predates the counter)."""
+        return int(self._lib.hgsim_flushed_px(self._handle)) if hasattr(self._lib, "hgsim_flushed_px") else 0
 
     def framebuffer_rows(self, y0: int = 0, y1: int | None = None) -> bytes:
         """Raw little-endian RGB565 for rows [y0, y1)."""
