@@ -36,6 +36,12 @@ class Display {
   virtual uint16_t* framebuffer() = 0;
   // Push rows [y0, y1) to the panel. Rows are contiguous in the framebuffer.
   virtual void flush(uint16_t y0, uint16_t y1) = 0;
+  // Push only columns [x0, x1) of rows [y0, y1). Ports whose panel can't take a
+  // column window send the whole rows; nothing outside the rectangle may change.
+  virtual void flush_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+    (void)x0; (void)x1;
+    flush(y0, y1);
+  }
   virtual void set_backlight(uint8_t percent) { (void)percent; }
 };
 

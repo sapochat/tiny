@@ -272,11 +272,20 @@ kept only as a fallback when internal RAM for the staging rows is unavailable.
 Direct PSRAM reads are suspected of stalling the app task during OTA flash
 writes. That is unconfirmed on hardware.
 
+Partial updates use `Display::flush_rect(x0, y0, x1, y1)`. The idle face
+(192×192 portrait), the recording meter and press highlights send only their
+own columns instead of whole 466-pixel rows. The CO5300 takes a column window
+(even start and width), so the AMOLED port packs the narrow span into its
+staging buffers. Ports without a column window fall back to whole rows. The
+simulator keeps a panel copy that receives only flushed rectangles
+(`hgsim_panel`, `NativeDevice.panel_rows()`), and
+`tests/test_flush_window_e2e.py` checks that every changed pixel reached it.
+
 The ESP32 port reports display timing as `perf_*` sensors every 2 s while the
 screen is drawing: `perf_full_flush_ms` (slowest full-screen flush),
 `perf_flush_timeouts` (flushes whose DMA did not finish within 200 ms),
-`perf_flush_max_ms`, `perf_flush_ms`/`perf_flush_calls`/`perf_flush_rows`
-(totals for the window), `perf_tick_max_ms`, `perf_event_max_ms`,
+`perf_flush_max_ms`, `perf_flush_ms`/`perf_flush_calls`/`perf_flush_rows`/
+`perf_flush_px` (totals for the window; `perf_flush_px` counts pixels sent), `perf_tick_max_ms`, `perf_event_max_ms`,
 `perf_busy_ms`, and `perf_motion_frames` (frames drawn by the last slide).
 Read them with `hermes gadget debug status`. Measured on the 1.75C at 40 MHz
 QSPI: a full-screen flush took 180 ms before the flush-completion interrupt

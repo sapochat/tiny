@@ -1,6 +1,7 @@
 // Simulator HAL: forwards every driver call to host callbacks.
 #include "hgsim.h"
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -19,7 +20,7 @@ class SimHal final : public hg::Display,
                      public hg::System {
  public:
   SimHal(const hgsim_config& cfg, const hgsim_host& host)
-      : host_(host), fb_(static_cast<size_t>(cfg.width) * static_cast<size_t>(cfg.height), 0) {
+      : host_(host), fb_(static_cast<size_t>(cfg.width) * static_cast<size_t>(cfg.height), 0), panel_(fb_) {
     info_.width = static_cast<uint16_t>(cfg.width);
     info_.height = static_cast<uint16_t>(cfg.height);
     info_.swap_bytes = false;
@@ -30,9 +31,21 @@ class SimHal final : public hg::Display,
   // Display
   hg::DisplayInfo info() const override { return info_; }
   uint16_t* framebuffer() override { return fb_.data(); }
-  void flush(uint16_t y0, uint16_t y1) override {
+  void flush(uint16_t y0, uint16_t y1) override { flush_rect(0, y0, info_.width, y1); }
+  void flush_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) override {
+    // The panel copy receives exactly the flushed rectangle, like a column-windowed
+    // panel, so tests can catch pixels a narrow flush left stale.
+    const int w = info_.width;
+    x1 = std::min<uint16_t>(x1, info_.width);
+    y1 = std::min<uint16_t>(y1, info_.height);
+    for (int y = y0; y < y1 && x1 > x0; ++y)
+      std::memcpy(panel_.data() + static_cast<size_t>(y) * w + x0, fb_.data() + static_cast<size_t>(y) * w + x0,
+                  static_cast<size_t>(x1 - x0) * 2);
+    if (y1 > y0 && x1 > x0) flushed_px_ += static_cast<uint64_t>(y1 - y0) * (x1 - x0);
     if (host_.display_flush) host_.display_flush(host_.user, y0, y1);
   }
+  const uint16_t* panel() const { return panel_.data(); }
+  uint64_t flushed_px() const { return flushed_px_; }
   void set_backlight(uint8_t percent) override {
     if (host_.display_backlight) host_.display_backlight(host_.user, percent);
   }
@@ -104,6 +117,8 @@ class SimHal final : public hg::Display,
   hgsim_host host_;
   hg::DisplayInfo info_;
   std::vector<uint16_t> fb_;
+  std::vector<uint16_t> panel_;  // what a real panel would show after the flushes so far
+  uint64_t flushed_px_ = 0;
 };
 
 // The update slot, apart from SimHal: hg::Updater and hg::AudioOut both have an abort().
@@ -299,5 +314,7 @@ const uint16_t* hgsim_framebuffer(hgsim* sim, int* width, int* height) {
   if (height) *height = di.height;
   return sim->hal_impl->framebuffer();
 }
+const uint16_t* hgsim_panel(hgsim* sim) { return sim->hal.display ? sim->hal_impl->panel() : nullptr; }
+uint64_t hgsim_flushed_px(hgsim* sim) { return sim->hal_impl->flushed_px(); }
 
 }  // extern "C"

@@ -416,9 +416,10 @@ void Ui::render_companion(const UiModel& m) {
   const bool same = valid_ && companion_valid_ && key==companion_hash_;
   const bool press_only = same && m.pressed!=companion_pressed_;
   if(same && !press_only) {
-    if(visible && face_changed_ && m.screen!=Screen::Pairing) { portrait(); display_.flush(96,288); }
-    if(m.screen==Screen::Pairing && face_changed_) { draw_expression(c,185,92,96); display_.flush(92,188); }
-    if(m.screen==Screen::Listening && level!=companion_level_) { meter(); display_.flush(78,82); }
+    // Idle updates send only the columns they touch, not whole panel rows.
+    if(visible && face_changed_ && m.screen!=Screen::Pairing) { portrait(); display_.flush_rect(137,96,329,288); }
+    if(m.screen==Screen::Pairing && face_changed_) { draw_expression(c,185,92,96); display_.flush_rect(185,92,281,188); }
+    if(m.screen==Screen::Listening && level!=companion_level_) { meter(); display_.flush_rect(183,78,283,82); }
     companion_level_=level;
     return;
   }
@@ -640,9 +641,10 @@ void Ui::render_companion(const UiModel& m) {
   if(press_only) {
     for(auto control:{companion_pressed_,m.pressed}) {
       const auto r=control_rect(control,m);
-      if(r.w) display_.flush(static_cast<uint16_t>(r.y),static_cast<uint16_t>(r.y+r.h));
+      if(r.w) display_.flush_rect(static_cast<uint16_t>(r.x),static_cast<uint16_t>(r.y),
+                                  static_cast<uint16_t>(r.x+r.w),static_cast<uint16_t>(r.y+r.h));
     }
-    if(visible && face_changed_) display_.flush(96,288);
+    if(visible && face_changed_) display_.flush_rect(137,96,329,288);
   } else {
     if (!motion_flush_) display_.flush(0,panel_.height);
   }
