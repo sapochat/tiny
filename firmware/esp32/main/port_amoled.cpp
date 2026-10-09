@@ -71,6 +71,12 @@ bool AmoledDisplay::on_trans_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_ev
   return woken == pdTRUE;
 }
 
+void IRAM_ATTR AmoledDisplay::on_te(void* ctx) {
+  static_cast<AmoledDisplay*>(ctx)->te_pulses_.fetch_add(1, std::memory_order_relaxed);
+}
+
+uint32_t AmoledDisplay::take_te_pulses() { return te_pulses_.exchange(0, std::memory_order_relaxed); }
+
 void AmoledDisplay::command(uint8_t cmd, const uint8_t* data, size_t len) {
   esp_lcd_panel_io_tx_param(io_, static_cast<int>(command_word(cmd)), len ? data : nullptr, len);
 }
@@ -136,6 +142,21 @@ bool AmoledDisplay::begin(const AmoledConfig& cfg) {
   for (const auto& c : kInit) {
     command(c.cmd, c.data, c.len);
     if (c.delay_ms) vTaskDelay(pdMS_TO_TICKS(c.delay_ms));
+  }
+  // Count the panel's tearing-effect pulses (enabled by 0x35 above) to report its
+  // refresh rate. A failure here only loses the sensor.
+  if (cfg.te >= 0) {
+    gpio_config_t te = {};
+    te.pin_bit_mask = 1ULL << cfg.te;
+    te.mode = GPIO_MODE_INPUT;
+    te.intr_type = GPIO_INTR_POSEDGE;
+    esp_err_t err = gpio_config(&te);
+    if (err == ESP_OK) {
+      err = gpio_install_isr_service(0);
+      if (err == ESP_ERR_INVALID_STATE) err = ESP_OK;  // already installed by another driver
+    }
+    if (err == ESP_OK) err = gpio_isr_handler_add(static_cast<gpio_num_t>(cfg.te), &AmoledDisplay::on_te, this);
+    if (err != ESP_OK) ESP_LOGW(TAG, "TE line on GPIO %d unavailable: %s", cfg.te, esp_err_to_name(err));
   }
   ESP_LOGI(TAG, "CO5300 %ux%u ready", cfg.width, cfg.height);
   return true;

@@ -209,9 +209,14 @@ class AmoledDisplay final : public hg::Display {
   // Flush timing since the last take_perf() (app task only).
   struct Perf { uint32_t calls = 0, rows = 0, px = 0, us = 0, max_us = 0, full_us = 0, timeouts = 0; };
   Perf take_perf() { Perf p = perf_; perf_ = {}; return p; }
+  // Tearing-effect pulses counted since the last call (0 when the board has no TE line).
+  // Measurement only: flushes are not paced to TE.
+  uint32_t take_te_pulses();
 
  private:
   Perf perf_{};
+  static void on_te(void* ctx);
+  std::atomic<uint32_t> te_pulses_{0};  // incremented by the TE edge interrupt
   static bool on_trans_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t* edata, void* ctx);
   void command(uint8_t cmd, const uint8_t* data, size_t len);
   AmoledConfig cfg_{};

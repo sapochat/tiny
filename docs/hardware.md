@@ -146,7 +146,7 @@ This local Tiny trial sets ES7210 microphone codec gain to 30 dB on the 1.75C on
 
 | Part | Connection |
 |---|---|
-| CO5300 466×466 AMOLED | QSPI CS 12, clock 38, D0–D3 4/5/6/7, reset 1; column offset 6 |
+| CO5300 466×466 AMOLED | QSPI CS 12, clock 38, D0–D3 4/5/6/7, reset 1, tearing effect (TE) 13; column offset 6 |
 | CST9217 touch | I2C 0x5A, reset 2; interrupt 11 unused because input is polled |
 | I2C | SDA 15, SCL 14, 400 kHz |
 | ES8311 speaker / ES7210 microphones | MCLK 16, BCLK 9, WS 45, DOUT 8, DIN 10; amplifier enable 46 |
