@@ -183,6 +183,7 @@ void App::begin() {
   }
 
   if (hal_.display) ui_ = std::make_unique<Ui>(*hal_.display);
+  add_display_bench();
   phase_ = Phase::Boot;
   phase_since_ = now();
   boot_until_ = now() + kBootScreenMs;

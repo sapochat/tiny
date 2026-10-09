@@ -184,6 +184,10 @@ class App {
   void ota_reset();
   bool ota_busy() const;
 
+  // display.bench (app_bench.cpp): on-device slide/redraw timing for the round companion.
+  void add_display_bench();
+  bool run_display_bench(json::Value& result, std::string& error);
+
   void load_settings();
   void settings_input(Button button, bool pressed);
   void settings_tick();
