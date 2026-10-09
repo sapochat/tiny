@@ -518,11 +518,11 @@ void Ui::render_companion(const UiModel& m) {
       const std::string stage=row.substr(0,cut);
       const std::string glance=cut==std::string::npos?std::string():row.substr(cut+1);
       const uint16_t tone=stage_color(stage);
-      c.fill_circle(r.x+26,r.y+22,4,tone);
-      geist::text(c,r.x+38,r.y+9,stage_word(stage),18,tone,fill);
+      c.fill_circle(r.x+26,r.y+20,4,tone);
+      geist::text(c,r.x+38,r.y+7,stage_word(stage),18,tone,fill);
       const int inner=r.w-44;
       if(glance.empty()) {
-        geist::text(c,r.x+22,r.y+35,"No reply text",18,dim,fill);
+        geist::text(c,r.x+22,r.y+32,"No reply text",18,dim,fill);
         continue;
       }
       // At most two lines of the host's glance; a longer one ends at a word with an ellipsis.
@@ -536,14 +536,14 @@ void Ui::render_companion(const UiModel& m) {
         lines[1]=tail.empty() ? geist::fit(lines[1],inner,18) : tail+"…";
       }
       for(unsigned j=0;j<lines.size() && j<2;++j)
-        geist::text(c,r.x+22,r.y+35+j*23,geist::fit(lines[j],inner,18),18,text,fill);
+        geist::text(c,r.x+22,r.y+32+j*22,geist::fit(lines[j],inner,18),18,text,fill);
     }
     if (m.work_pages>1) {
       pill(TouchControl::Next,m.work_page+1>=m.work_pages?"Back to top":"More  ›",true);
       // Where you are in the shelf: one dot per page, the current one lit.
       const int x0=233-(m.work_pages-1)*7;
       for(int p=0;p<m.work_pages;++p)
-        c.fill_circle(x0+p*14,442,p==m.work_page?4:3,p==m.work_page?text:dim);
+        c.fill_circle(x0+p*14,444,p==m.work_page?4:3,p==m.work_page?text:dim);
     }
   } else {
   if (m.quick_controls && m.work_available) pill(TouchControl::Recent,"Recent",true);
@@ -571,8 +571,8 @@ void Ui::render_companion(const UiModel& m) {
     const bool tight=n>0 && !m.detail.empty();
     center(53,m.link==Link::Online?"HERMES":"OFFLINE",18,dim);
     portrait();
-    center(tight?289:299,m.headline,30,text);
-    if(!m.detail.empty()) center(tight?328:342,m.detail,18,dim);
+    center(tight?280:299,m.headline,30,text);
+    if(!m.detail.empty()) center(tight?322:342,m.detail,18,dim);
     for(int i=0;i<n;++i) {
       slot_rect = n==1 ? UiRect{128,356,210,55} : i==0 ? UiRect{91,356,138,55} : UiRect{237,356,138,55};
       draw_control(slots[i]);
@@ -588,7 +588,7 @@ void Ui::render_companion(const UiModel& m) {
       const int rows=body_rows(m),total=static_cast<int>(lines.size());
       const int last=std::max(0,total-rows), first=m.scroll<0?last:std::min(m.scroll,last);
       const bool header=m.result || !m.outcome.empty() || (m.stop_pending && !m.touch_prompt);
-      const int y=m.touch_prompt?119:header?142:108;
+      const int y=m.touch_prompt?106:header?142:108;
       if(header) {
         const std::string_view o=m.outcome;
         const auto tone = o.rfind("Failed",0)==0||o.rfind("Error",0)==0?stage_color("failed"):
@@ -642,13 +642,13 @@ void Ui::render_companion(const UiModel& m) {
       const std::string status = m.stop_pending ? std::string("Stop requested · waiting for Hermes") :
           !m.settings_ready ? std::string("Settings open when idle") :
           m.outcome_word.empty() ? std::string() : "Last task: " + m.outcome_word;
-      if(!status.empty()) center(310,status,18,dim);
+      if(!status.empty()) center(302,status,18,dim);
     } else if(m.touch_prompt) {
       if(m.prompt_unread) {
         // Unread question: both answers stay in place, equally inert, until its end is shown.
         pill_at(prompt_answer_rect(false),TouchControl::None,"No",false);
         pill_at(prompt_answer_rect(true),TouchControl::None,"Yes",false);
-        center(404,"Scroll to read all  ↓",18,text);
+        center(406,"Scroll to read all  ↓",18,text);
       } else {
         draw_control(TouchControl::No);
         draw_control(TouchControl::Yes);
@@ -711,7 +711,7 @@ void Ui::render_local(Canvas& c, const UiModel& m) {
   const bool settings = m.screen == Screen::Settings;
   center(55,settings ? "Settings" : m.headline,24,text);
   // Content card: a row's name, its value large, then its description.
-  const int top=settings?104:124, bottom=settings?330:334;
+  const int top=settings?104:124, bottom=settings?318:334;
   c.fill_round_rect(68,top,330,bottom-top,24,surface);
   int y=top+20;
   if (settings) {
@@ -739,10 +739,10 @@ void Ui::render_local(Canvas& c, const UiModel& m) {
   if (settings && m.work_pages>1) {
     // Where you are among the rows: one dot per row, the current one lit.
     const int x0=233-(m.work_pages-1)*7;
-    for (int p=0;p<m.work_pages;++p) c.fill_circle(x0+p*14,348,p==m.work_page?4:3,p==m.work_page?text:dim);
+    for (int p=0;p<m.work_pages;++p) c.fill_circle(x0+p*14,338,p==m.work_page?4:3,p==m.work_page?text:dim);
   }
-  center(settings?366:352,m.hint,18,dim);
-  if (settings) center(394,"Hold the title to close",18,dim);
+  center(settings?362:352,m.hint,18,dim);
+  if (settings) center(392,"Hold the title to close",18,dim);
 }
 
 void Ui::render(const UiModel& m) {
@@ -1195,15 +1195,15 @@ UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
     if (local_screen(m)) return {};  // pairing, settings and Wi-Fi setup keep their own input
     if (m.recent) {
       if (control == TouchControl::Home) return {108,44,250,52};
-      if (control == TouchControl::Next && m.work_pages > 1) return {163,392,140,38};
+      if (control == TouchControl::Next && m.work_pages > 1) return {163,388,140,40};
       int i = int(control) - int(TouchControl::Work0);
-      if (i >= 0 && i < int(m.work_rows.size()) && i < 3) return {78,92+i*100,310,92};
+      if (i >= 0 && i < int(m.work_rows.size()) && i < 3) return {78,98+i*96,310,84};
       return {};
     }
     if (m.quick_controls) {
-      if (control == TouchControl::Recent && m.work_available) return {163,258,140,40};
-      if (control == TouchControl::Volume && m.volume >= 0) return {122,126,72,124};
-      if (control == TouchControl::Brightness && m.brightness >= 0) return {272,126,72,124};
+      if (control == TouchControl::Recent && m.work_available) return {163,246,140,40};
+      if (control == TouchControl::Volume && m.volume >= 0) return {122,122,72,110};
+      if (control == TouchControl::Brightness && m.brightness >= 0) return {272,122,72,110};
       // Stable positions: unavailable actions stay visible but inert. Silence, then Stop,
       // in the same order as the Home and reading action row.
       if (control == TouchControl::Silence) return kQuickSilence;
