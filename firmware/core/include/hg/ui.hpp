@@ -195,10 +195,16 @@ class Ui {
   // round-masked copy of it. Allocated on first use (PSRAM on the device).
   std::unique_ptr<uint16_t[]> motion_cache_;
   bool motion_cache_ready_ = false;
-  int motion_top_ = 0, motion_bottom_ = 0, motion_prev_top_ = 0, motion_prev_bottom_ = 0;
   int16_t motion_span_[466] = {};  // half-width of the round glass per row
+  // Lit columns [lo, hi) per row: of the cached destination, and of what the glass shows
+  // now. Frames rewrite and send only the union of the two, in bands of rows.
+  int16_t motion_lo_[466] = {}, motion_hi_[466] = {};
+  int16_t shown_lo_[466] = {}, shown_hi_[466] = {};
   void render_motion(const UiModel& m);
-  void compose_motion(int dx, int dy, int y0, int y1);
+  // Writes rows [y0,y1) of the panel as the cache shifted by (dx,dy) and sends what changed.
+  // `dirty` also rewrites the destination's unshifted columns (first frame only).
+  void compose_motion(int dx, int dy, bool dirty);
+  void flush_bands(const int16_t* lo, const int16_t* hi);
   uint32_t companion_hash_ = 0;
   TouchControl companion_pressed_ = TouchControl::None;
   int companion_level_ = -1;
