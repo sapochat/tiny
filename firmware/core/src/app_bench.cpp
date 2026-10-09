@@ -36,10 +36,10 @@ bool App::run_display_bench(json::Value& result, std::string& error) {
     navigation_ = to;
     ++model_.navigation;
     const uint32_t start = now();
-    update_model();  // first frame: destination render + shifted copy
+    update_model();  // renders the destination into the slide cache; the glass is unchanged
     json::Value frames = json::Value::array();
     uint32_t last = now();
-    frames.push(static_cast<int>(last - start));
+    const int prep_ms = static_cast<int>(last - start);
     while (ui_->transitioning() && now() - start < 1000) {
       model_.time_ms = now();
       ui_->render(model_);
@@ -51,7 +51,8 @@ bool App::run_display_bench(json::Value& result, std::string& error) {
     const int n = ui_->take_motion_frames();
     min_frames = std::min(min_frames, n);
     json::Value s = json::Value::object();
-    s.set("to", label).set("frames", n).set("ms", static_cast<int>(now() - start)).set("frame_ms", frames);
+    s.set("to", label).set("frames", n).set("ms", static_cast<int>(now() - start)).set("prep_ms", prep_ms)
+        .set("frame_ms", frames);
     slides.push(std::move(s));
   };
   slide(Navigation::Controls, "controls");

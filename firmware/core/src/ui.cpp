@@ -340,7 +340,12 @@ void Ui::render_motion(const UiModel& m) {
       motion_span_[y] = static_cast<int16_t>(h);
     }
     motion_cache_ready_ = true;
+    // Rendering the destination takes several frames' time. The glass keeps the old view
+    // until the next call, which starts the clock: the slide then plays from its first step.
+    motion_clock_ = false;
+    return;
   }
+  if (!motion_clock_) { motion_clock_ = true; motion_start_ = m.time_ms; }
   const uint32_t elapsed = std::min<uint32_t>(220,m.time_ms-motion_start_);
   const int remaining = 220-elapsed;
   const int dx = motion_dx_*remaining*remaining*remaining/(220*220*220);

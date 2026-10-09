@@ -206,6 +206,7 @@ class Ui {
   // Where render_companion draws (the framebuffer when null): slides render into the cache.
   uint16_t* target_ = nullptr;
   bool motion_face_ = false;  // the face changed while sliding
+  bool motion_clock_ = false;  // the slide clock has started (after the destination is cached)
   void flush_bands(const int16_t* lo, const int16_t* hi);
   uint32_t companion_hash_ = 0;
   TouchControl companion_pressed_ = TouchControl::None;
