@@ -257,13 +257,27 @@ stack. Only explicit user navigation starts motion. The destination is the sole
 input model from the first frame; input or a priority activity snaps immediately.
 The app tick supplies milliseconds independently of the 100ms expression tick.
 
-Rendering uses the existing framebuffer, an in-place memmove, and 466 row hashes
-(1,864 bytes); there is no second full framebuffer or new font atlas. The 1.75C
-has 8MB octal PSRAM and the existing RGB565 framebuffer lives there. Changed row
-runs alone are flushed; the final transform is zero and pixel-identical to the
-static view. The existing panel flush may wait for DMA: hardware frame timing
-and audio contention have not been measured. No animation sleep or input lock
-is introduced.
+A slide renders the destination once into a cache (one extra 466×466 RGB565
+buffer, about 434 KB, allocated in PSRAM on first use; the slide snaps if the
+allocation fails). Each later frame is the cache shifted and masked to the round
+glass, and only the rows that held content in this or the previous frame are
+flushed. The last frame is a fresh static render, pixel-identical to the static
+view. While a slide runs, the ESP32 main loop polls events without its 10 ms
+idle wait. The AMOLED port sends a flush as one window and one RAMWR, with DMA
+reading the PSRAM framebuffer directly. No animation sleep or input lock is
+introduced.
+
+The ESP32 port reports display timing as `perf_*` sensors every 2 s while the
+screen is drawing: `perf_full_flush_ms` (slowest full-screen flush),
+`perf_flush_max_ms`, `perf_flush_ms`/`perf_flush_calls`/`perf_flush_rows`
+(totals for the window), `perf_tick_max_ms`, `perf_event_max_ms`,
+`perf_busy_ms`, and `perf_motion_frames` (frames drawn by the last slide).
+Read them with `hermes gadget debug status`. Measured on the 1.75C at 40 MHz
+QSPI: a full-screen flush took 180 ms before the flush-completion interrupt
+woke the waiting task, 37 ms after that fix, and 41 ms with direct PSRAM DMA.
+Slide frame rates on hardware have not been measured yet.
+`tests/test_smooth_motion_e2e.py` checks that every slide frame is a masked
+shift of the destination and that every changed row is flushed.
 
 `tests/test_design_pass2_e2e.py` exercises motion, static convergence, row flushes,
 mid-motion input, stale approval contact, speech/recording preemption, offline
