@@ -663,10 +663,18 @@ def test_stop_work_reachable_from_reading_and_controls(ix, view):
     assert [c.get('turn') for c in r.sent_since(m, 'cancel')] == ['work-3']
     assert ui(s)['view'] == view and ui(s)['activity'] == 'streaming'
     r.require_label('stop', 'Stop task', fg=DIM, bg=0)   # pass 3: inert pill keeps its action name
-    assert r.shows('Stop requested · waiting for Hermes', 18, DIM)   # status on its own line
+    if view == 'controls':
+        # Pass 6: Quick controls carry no status row; the inert Stop says it, Home names it.
+        assert not r.shows('Stop requested · waiting for Hermes', 18, DIM)
+    else:
+        assert r.shows('Stop requested · waiting for Hermes', 18, DIM)   # reader header line
     tap(s, x, y)
     assert len(r.sent_since(m, 'cancel')) == 1
     r.snap(f'{view}-pending')
+    if view == 'controls':
+        tap(s, *r.control('home'))
+        s.run_for(0.3)
+        assert ui(s)['view'] == 'home' and r.headline('Stop requested')
 
 
 def test_old_turn_end_after_new_request_cannot_end_new_work(ix):
@@ -955,7 +963,8 @@ def test_settings_never_cancel_active_work(ix, state):
     swipe(s, dy=100)
     assert ui(s)['view'] == 'controls'
     assert 'settings' not in ui(s)['controls']
-    assert r.shows('Settings open when idle', 18, DIM, 0, (0, 282, 466, 32))   # pass 5: own status line
+    # Pass 6: no status row; Settings simply stays inert while busy.
+    assert not r.shows('Settings open when idle', 18, DIM, 0, (0, 100, 466, 366))
     m = r.mark()
     tap(s, 233, 405)
     # Quick controls also report Screen::Settings; the legacy menu would be view 'other'.
@@ -1190,7 +1199,7 @@ def test_new_controls_fit_safe_circle_and_render_supported_glyphs(ix):
     # Remediation F5: once work has ended, the inert Stop target names its ending
     # (completed_reading ends with success), still an exact source-TTF raster.
     assert 'stop' not in ui(s)['controls']
-    assert r.shows('Last task: Finished',18,DIM,0,(0,282,466,32))   # pass 5: own status line
+    assert not r.shows('Last task: Finished',18,DIM,0,(0,100,466,366))   # pass 6: status lives on Home
     assert not r.shows('Finished',18,DIM,0,(238,329,160,60))
     check('controls-idle', {'silence', 'settings', 'home'},
           {'silence': ('Mute voice', 18, DIM, 0),
