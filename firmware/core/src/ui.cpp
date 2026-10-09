@@ -325,15 +325,14 @@ void Ui::render_motion(const UiModel& m) {
       lo[y] = static_cast<int16_t>(a); hi[y] = static_cast<int16_t>(a == W ? a : b);
     }
   };
-  const bool first = !motion_cache_ready_;
-  if (first) {
+  if (!motion_cache_ready_) {
     if (!motion_cache_) motion_cache_.reset(new (std::nothrow) uint16_t[W*W]);
     if (!motion_cache_) { snap_transition(); render_companion(m); return; }
     lit(fb, shown_lo_, shown_hi_);  // what the glass shows now
-    valid_ = false; motion_flush_ = true;
+    // The destination is drawn once, into the cache; the framebuffer keeps matching the glass.
+    valid_ = false; motion_flush_ = true; target_ = motion_cache_.get();
     render_companion(m);
-    motion_flush_ = false;
-    std::memcpy(motion_cache_.get(), fb, W*W*2);
+    motion_flush_ = false; target_ = nullptr; motion_face_ = false;
     lit(motion_cache_.get(), motion_lo_, motion_hi_);
     if (!motion_span_[W/2]) for (int y=0;y<W;++y) {
       const int d = y-233, r2 = 233*233-d*d;
@@ -346,33 +345,21 @@ void Ui::render_motion(const UiModel& m) {
   const int remaining = 220-elapsed;
   const int dx = motion_dx_*remaining*remaining*remaining/(220*220*220);
   const int dy = motion_dy_*remaining*remaining*remaining/(220*220*220);
+  motion_face_ = motion_face_ || face_changed_;
+  compose_motion(dx, dy);
   if (elapsed == 220) {
-    // Land on a fresh static render, so live changes during the slide are not lost.
-    valid_ = false; motion_flush_ = true;
+    // Landed on the unshifted cache. A static render then applies what changed during the
+    // slide: the face, a press, or a new model (which redraws and flushes in full).
+    face_changed_ = motion_face_;
     render_companion(m);
-    motion_flush_ = false;
-    int16_t lo[W], hi[W];
-    lit(fb, lo, hi);
-    for (int y = 0; y < W; ++y) {
-      const int16_t a = lo[y], b = hi[y];
-      if (shown_hi_[y] > shown_lo_[y]) {
-        lo[y] = b > a ? std::min(a, shown_lo_[y]) : shown_lo_[y];
-        hi[y] = b > a ? std::max(b, shown_hi_[y]) : shown_hi_[y];
-      }
-    }
-    flush_bands(lo, hi);
-  } else {
-    compose_motion(dx, dy, first);
   }
   ++motion_frames_;
   if (elapsed==220) { motion_active_=false; motion_cache_ready_=false; motion_report_=motion_frames_; }
 }
 
-void Ui::compose_motion(int dx, int dy, bool dirty) {
+void Ui::compose_motion(int dx, int dy) {
   // The panel becomes the cache shifted by (dx,dy). Pixels outside the round glass stay
-  // true black. Only columns lit before or after this frame are rewritten and sent; with
-  // `dirty` the destination's own (unshifted) columns are rewritten too, since the first
-  // frame drew the destination straight into the framebuffer.
+  // true black. Only columns lit before or after this frame are rewritten and sent.
   constexpr int W = 466;
   auto* fb = display_.framebuffer();
   const uint16_t* cache = motion_cache_.get();
@@ -392,15 +379,8 @@ void Ui::compose_motion(int dx, int dy, bool dirty) {
       s0 = hi > lo ? std::min<int>(lo, shown_lo_[y]) : shown_lo_[y];
       s1 = hi > lo ? std::max<int>(hi, shown_hi_[y]) : shown_hi_[y];
     }
-    // Columns to rewrite: those, plus the unshifted destination on the first frame.
-    int w0 = s0, w1 = s1;
-    if (dirty && motion_hi_[y] > motion_lo_[y]) {
-      const bool any = w1 > w0;
-      w0 = any ? std::min<int>(w0, motion_lo_[y]) : motion_lo_[y];
-      w1 = any ? std::max<int>(w1, motion_hi_[y]) : motion_hi_[y];
-    }
-    if (w1 > w0) {
-      std::fill(row + w0, row + w1, 0);
+    if (s1 > s0) {
+      std::fill(row + s0, row + s1, 0);
       if (hi > lo) std::memcpy(row + lo, cache + sy * W + lo - dx, static_cast<size_t>(hi - lo) * 2);
     }
     send_lo[y] = static_cast<int16_t>(s0); send_hi[y] = static_cast<int16_t>(s1);
@@ -444,7 +424,7 @@ void Ui::render_companion(const UiModel& m) {
       .add(m.work_rows.empty() ? "" : m.work_rows[0]).add(m.work_rows.size()>1 ? m.work_rows[1] : "")
       .add(m.work_rows.size()>2 ? m.work_rows[2] : "").add(m.outcome).add(m.outcome_word)
       .add(m.code).add(m.value).val(m.color_test).add(m.title).get();
-  Canvas c(display_.framebuffer(),panel_.width,panel_.height,panel_.swap_bytes);
+  Canvas c(target_ ? target_ : display_.framebuffer(),panel_.width,panel_.height,panel_.swap_bytes);
   const int level = (m.level/5)*5;
   auto portrait = [&]() { draw_expression(c,137,96,192); };
   auto meter = [&]() {

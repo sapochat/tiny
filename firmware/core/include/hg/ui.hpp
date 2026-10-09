@@ -201,9 +201,11 @@ class Ui {
   int16_t motion_lo_[466] = {}, motion_hi_[466] = {};
   int16_t shown_lo_[466] = {}, shown_hi_[466] = {};
   void render_motion(const UiModel& m);
-  // Writes rows [y0,y1) of the panel as the cache shifted by (dx,dy) and sends what changed.
-  // `dirty` also rewrites the destination's unshifted columns (first frame only).
-  void compose_motion(int dx, int dy, bool dirty);
+  // The panel becomes the cache shifted by (dx,dy); only what changed is rewritten and sent.
+  void compose_motion(int dx, int dy);
+  // Where render_companion draws (the framebuffer when null): slides render into the cache.
+  uint16_t* target_ = nullptr;
+  bool motion_face_ = false;  // the face changed while sliding
   void flush_bands(const int16_t* lo, const int16_t* hi);
   uint32_t companion_hash_ = 0;
   TouchControl companion_pressed_ = TouchControl::None;
