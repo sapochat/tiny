@@ -259,11 +259,18 @@ The app tick supplies milliseconds independently of the 100ms expression tick.
 
 A slide renders the destination once into a cache (one extra 466×466 RGB565
 buffer, about 434 KB, allocated in PSRAM on first use; the slide snaps if the
-allocation fails). Each later frame is the cache shifted and masked to the round
-glass, and only the rows that held content in this or the previous frame are
-flushed. The last frame is a fresh static render, pixel-identical to the static
-view. While a slide runs, the ESP32 main loop polls events without its 10 ms
-idle wait. No animation sleep or input lock is introduced.
+allocation fails). The destination is drawn straight into the cache, so the
+glass keeps the old view until it is ready; the slide clock starts after that,
+so preparing the destination never skips motion. Each frame is the cache shifted
+and masked to the round glass. Only the columns lit in this or the previous
+frame are rewritten and sent, grouped into row bands of similar width
+(`Ui::flush_bands`). The last frame is the cache at offset 0, followed by a
+static render that applies anything that changed during the slide (face,
+press, new model), so it is pixel-identical to the static view. While a slide
+runs, the ESP32 main loop polls events without its 10 ms idle wait. No animation
+sleep or input lock is introduced. `tests/test_slide_columns_e2e.py` checks the
+panel copy after every slide frame in both directions and that slides send less
+than whole rows.
 
 The AMOLED port stages each flush through two 16-row internal-RAM DMA buffers:
 the CPU copies the next chunk out of PSRAM while the previous one is on the
@@ -303,8 +310,9 @@ Slide frame rates on hardware have not been measured yet.
 Round-companion touch boards also offer a `display.bench` device action. When
 the device is idle and its screen is awake, it runs Home → Quick controls →
 Home slides (plus Recent → Home when the host offers work) and five full
-redraws through the normal render path, then returns per-slide frame counts
-and per-frame milliseconds, the redraw times, and `min_frames`,
+redraws through the normal render path, then returns per-slide frame counts,
+`prep_ms` (rendering the destination before the first frame) and per-frame
+milliseconds, the redraw times, and `min_frames`,
 `max_frame_ms`, `redraw_max_ms`. The same three values are also reported as
 `perf_bench_*` sensors. The device returns to the view it started on. It
 refuses while recording, speaking, answering a question, in settings or during
