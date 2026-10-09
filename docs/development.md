@@ -263,12 +263,18 @@ allocation fails). Each later frame is the cache shifted and masked to the round
 glass, and only the rows that held content in this or the previous frame are
 flushed. The last frame is a fresh static render, pixel-identical to the static
 view. While a slide runs, the ESP32 main loop polls events without its 10 ms
-idle wait. The AMOLED port sends a flush as one window and one RAMWR, with DMA
-reading the PSRAM framebuffer directly. No animation sleep or input lock is
-introduced.
+idle wait. No animation sleep or input lock is introduced.
+
+The AMOLED port stages each flush through two 16-row internal-RAM DMA buffers:
+the CPU copies the next chunk out of PSRAM while the previous one is on the
+wire, so SPI DMA never reads PSRAM. Direct PSRAM DMA (`psram_dma_direct`) is
+kept only as a fallback when internal RAM for the staging rows is unavailable.
+Direct PSRAM reads are suspected of stalling the app task during OTA flash
+writes. That is unconfirmed on hardware.
 
 The ESP32 port reports display timing as `perf_*` sensors every 2 s while the
 screen is drawing: `perf_full_flush_ms` (slowest full-screen flush),
+`perf_flush_timeouts` (flushes whose DMA did not finish within 200 ms),
 `perf_flush_max_ms`, `perf_flush_ms`/`perf_flush_calls`/`perf_flush_rows`
 (totals for the window), `perf_tick_max_ms`, `perf_event_max_ms`,
 `perf_busy_ms`, and `perf_motion_frames` (frames drawn by the last slide).

@@ -283,6 +283,7 @@ extern "C" void app_main(void) {
         app.set_sensor("perf_flush_ms", p.us / 1000.0);
         app.set_sensor("perf_flush_max_ms", p.max_us / 1000.0);
         if (p.full_us) app.set_sensor("perf_full_flush_ms", p.full_us / 1000.0);
+        app.set_sensor("perf_flush_timeouts", p.timeouts);  // flushes whose DMA didn't finish in 200 ms
         app.set_sensor("perf_event_max_ms", event_max_us / 1000.0);
         app.set_sensor("perf_tick_max_ms", tick_max_us / 1000.0);
         app.set_sensor("perf_busy_ms", busy_us / 1000.0);  // app work incl. rendering and flushes
