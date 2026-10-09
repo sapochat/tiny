@@ -286,7 +286,12 @@ screen is drawing: `perf_full_flush_ms` (slowest full-screen flush),
 `perf_flush_timeouts` (flushes whose DMA did not finish within 200 ms),
 `perf_flush_max_ms`, `perf_flush_ms`/`perf_flush_calls`/`perf_flush_rows`/
 `perf_flush_px` (totals for the window; `perf_flush_px` counts pixels sent), `perf_tick_max_ms`, `perf_event_max_ms`,
-`perf_busy_ms`, and `perf_motion_frames` (frames drawn by the last slide).
+`perf_busy_ms`, `perf_motion_frames` (frames drawn by the last slide),
+`perf_slide_gap_max_ms` (longest time between two slide frames spent outside
+`App::tick`: events, polling, or other tasks preempting the app loop) and
+`perf_app_core` (the CPU the app loop runs on). On the 1.75C the app loop
+(main task) is pinned to CPU1 (`boards/esp32s3-touch-amoled-175c/sdkconfig.defaults`),
+away from the Wi-Fi and esp_timer tasks on CPU0; other boards keep the ESP-IDF default.
 Read them with `hermes gadget debug status`. Measured on the 1.75C at 40 MHz
 QSPI: a full-screen flush took 180 ms before the flush-completion interrupt
 woke the waiting task, 37 ms after that fix, and 41 ms with direct PSRAM DMA.

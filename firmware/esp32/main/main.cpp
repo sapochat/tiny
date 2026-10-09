@@ -251,7 +251,8 @@ extern "C" void app_main(void) {
   hgp::console::begin();
 
   // Display timing, reported as perf_* sensors only after the screen did work.
-  uint32_t perf_at = g_system.now_ms(), event_max_us = 0, tick_max_us = 0, busy_us = 0;
+  uint32_t perf_at = g_system.now_ms(), event_max_us = 0, tick_max_us = 0, busy_us = 0, gap_max_us = 0;
+  int64_t ticked_at = 0;  // end of the last app.tick() while a slide was in progress; 0 otherwise
   for (;;) {
     hgp::Event ev;
     // Block briefly for events, then run the core's timers and animations.
@@ -270,10 +271,15 @@ extern "C" void app_main(void) {
     g_wifi.tick(app, g_system.now_ms());
     if (g_gestures) g_gestures->tick(g_system.now_ms());
     const int64_t started = esp_timer_get_time();
+    // Mid-slide the loop doesn't wait, so the time between ticks is event work, polling,
+    // or other tasks preempting this one: whatever delays the next frame besides the frame.
+    if (ticked_at) gap_max_us = std::max<uint32_t>(gap_max_us, static_cast<uint32_t>(started - ticked_at));
     app.tick();
-    const auto ticked = static_cast<uint32_t>(esp_timer_get_time() - started);
+    const int64_t ended = esp_timer_get_time();
+    const auto ticked = static_cast<uint32_t>(ended - started);
     busy_us += ticked;
     tick_max_us = std::max<uint32_t>(tick_max_us, ticked);
+    ticked_at = app.animating() ? ended : 0;
     if (hal.display == &g_amoled && g_system.now_ms() - perf_at >= 2000) {
       perf_at = g_system.now_ms();
       const auto p = g_amoled.take_perf();
@@ -288,8 +294,10 @@ extern "C" void app_main(void) {
         app.set_sensor("perf_event_max_ms", event_max_us / 1000.0);
         app.set_sensor("perf_tick_max_ms", tick_max_us / 1000.0);
         app.set_sensor("perf_busy_ms", busy_us / 1000.0);  // app work incl. rendering and flushes
+        if (gap_max_us) app.set_sensor("perf_slide_gap_max_ms", gap_max_us / 1000.0);  // between slide frames
+        app.set_sensor("perf_app_core", xPortGetCoreID());  // the core this loop runs on
       }
-      event_max_us = tick_max_us = busy_us = 0;
+      event_max_us = tick_max_us = busy_us = gap_max_us = 0;
     }
   }
 }
