@@ -316,29 +316,25 @@ void Ui::render_motion(const UiModel& m) {
   if (!motion_active_) { render_companion(m); return; }
   constexpr int W = 466;
   auto* fb = display_.framebuffer();
-  // Rows holding anything but black; [0,0) when empty.
-  auto content = [](const uint16_t* buf, int& top, int& bottom) {
-    auto lit = [&](int y) { const auto* r = buf+y*W; for (int x=0;x<W;++x) if (r[x]) return true; return false; };
-    top = 0; while (top<W && !lit(top)) ++top;
-    bottom = W; while (bottom>top && !lit(bottom-1)) --bottom;
-    if (top==W) top = bottom = 0;
+  // Lit columns [lo, hi) of every row of `buf`; lo == hi when the row is black.
+  auto lit = [](const uint16_t* buf, int16_t* lo, int16_t* hi) {
+    for (int y = 0; y < W; ++y) {
+      const auto* r = buf + y * W;
+      int a = 0; while (a < W && !r[a]) ++a;
+      int b = W; while (b > a && !r[b-1]) --b;
+      lo[y] = static_cast<int16_t>(a); hi[y] = static_cast<int16_t>(a == W ? a : b);
+    }
   };
-  auto join = [](int a0, int a1, int b0, int b1, int& y0, int& y1) {
-    if (a1<=a0) { y0=b0; y1=b1; return; }
-    if (b1<=b0) { y0=a0; y1=a1; return; }
-    y0=std::min(a0,b0); y1=std::max(a1,b1);
-  };
-  // The first frame must also rewrite rows where the destination was drawn unshifted.
   const bool first = !motion_cache_ready_;
-  if (!motion_cache_ready_) {
+  if (first) {
     if (!motion_cache_) motion_cache_.reset(new (std::nothrow) uint16_t[W*W]);
     if (!motion_cache_) { snap_transition(); render_companion(m); return; }
-    content(fb, motion_prev_top_, motion_prev_bottom_);  // what the panel shows now
+    lit(fb, shown_lo_, shown_hi_);  // what the glass shows now
     valid_ = false; motion_flush_ = true;
     render_companion(m);
     motion_flush_ = false;
     std::memcpy(motion_cache_.get(), fb, W*W*2);
-    content(motion_cache_.get(), motion_top_, motion_bottom_);
+    lit(motion_cache_.get(), motion_lo_, motion_hi_);
     if (!motion_span_[W/2]) for (int y=0;y<W;++y) {
       const int d = y-233, r2 = 233*233-d*d;
       int h = 0; while ((h+1)*(h+1) <= r2) ++h;
@@ -350,44 +346,87 @@ void Ui::render_motion(const UiModel& m) {
   const int remaining = 220-elapsed;
   const int dx = motion_dx_*remaining*remaining*remaining/(220*220*220);
   const int dy = motion_dy_*remaining*remaining*remaining/(220*220*220);
-  int top = 0, bottom = 0, y0 = 0, y1 = 0;
   if (elapsed == 220) {
     // Land on a fresh static render, so live changes during the slide are not lost.
     valid_ = false; motion_flush_ = true;
     render_companion(m);
     motion_flush_ = false;
-    content(fb, top, bottom);
-    join(top, bottom, motion_prev_top_, motion_prev_bottom_, y0, y1);
-  } else {
-    if (motion_bottom_ > motion_top_) {
-      top = std::clamp(motion_top_+dy, 0, W);
-      bottom = std::clamp(motion_bottom_+dy, 0, W);
+    int16_t lo[W], hi[W];
+    lit(fb, lo, hi);
+    for (int y = 0; y < W; ++y) {
+      const int16_t a = lo[y], b = hi[y];
+      if (shown_hi_[y] > shown_lo_[y]) {
+        lo[y] = b > a ? std::min(a, shown_lo_[y]) : shown_lo_[y];
+        hi[y] = b > a ? std::max(b, shown_hi_[y]) : shown_hi_[y];
+      }
     }
-    join(top, bottom, motion_prev_top_, motion_prev_bottom_, y0, y1);
-    if (first) join(y0, y1, motion_top_, motion_bottom_, y0, y1);
-    compose_motion(dx, dy, y0, y1);
+    flush_bands(lo, hi);
+  } else {
+    compose_motion(dx, dy, first);
   }
-  if (y1 > y0) display_.flush(static_cast<uint16_t>(y0), static_cast<uint16_t>(y1));
-  motion_prev_top_ = top; motion_prev_bottom_ = bottom;
   ++motion_frames_;
   if (elapsed==220) { motion_active_=false; motion_cache_ready_=false; motion_report_=motion_frames_; }
 }
 
-void Ui::compose_motion(int dx, int dy, int y0, int y1) {
-  // Rows [y0,y1) of the panel become the cache shifted by (dx,dy). Pixels outside the
-  // round glass stay true black, so nothing is drawn where the panel has no pixels.
+void Ui::compose_motion(int dx, int dy, bool dirty) {
+  // The panel becomes the cache shifted by (dx,dy). Pixels outside the round glass stay
+  // true black. Only columns lit before or after this frame are rewritten and sent; with
+  // `dirty` the destination's own (unshifted) columns are rewritten too, since the first
+  // frame drew the destination straight into the framebuffer.
   constexpr int W = 466;
   auto* fb = display_.framebuffer();
   const uint16_t* cache = motion_cache_.get();
-  for (int y=y0;y<y1;++y) {
-    auto* row = fb+y*W;
-    const int sy = y-dy, h = motion_span_[y];
-    const int lo = std::max({233-h, dx, 0}), hi = std::min({233+h+1, W+dx, W});
-    if (sy < 0 || sy >= W || hi <= lo) { std::fill(row, row+W, 0); continue; }
-    std::fill(row, row+lo, 0);
-    std::memcpy(row+lo, cache+sy*W+lo-dx, static_cast<size_t>(hi-lo)*2);
-    std::fill(row+hi, row+W, 0);
+  int16_t send_lo[W], send_hi[W];
+  for (int y = 0; y < W; ++y) {
+    auto* row = fb + y * W;
+    const int sy = y - dy, h = motion_span_[y];
+    int lo = W, hi = W;  // new lit columns
+    if (sy >= 0 && sy < W && motion_hi_[sy] > motion_lo_[sy]) {
+      lo = std::max({233 - h, motion_lo_[sy] + dx, 0});
+      hi = std::min({233 + h + 1, motion_hi_[sy] + dx, W});
+      if (hi <= lo) lo = hi = W;
+    }
+    // Columns to send: the new content plus whatever was lit on the glass.
+    int s0 = lo, s1 = hi;
+    if (shown_hi_[y] > shown_lo_[y]) {
+      s0 = hi > lo ? std::min<int>(lo, shown_lo_[y]) : shown_lo_[y];
+      s1 = hi > lo ? std::max<int>(hi, shown_hi_[y]) : shown_hi_[y];
+    }
+    // Columns to rewrite: those, plus the unshifted destination on the first frame.
+    int w0 = s0, w1 = s1;
+    if (dirty && motion_hi_[y] > motion_lo_[y]) {
+      const bool any = w1 > w0;
+      w0 = any ? std::min<int>(w0, motion_lo_[y]) : motion_lo_[y];
+      w1 = any ? std::max<int>(w1, motion_hi_[y]) : motion_hi_[y];
+    }
+    if (w1 > w0) {
+      std::fill(row + w0, row + w1, 0);
+      if (hi > lo) std::memcpy(row + lo, cache + sy * W + lo - dx, static_cast<size_t>(hi - lo) * 2);
+    }
+    send_lo[y] = static_cast<int16_t>(s0); send_hi[y] = static_cast<int16_t>(s1);
+    shown_lo_[y] = static_cast<int16_t>(lo); shown_hi_[y] = static_cast<int16_t>(hi);
   }
+  flush_bands(send_lo, send_hi);
+}
+
+void Ui::flush_bands(const int16_t* lo, const int16_t* hi) {
+  // Group rows into bands of similar column spans and send each band's rectangle.
+  // A few wide rectangles beat many narrow ones: every flush costs a window setup.
+  constexpr int W = 466, kSlack = 48, kMaxRows = 96;
+  int b0 = -1, blo = 0, bhi = 0;
+  auto send = [&](int y1) {
+    if (b0 >= 0) display_.flush_rect(static_cast<uint16_t>(blo), static_cast<uint16_t>(b0),
+                                     static_cast<uint16_t>(bhi), static_cast<uint16_t>(y1));
+    b0 = -1;
+  };
+  for (int y = 0; y < W; ++y) {
+    if (hi[y] <= lo[y]) { send(y); continue; }
+    if (b0 >= 0 && (y - b0 >= kMaxRows || std::abs(lo[y] - blo) > kSlack || std::abs(hi[y] - bhi) > kSlack))
+      send(y);
+    if (b0 < 0) { b0 = y; blo = lo[y]; bhi = hi[y]; }
+    else { blo = std::min<int>(blo, lo[y]); bhi = std::max<int>(bhi, hi[y]); }
+  }
+  send(W);
 }
 
 void Ui::render_companion(const UiModel& m) {
