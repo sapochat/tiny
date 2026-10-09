@@ -149,7 +149,8 @@ class Ui {
     return !m.quick_controls && (m.screen == Screen::Pairing || m.screen == Screen::Settings || m.screen == Screen::Setup);
   }
   void render_local(Canvas& c, const UiModel& m);
-  static constexpr UiRect kQuickSilence{74,338,154,48}, kQuickStop{238,338,154,48}, kQuickSettings{163,402,140,40};
+  static constexpr UiRect kQuickSilence{76,318,148,48}, kQuickStop{242,318,148,48}, kQuickSettings{236,386,104,42},
+                          kQuickSettingsAlone{181,386,104,42};
   static UiRect prompt_answer_rect(bool yes) { return yes ? UiRect{238,296,150,96} : UiRect{78,296,150,96}; }
   // The 466px companion's shared bottom action row (Home, recording and reading):
   // at most two targets, in priority order. Drawing and hit testing both use it.

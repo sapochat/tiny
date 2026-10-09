@@ -168,7 +168,7 @@ def test_wifi_setup_is_companion_rendered_and_closes(ix):
 
 # == M3: quick-controls status has its own line ==============================================
 
-STATUS_BAND = (0, 302, 466, 32)   # its own line between the sliders/Recent and the action row
+STATUS_BAND = (0, 282, 466, 32)   # its own line between the sliders/Recent and the action row
 
 
 def quick_controls(r):

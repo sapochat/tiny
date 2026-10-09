@@ -195,7 +195,9 @@ def test_quick_control_values_do_not_collide_with_recent(ix):
     assert find_text(r.s, '70%', 18, rgb(23, 19, 13), rgb(212, 164, 92), tuple(c['volume'])), 'volume value not in track'
     f = framebuffer(r.s)
     left, right = c['volume'], c['brightness']
-    # Nothing but black between the tracks and the Recent target on its row.
-    for x0, x1 in ((left[0], rx), (rx + rw, right[0] + right[2])):
-        band = f[ry:ry + rh, x0:x1]
-        assert not band.any(), 'text crowds the Recent target'
+    # Pass 5: Recent sits beside Settings at the foot, well below the tracks.
+    assert ry >= max(left[1] + left[3], right[1] + right[3]) + 40, 'Recent crowds the tracks'
+    sx, sy, sw, sh = c['settings']
+    assert sy == ry and sh == rh, 'Recent and Settings share one row'
+    # Nothing but black between the two pills on their row.
+    assert sx - (rx + rw) >= 6 and not f[ry:ry + rh, rx + rw:sx].any(), 'text crowds the Recent target'
