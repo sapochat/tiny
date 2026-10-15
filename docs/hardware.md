@@ -290,7 +290,7 @@ The firmware is written for ESP-IDF 5.3 and later. It builds with ESP-IDF 6.1 th
 - ESP32-S3-Touch-AMOLED-1.75: 1.12 MB, otherwise the same;
 - classic ESP32 with custom pins.
 
-The flash holds two app slots (`partitions.csv`), so later firmware can arrive over the air. A board flashed with an earlier release gets the new partition table with its next USB flash. NVS stays where it was, so its settings and device key survive.
+The flash holds two app slots (`partitions.csv`), so later firmware can arrive over the air. The AMOLED 1.75C has 32 MB of flash and uses `partitions-32mb.csv` instead: two 8 MB app slots, with NVS, otadata and phy_init at the same offsets. Moving a board between the two tables takes one USB flash, because an over-the-air update can't change the table. A board flashed with an earlier release gets the new partition table with its next USB flash. NVS stays where it was, so its settings and device key survive.
 
 ## Updates over the air
 
