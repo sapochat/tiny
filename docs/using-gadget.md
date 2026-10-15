@@ -66,7 +66,7 @@ Wi-Fi setup, cards and images retain their existing functional layouts.
 | Approval | Scroll the question | No action | No action |
 | Recording | No navigation | No navigation | No navigation |
 
-Tap the rendered **Yes** or **No** button to decide an approval. Existing physical CANCEL and console cancellation remain available; no swipe starts a new session or resets the device.
+Tap the rendered **Yes** or **No** button to decide an approval. Existing physical CANCEL and console cancellation remain available; no swipe starts a new session or resets the device. Only a one-second hold on **New chat** does (see [New chat](#new-chat)).
 
 Several swipes also have a visible tap route on the 466px round display, when there is room for it: **↓ Controls** on the idle face (only when no action fills the action row) opens quick controls, the **‹ Latest reply** and **‹ Quick controls** titles return to Home, and **Read reply** opens unread text. These routes are not universal: while Mute voice and Stop task fill the two action slots there is no Read reply or Controls target, and a reply you have already read is reopened by swiping up. Swipe down from Home for quick controls at any time.
 
@@ -116,12 +116,20 @@ A gesture belongs to its starting view and to the revision of the target it touc
 
 Quick controls are separate from the legacy settings/hardware-check menu. When Tiny is idle, quick controls show **Settings**; otherwise it is outlined and inert. Holding the title area at the top on Home for one second **while idle** still opens the menu, as do the physical chord and console command when idle. On the offline, connecting and pairing screens, holding the title (the top bar on rectangular touch boards) opens it too, because there is no other on-device route to Wi-Fi and server settings there; this works even when the last task's outcome is unknown, and never cancels or resends that work. Settings never stop a recording, speech or work: the chord and console are refused while busy, and a refused chord is consumed rather than acting as CANCEL. A pending title hold is consumed if its view or idle eligibility changes; it cannot cancel a recording or speech that starts later. Starting a recording also invalidates older navigation contacts, without changing the original touch-owned TALK release. Its local item-navigation and Wi-Fi setup gestures are unchanged.
 
+## New chat
+
+Tiny keeps one conversation with Hermes until you start another. On the 466px round touchscreen, swipe down to quick controls and **hold New chat for one second**. It sits to the right of Mute voice and Stop task. While your finger rests on it, the pill lights and reads **Hold 1 sec**; at one second Tiny sends `session.new`, returns to Home, and shows **Starting a new session** until Hermes answers. A tap only shows **Hold 1 sec** for two seconds, and a finger that moves off the pill does nothing, so you can't start over by accident.
+
+New chat is offered only when Settings would be (nothing recording, speaking, asking or working) and Tiny is connected. Otherwise it stays in place, outlined and inert. A finger that went down while it was available does nothing if Hermes starts work before the second is up.
+
+The host can also start fresh on its own after a quiet stretch. See `idle_reset_minutes` in [the Hermes integration guide](hermes-integration.md#conversations-and-idle-reset). Starting a new chat clears only the conversation transcript. Recent results, Hermes memory and device settings stay.
+
 | What you want to do | Control |
 |---|---|
 | Ask a question | Hold TALK, speak, and release to send |
 | Interrupt a spoken reply | Hold TALK to start speaking |
 | Discard a recording, close a card, or request a stop | Tap CANCEL. With work running it sends one stop request; with only speech playing it silences locally. |
-| Start a fresh conversation | Hold CANCEL for two seconds |
+| Start a fresh conversation | Hold CANCEL for two seconds, or hold **New chat** in quick controls for one second |
 | Answer a confirmation question | TALK means yes; CANCEL means no |
 | Type in the simulator | Enter a message in the text box and press Enter |
 | Save the simulator's device screen | Press Ctrl+S |

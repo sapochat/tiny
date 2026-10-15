@@ -12,6 +12,7 @@ class TouchGestures {
  public:
   struct Config {
     uint32_t hold_ms = 120;  // a still finger becomes TALK after this long
+    uint32_t action_hold_ms = 1000;  // a still finger on New chat acts after this long
     int slop_px = 18;        // movement allowed before a touch stops being a hold or tap
     int swipe_px = 60;       // downward travel that makes a swipe
     bool swipe_cancel = true;

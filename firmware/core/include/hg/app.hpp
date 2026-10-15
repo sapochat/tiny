@@ -104,6 +104,8 @@ class App {
   TouchControl touch_hit(int x, int y) const;
   void touch_swipe(TouchView owner, int dx, int dy, TouchControl control);
   void touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at);
+  // A still finger held on a hold-only target (New chat) for its full duration. Acts once.
+  void touch_hold(TouchView owner, TouchControl control);
   // Touch-down feedback only: lights a target under a still finger. Never acts.
   void touch_press(TouchControl control);
   // A touch-owned TALK press. Unlike a physical TALK press it never answers a question.
@@ -168,6 +170,10 @@ class App {
   void h_image_end(const json::Value& m);
   void h_action(const json::Value& m);
   void h_ping(const json::Value& m);
+ public:
+  // Seconds since local midnight from the host's clock; false when no trustworthy time.
+  bool local_time(int& seconds_of_day) const;
+ private:
   void h_notice(const json::Value& m);
   void h_error(const json::Value& m);
   void h_prompt(const json::Value& m);
@@ -241,6 +247,9 @@ class App {
   void set_note(std::string head, std::string detail);
   void clear_note();
   bool settings_allowed() const;
+  // New chat is offered when Settings would be and Hermes is reachable.
+  bool new_chat_allowed() const;
+  uint32_t new_chat_hint_until_ = 0;  // a tap on New chat shows "Hold 1 sec" until then
   void request_sent();  // a text/voice request left the device
   bool known_setting(std::string_view key) const;
   void start_new_session();
@@ -321,6 +330,14 @@ class App {
   uint32_t online_since_ = 0;
   uint32_t last_rx_ = 0;
   uint32_t heartbeat_ms_ = 20000;
+  // Host wall clock (welcome/ping `time`), kept as an offset from now_ms(). Trusted for
+  // kWallTrustMs after the last sync, so a long offline stretch never shows a stale time.
+  static constexpr uint32_t kWallTrustMs = 12u * 3600u * 1000u;
+  bool wall_synced_ = false;
+  int64_t wall_unix_ = 0;
+  int32_t wall_offset_s_ = 0;
+  uint32_t wall_sync_ms_ = 0;
+  void sync_wall_clock(const json::Value& time);
   int backoff_ = 0;
   int attempts_ = 0;
   std::string fatal_;   // unrecoverable until reconfigured

@@ -23,6 +23,15 @@ void TouchGestures::tick(uint32_t now_ms) {
       app_.open_settings();
     }
   }
+  // Hold-only targets act once the finger has rested for the full hold, still on the same
+  // view and target revision; lifting afterwards is not a tap.
+  if (state_ == State::Pending && !moved_ && control_ == TouchControl::NewChat && app_.touch_view() == owner_ &&
+      app_.control_revision(control_) == revision_ && now_ms - t0_ >= cfg_.action_hold_ms) {
+    state_ = State::Ignored;
+    app_.touch_press(TouchControl::None);
+    app_.touch_hold(owner_, control_);
+    return;
+  }
   // Push-to-talk starts only from Home's open area or an explicit Talk target. Reading
   // stays purely navigational, so a patient reader's still finger never records.
   const bool talk_target = (owner_ == TouchView::Home && control_ == TouchControl::None) ||

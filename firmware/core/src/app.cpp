@@ -416,6 +416,7 @@ void App::h_welcome(const json::Value& m) {
   if (work_available_) send(proto::message("work.list"));
   if ((!work_available_ || !paired_) && (navigation_ == Navigation::Recent || navigation_ == Navigation::Result))
     navigation_ = Navigation::Home;
+  sync_wall_clock(m["time"]);
   int hb = static_cast<int>(m["heartbeat_s"].as_int(20));
   heartbeat_ms_ = static_cast<uint32_t>(std::max(5, std::min(300, hb))) * 1000u;
   if (paired_) {
@@ -909,7 +910,29 @@ void App::h_action(const json::Value& m) {
   send(res);
 }
 
+void App::sync_wall_clock(const json::Value& time) {
+  // Optional, additive: an older host sends none, and a malformed one is ignored.
+  if (!time.is_object() || !time["unix"].is_number() || !time["utc_offset_s"].is_number()) return;
+  double unix_s = time["unix"].as_number(), offset = time["utc_offset_s"].as_number();
+  if (unix_s < 1577836800.0 || unix_s > 4102444800.0) return;   // 2020..2100
+  if (offset < -14 * 3600.0 || offset > 14 * 3600.0) return;
+  wall_unix_ = static_cast<int64_t>(unix_s);
+  wall_offset_s_ = static_cast<int32_t>(offset);
+  wall_sync_ms_ = now();
+  wall_synced_ = true;
+}
+
+bool App::local_time(int& seconds_of_day) const {
+  if (!wall_synced_) return false;
+  uint32_t since = now() - wall_sync_ms_;
+  if (since >= kWallTrustMs) return false;
+  int64_t local = wall_unix_ + wall_offset_s_ + since / 1000u;
+  seconds_of_day = static_cast<int>(((local % 86400) + 86400) % 86400);
+  return true;
+}
+
 void App::h_ping(const json::Value& m) {
+  sync_wall_clock(m["time"]);
   json::Value pong = proto::message("pong");
   pong.set("ts", m["ts"]);
   send(pong);
@@ -1671,6 +1694,10 @@ void App::tick() {
     hint_flash_until_ = 0;
     update_model();
   }
+  if (new_chat_hint_until_ && static_cast<int32_t>(t - new_chat_hint_until_) >= 0) {
+    new_chat_hint_until_ = 0;
+    update_model();
+  }
 
   if (static_cast<int32_t>(t - page_at_) >= 0) {
     page_at_ = t + page_dwell_ms();
@@ -1961,6 +1988,9 @@ void App::update_model() {
   m.tap_talk = talk_mode_ == TalkMode::Tap;
   m.talk_control = mode_ == Mode::Idle && !speaking() && can_talk() && hal_.mic && !prompt_showing();
   m.settings_ready = settings_allowed();
+  m.new_chat_ready = new_chat_allowed();
+  m.new_chat_hint = m.new_chat_ready && new_chat_hint_until_ &&
+                    static_cast<int32_t>(new_chat_hint_until_ - now()) > 0;
   // The latest work's ending, compact, where Home's caption is not visible: a reading line
   // (only for text from that work, which is complete only on success) and a quick-controls
   // word on the inert Stop target.
@@ -2067,6 +2097,18 @@ json::Value App::status_value() const {
       .set("server", server_url_)
       .set("network", network_up_);
   s.set("display_sleeping", display_sleeping_);
+  {
+    json::Value clock = json::Value::object();
+    int sod = 0;
+    bool known = local_time(sod);
+    clock.set("known", known);
+    if (known) {
+      char hm[16];
+      std::snprintf(hm, sizeof hm, "%02d:%02d", sod / 3600, sod / 60 % 60);
+      clock.set("local", std::string(hm)).set("since_sync_s", static_cast<int64_t>((now() - wall_sync_ms_) / 1000u));
+    }
+    s.set("clock", clock);
+  }
   // Remote-work stop state and local silence, for every board; diagnostics, not a protocol.
   const char* stops[] = {"none", "requested", "stopped", "finished", "failed", "unknown"};
   json::Value work = json::Value::object();

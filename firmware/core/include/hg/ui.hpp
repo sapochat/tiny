@@ -39,8 +39,9 @@ enum class Link : uint8_t { Offline, Network, Connecting, Online };
 
 enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, Other, Recent, Result };
 // Stop means "Stop work" (a cancellation request). Silence only quiets local playback.
+// NewChat acts on a one-second hold, never on a tap. Shelf targets (Recent onward) stay last.
 enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No, Reply, Silence, Discard, Finish,
-                                    Talk, Controls, Home, Settings, Recent, Work0, Work1, Work2, Next };
+                                    Talk, Controls, Home, Settings, NewChat, Recent, Work0, Work1, Work2, Next };
 constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::Next) + 1;
 const char* control_name(TouchControl c);
 // The word a host work stage reads as on screen (\"cancelled\" reads \"Stopped\").
@@ -82,6 +83,9 @@ struct UiModel {
   bool can_silence = false, stop_pending = false;
   uint8_t capture = 0;
   bool talk_control = false, tap_talk = false, settings_ready = false;
+  // New chat: offered only when Settings would be and Hermes is reachable; after a tap the
+  // target says how to use it ("Hold 1 sec") for a moment.
+  bool new_chat_ready = false, new_chat_hint = false;
   // How the latest work ended, once it has: a compact reading line (only for text from
   // that work) and a word for the inert Stop target in quick controls. Empty while open.
   std::string outcome, outcome_word;
@@ -149,7 +153,9 @@ class Ui {
     return !m.quick_controls && (m.screen == Screen::Pairing || m.screen == Screen::Settings || m.screen == Screen::Setup);
   }
   void render_local(Canvas& c, const UiModel& m);
-  static constexpr UiRect kQuickSilence{76,318,148,48}, kQuickStop{242,318,148,48}, kQuickSettings{236,386,104,42},
+  // Quick controls' action row: Mute voice, Stop task, New chat; even 8px gaps inside the glass.
+  static constexpr UiRect kQuickSilence{57,318,112,48}, kQuickStop{177,318,112,48}, kQuickNewChat{297,318,112,48},
+                          kQuickSettings{236,386,104,42},
                           kQuickSettingsAlone{181,386,104,42};
   static UiRect prompt_answer_rect(bool yes) { return yes ? UiRect{238,296,150,96} : UiRect{78,296,150,96}; }
   // The 466px companion's shared bottom action row (Home, recording and reading):

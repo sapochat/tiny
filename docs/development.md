@@ -121,6 +121,47 @@ Two checks stop a firmware build that would run with settings nobody asked for. 
 - **`tools/check_config.py`**, from `CMakeLists.txt` after the configuration is generated (so `idf.py` builds run it too). It fails when a line of `sdkconfig.defaults` or the board's defaults didn't reach the generated sdkconfig. That happens when a symbol is misspelled, belongs to another chip, or has an unmet dependency, and when an sdkconfig from an older checkout outlives a change to the defaults. In the last case, delete `sdkconfig.<board>` (PlatformIO) or the build directory, then build again. A board file that picks another option of a choice the base file sets says so with `# CONFIG_<base option> is not set`.
 - **`tools/check_size.py`**, after linking (`tools/pio_checks.py`). It fails when the app leaves less than 10% of its smallest app partition free. For `idf.py` builds, run it by hand: `python tools/check_size.py --app build/hermes_gadget.bin --partitions build/partition_table/partition-table.bin`.
 
+### Design captures of the round companion
+
+`tools/design_capture.py capture OUTDIR [--transitions]` drives the production native core
+against a loopback `DeviceHub` (disposable store, synthetic content) through Home, quick
+controls, Recent, results, approvals, connection and Settings states, and writes raw and
+circle-masked PNGs, `shots.json` and a contact sheet. Each shot names the state it must be
+in and fails when the device is elsewhere, and a shot that repeats its neighbour's
+framebuffer fails unless marked as an intended return. The device runs on a virtual clock
+with seeded randomness, so two runs of one library are byte-identical
+(`design_capture.py identical A B`); `compare` builds before/after sheets and `gaps` lists
+tight vertical gaps. `tests/test_design_capture.py` keeps those guards honest.
+
+### Flash budget on the round companion
+
+The 466px round boards never draw the legacy 1-bit mascot, so `CONFIG_HG_LEGACY_MASCOT`
+defaults to `n` for `HG_BOARD_AMOLED_175`/`HG_BOARD_AMOLED_175C` and their build links
+`firmware/core/src/mascot_stub.cpp` (sizes and anchors only) instead of
+`mascot_data.cpp`. That saves 26,592 bytes of the 1.75C app image. Every other board keeps
+the mascot; the host simulator keeps it too unless configured with
+`-DHG_LEGACY_MASCOT=OFF`. `tests/test_mascot_reclaim.py` keeps the stub in step with the
+generated data. To prove the stub renders nothing differently, capture both libraries with
+`tools/design_capture.py` and compare them with its `identical` command (all round
+states and transition frames must match byte for byte).
+
+The mirror image applies to the expression video. Only the 466px round companion
+(`Ui::round_companion()`) decodes and draws it, so `CONFIG_HG_EXPRESSION_PACK` defaults to
+`y` for `HG_BOARD_AMOLED_175`/`HG_BOARD_AMOLED_175C` and `n` everywhere else. Those boards
+compile `ui.cpp` against `firmware/core/include/hg/expression_stub.hpp` (the same clip
+table, names and frame geometry, no frames) instead of the generated
+`expression_assets.hpp`, which is left untouched. That saves 443,008 bytes of the
+`esp32s3-lcd-154` app image; the round 1.75C image is unchanged. The host simulator keeps
+the pack unless configured with `-DHG_EXPRESSION_PACK=OFF`; non-round simulator boards
+render byte-identically either way, and `tests/test_expression_reclaim.py` keeps the stub
+in step with the pack. After pulling a Kconfig change,
+delete the generated `firmware/esp32/sdkconfig.<env>` so the new default applies.
+
+ESP-WIFI-MESH objects (`libmesh.a`, about 220 KB) are linked into every Wi-Fi build:
+`libnet80211.a(ieee80211_ioctl.o)` references `mesh_set_ie_crypto_config`, and ESP-IDF
+6.1's `esp_wifi` links the mesh blob unconditionally, with no Kconfig option to drop it.
+This is not changed here.
+
 ### Tiny v2 local animation candidate
 
 The round 466px renderer uses the existing approved sources in the sibling

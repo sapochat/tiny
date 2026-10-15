@@ -453,6 +453,26 @@ class DeviceSession:
         return " ".join(parts)
 
 
+def host_clock() -> tuple[int, int]:
+    """This host's wall clock and its current UTC offset (DST included).
+
+    Uses Hermes's configured timezone when the gateway has one, else the system's.
+    """
+    now = time.time()
+    tz = None
+    try:
+        from hermes_time import get_timezone  # Hermes gateway; absent in standalone hubs
+
+        tz = get_timezone()
+    except Exception:
+        tz = None
+    import datetime as _dt
+
+    moment = _dt.datetime.fromtimestamp(now, tz) if tz is not None else _dt.datetime.fromtimestamp(now).astimezone()
+    offset = moment.utcoffset()
+    return int(now), int(offset.total_seconds()) if offset is not None else 0
+
+
 class DeviceHub:
     def __init__(
         self,
@@ -466,8 +486,12 @@ class DeviceHub:
         heartbeat_s: int = 20,
         ssl_context=None,
         max_utterance_s: float = 60.0,
+        clock=None,
     ):
         self.store = store
+        # Wall clock shared with the device (welcome + every ping): () -> (unix_s, utc_offset_s),
+        # or None for a host that shares no time. Defaults to this host's local time.
+        self.clock = host_clock if clock is None else clock if callable(clock) else None
         self.work = WorkStore(store.path.parent)
         self.delegate = delegate
         self.host, self.port, self.path = host, port, "/" + path.strip("/")
@@ -612,7 +636,7 @@ class DeviceHub:
             await session.send_json(protocol.message(
                 "welcome", session=session.session_id, paired=session.paired,
                 heartbeat_s=self.heartbeat_s, server="hermes", proto=protocol.VERSION,
-                work={"v": 1} if session.has_work else None))
+                work={"v": 1} if session.has_work else None, time=self._time_field()))
             await session.work_snapshot()
             log.info("device %s (%s) online, paired=%s", session.device_id, session.name, session.paired)
             await self.delegate.on_ready(session)
@@ -642,6 +666,20 @@ class DeviceHub:
                 except Exception:
                     log.exception("on_disconnect failed")
 
+    def _time_field(self) -> dict | None:
+        """``{unix, utc_offset_s}`` for the device's clock, or None (field omitted)."""
+        if self.clock is None:
+            return None
+        try:
+            got = self.clock()
+            if got is None:
+                return None
+            unix, offset = got
+            return {"unix": int(unix), "utc_offset_s": int(offset)}
+        except Exception:
+            log.exception("host clock failed; sending no time")
+            return None
+
     async def _heartbeat(self, session: DeviceSession) -> None:
         while True:
             await asyncio.sleep(self.heartbeat_s)
@@ -650,7 +688,7 @@ class DeviceHub:
                 await session.close("heartbeat timeout")
                 return
             try:
-                await session.send_json(protocol.message("ping", ts=int(time.time() * 1000)))
+                await session.send_json(protocol.message("ping", ts=int(time.time() * 1000), time=self._time_field()))
             except Exception:
                 return
 

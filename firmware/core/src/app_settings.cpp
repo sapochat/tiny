@@ -91,7 +91,8 @@ uint32_t App::control_revision(TouchControl control) const {
   switch (control) {
     case TouchControl::Reply: return reply_epoch_;
     case TouchControl::Silence: return output_epoch_;
-    case TouchControl::Stop: return work_epoch_;
+    case TouchControl::Stop:
+    case TouchControl::NewChat: return work_epoch_;  // new work under the finger voids the hold
     case TouchControl::Discard:
     case TouchControl::Finish: return capture_epoch_;
     default: return 0;
@@ -141,6 +142,8 @@ void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) 
     navigation_ = Navigation::Home;
   } else if (owner == TouchView::Controls && control == TouchControl::Settings) {
     open_settings();
+  } else if (owner == TouchView::Controls && control == TouchControl::NewChat) {
+    new_chat_hint_until_ = now() + 2000;  // a tap never starts over; the target says to hold
   } else if (owner == TouchView::Response && control == TouchControl::Talk) {
     if (model_.talk_control && talk_mode_ == TalkMode::Tap) {
       on_touch_talk(true);
@@ -154,6 +157,22 @@ void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) 
     on_touch_talk(false);
   }
   if (navigation_ != previous_navigation) ++model_.navigation;
+  update_model();
+}
+
+bool App::new_chat_allowed() const {
+  return settings_allowed() && can_talk() && !speaking();
+}
+
+void App::touch_hold(TouchView owner, TouchControl control) {
+  // Only New chat acts on a hold, and only while it is still offered: idle, connected,
+  // nothing speaking, recording or asking. Anything else under the finger does nothing.
+  if (owner != TouchView::Controls || owner != touch_view() || control != TouchControl::NewChat) return;
+  if (navigation_ != Navigation::Controls || !new_chat_allowed()) return;
+  new_chat_hint_until_ = 0;
+  start_new_session();
+  navigation_ = Navigation::Home;  // Home shows the fresh start; quick controls never linger
+  ++model_.navigation;
   update_model();
 }
 

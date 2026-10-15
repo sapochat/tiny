@@ -7,7 +7,11 @@
 
 #include "hg/font.hpp"
 #include "hg/geist.hpp"
+#ifdef HG_NO_EXPRESSION_PACK
+#include "hg/expression_stub.hpp"  // boards that never draw the video: metadata only
+#else
 #include "hg/expression_assets.hpp"
+#endif
 
 namespace hg {
 namespace {
@@ -160,7 +164,8 @@ const char* screen_name(Screen s) {
 
 const char* control_name(TouchControl c) {
   static const char* const names[kTouchControls] = {"none", "volume", "brightness", "stop", "yes", "no", "reply",
-      "silence", "discard", "finish", "talk", "controls", "home", "settings", "recent", "work0", "work1", "work2", "next"};
+      "silence", "discard", "finish", "talk", "controls", "home", "settings", "new_chat", "recent", "work0", "work1",
+      "work2", "next"};
   const auto i = static_cast<unsigned>(c);
   return i < kTouchControls ? names[i] : "none";
 }
@@ -424,7 +429,7 @@ void Ui::render_companion(const UiModel& m) {
       .val(m.quick_controls).val(m.touch_prompt).val(m.prompt_unread).val(m.unread_reply).val(m.reply_ready)
       .val(m.volume).val(m.brightness).val(m.speaking).val(m.has_reply).val(m.can_stop)
       .val(m.can_silence).val(m.stop_pending).val(m.capture).val(m.talk_control).val(m.tap_talk)
-      .val(m.settings_ready).val(m.work_available).val(m.recent).val(m.result)
+      .val(m.settings_ready).val(m.new_chat_ready).val(m.new_chat_hint).val(m.work_available).val(m.recent).val(m.result)
       .val(m.work_page).val(m.work_pages)
       .add(m.work_rows.empty() ? "" : m.work_rows[0]).add(m.work_rows.size()>1 ? m.work_rows[1] : "")
       .add(m.work_rows.size()>2 ? m.work_rows[2] : "").add(m.outcome).add(m.outcome_word)
@@ -638,6 +643,9 @@ void Ui::render_companion(const UiModel& m) {
       }
       pill_at(kQuickSilence,TouchControl::Silence,"Mute voice",m.can_silence);
       draw_control(TouchControl::Stop);
+      // New chat acts on a hold: a finger on it, or a tap, shows how long to hold.
+      const bool holding=m.pressed==TouchControl::NewChat;
+      pill_at(kQuickNewChat,TouchControl::NewChat,holding||m.new_chat_hint?"Hold 1 sec":"New chat",m.new_chat_ready);
       // Settings never interrupt work, speech or a recording: the target stays in place,
       // inert. How the last task ended is Home's support line, not a row here.
       pill_at(m.work_available?kQuickSettings:kQuickSettingsAlone,TouchControl::Settings,"Settings",m.settings_ready);
@@ -1114,8 +1122,8 @@ void Ui::draw_hero(Canvas& c, const UiModel& m) {
   const int size = g.size, mx = g.x, my = g.y;
   const mascot::Anchors& a = mascot::anchors();
   if (round_companion()) draw_expression(c,mx,my,size);
-  else if (const mascot::Bitmap* b = mascot::pick(size, mascot_frame(m))) {
-    c.bitmap1(mx, my, b->size, b->size, b->bits, kText);
+  else if (const mascot::Bitmap* b = mascot::pick(size, mascot_frame(m)); b && b->bits) {
+    c.bitmap1(mx, my, b->size, b->size, b->bits, kText);  // a size-only stub has no bits
   }
   const int stroke = std::max(2, size / 48);
   auto waves = [&](int cx, int cy, int dir, int lit, int phase, uint16_t on, uint16_t dim, int r0) {
@@ -1207,6 +1215,7 @@ UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
       // in the same order as the Home and reading action row.
       if (control == TouchControl::Silence) return kQuickSilence;
       if (control == TouchControl::Stop && (m.can_stop || m.stop_pending || m.outcome_word.empty())) return kQuickStop;
+      if (control == TouchControl::NewChat && m.new_chat_ready) return kQuickNewChat;
       if (control == TouchControl::Settings && m.settings_ready)
         return m.work_available ? kQuickSettings : kQuickSettingsAlone;
       if (control == TouchControl::Home) return {108,44,250,52};

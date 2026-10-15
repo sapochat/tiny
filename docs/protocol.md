@@ -120,6 +120,15 @@ If authentication fails, the server sends `{"type": "error", "code": "auth_faile
 
 `paired` reports whether Hermes will accept messages from this device. Authorization is enforced by Hermes itself on every message; the flag only drives the device UI.
 
+Optional `time: {"unix": 1792000000, "utc_offset_s": -25200}` is the host's wall clock in
+Unix seconds and its current UTC offset (DST included), taken from Hermes's configured
+timezone or the system's. The host repeats it on every heartbeat `ping`. A device that
+knows it keeps the time as an offset from its own monotonic clock, so it keeps counting
+through Wi-Fi loss, and it stops presenting a time 12 hours after the last sync. A device
+that never received a valid `time` shows no time. Older devices ignore the field, and an
+older host simply omits it; it's additive, so `proto` stays 1. A device ignores a `time`
+whose `unix` is outside 2020–2100 or whose offset is beyond ±14 h.
+
 ### Pairing
 
 | Message | Direction | Meaning |
@@ -139,7 +148,7 @@ If authentication fails, the server sends `{"type": "error", "code": "auth_faile
 | `{"type": "audio.end", "id": "a4", "stream": 4, "duration_ms": 2100}` | Utterance complete; the server turns it into a WAV voice message |
 | `{"type": "audio.cancel", "id": "a4", "stream": 4, "reason": "too short"}` | Discard the utterance |
 | `{"type": "cancel", "turn": "..."}` | Request a stop of the current work (Hermes `/stop`). `turn` or `request` is optional; see [Stopping work](#stopping-work) |
-| `{"type": "session.new"}` | Start a fresh conversation (Hermes `/new`). The reference firmware sends it when CANCEL is held for 2 s |
+| `{"type": "session.new"}` | Start a fresh conversation (Hermes `/new`). The reference firmware sends it when CANCEL is held for 2 s, or when **New chat** in quick controls is held for 1 s |
 | `{"type": "prompt.reply", "id": "q1", "answer": "yes"}` | The answer (`yes` or `no`) to a `prompt` |
 
 - Utterances shorter than 0.25 s are dropped with a `notice`.
@@ -268,7 +277,7 @@ mac = HMAC-SHA256(key, "hermes-gadget/v1|ota|" + device_id + "|" + nonce + "|" +
 
 ### Heartbeat
 
-- The server sends `{"type": "ping", "ts": 1727950000000}` every `heartbeat_s`, and the device answers `{"type": "pong", "ts": ...}`.
+- The server sends `{"type": "ping", "ts": 1727950000000, "time": {"unix": ..., "utc_offset_s": ...}}` every `heartbeat_s`, and the device answers `{"type": "pong", "ts": ...}`. `time` is optional, as in `welcome`; it corrects the device after a host clock change (NTP step, DST) within one heartbeat.
 - Either side may also send `ping`.
 - Either side treats 3 × `heartbeat_s` without any inbound frame as a dead connection.
 
