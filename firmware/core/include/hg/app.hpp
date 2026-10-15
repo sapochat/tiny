@@ -104,6 +104,8 @@ class App {
   TouchControl touch_hit(int x, int y) const;
   void touch_swipe(TouchView owner, int dx, int dy, TouchControl control);
   void touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at);
+  // A still finger held on a hold-only target (New chat) for its full duration. Acts once.
+  void touch_hold(TouchView owner, TouchControl control);
   // Touch-down feedback only: lights a target under a still finger. Never acts.
   void touch_press(TouchControl control);
   // A touch-owned TALK press. Unlike a physical TALK press it never answers a question.
@@ -241,6 +243,9 @@ class App {
   void set_note(std::string head, std::string detail);
   void clear_note();
   bool settings_allowed() const;
+  // New chat is offered when Settings would be and Hermes is reachable.
+  bool new_chat_allowed() const;
+  uint32_t new_chat_hint_until_ = 0;  // a tap on New chat shows "Hold 1 sec" until then
   void request_sent();  // a text/voice request left the device
   bool known_setting(std::string_view key) const;
   void start_new_session();

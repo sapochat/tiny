@@ -10,6 +10,7 @@ default ../hermes-agent; the gateway runs with <dir>/.venv's Python).
 
 from __future__ import annotations
 
+import contextlib
 import math
 import os
 import shutil
@@ -74,6 +75,14 @@ def _hermes(home: Path, *args: str, **kw) -> subprocess.CompletedProcess:
 
 @pytest.fixture
 def gateway(tmp_path):
+    with running_gateway(tmp_path) as g:
+        yield g
+
+
+@contextlib.contextmanager
+def running_gateway(tmp_path, gadget_extra: str = ""):
+    """A real ``hermes gateway run`` in a temporary HERMES_HOME; ``gadget_extra`` adds YAML lines
+    to ``platforms.gadget.extra`` (indented to match)."""
     from fakes import fake_openai
 
     api_server, api_port = fake_openai.start(0)
@@ -81,7 +90,11 @@ def gateway(tmp_path):
     home = tmp_path / "hermes-home"
     (home / "plugins").mkdir(parents=True)
     shutil.copytree(REPO / "plugin", home / "plugins" / "gadget", ignore=shutil.ignore_patterns("__pycache__"))
-    (home / "config.yaml").write_text(CONFIG.format(api=api_port, gadget=gadget_port), encoding="utf-8")
+    config = CONFIG.format(api=api_port, gadget=gadget_port)
+    if gadget_extra:
+        anchor = "      unauthorized_dm_behavior: pair\n"
+        config = config.replace(anchor, anchor + "".join(f"      {line}\n" for line in gadget_extra.splitlines()))
+    (home / "config.yaml").write_text(config, encoding="utf-8")
     env = {**os.environ, "HERMES_HOME": str(home), "PYTHONUTF8": "1"}
     log = open(tmp_path / "gateway.out", "w", encoding="utf-8")
     proc = subprocess.Popen([str(VENV_PY), "-m", "hermes_cli.main", "gateway", "run"], cwd=AGENT_DIR, env=env,
@@ -97,14 +110,16 @@ def gateway(tmp_path):
         time.sleep(0.5)
     else:
         pytest.fail("gateway did not open the gadget port")
-    yield {"url": url, "home": home, "api": fake_openai.Handler.requests_log}
-    proc.terminate()
     try:
-        proc.wait(timeout=30)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-    log.close()
-    api_server.shutdown()
+        yield {"url": url, "home": home, "api": fake_openai.Handler.requests_log, "log": tmp_path / "gateway.out"}
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        log.close()
+        api_server.shutdown()
 
 
 def test_device_pairs_talks_and_is_driven_by_the_agent(gateway, make_sim):

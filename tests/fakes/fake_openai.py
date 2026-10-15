@@ -28,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 TRANSCRIPT = "what is on my screen"
 CRLF = b"\r\n"
 MODEL = "fake-gadget-model"
+SLOW_S = 8.0  # how long a "slow job" request takes to answer
 
 
 def _tone(rate: int, seconds: float, freq: float = 523.0) -> bytes:
@@ -65,6 +66,8 @@ def plan_reply(body: dict) -> dict:
         return {"content": "Done - check the gadget." if ok else f"That did not work: {result[:120]}"}
     text = _last_user_text(messages)
     low = text.lower()
+    if "slow job" in low:
+        time.sleep(SLOW_S)  # a turn that outlasts a short idle window
     wanted = None
     if "screen" in low and "note" in low:
         wanted = ("gadget_display", {"title": "Note", "text": "Hello from Hermes", "seconds": 30})
@@ -112,8 +115,13 @@ class Handler(BaseHTTPRequestHandler):
         summary: dict = {"path": path}
         if path.endswith("/chat/completions"):
             body = json.loads(raw or b"{}")
+            msgs = body.get("messages") or []
             summary.update(tools=sorted(t.get("function", {}).get("name", "") for t in body.get("tools") or []),
-                           user=_last_user_text(body.get("messages") or [])[-200:])
+                           user=_last_user_text(msgs)[-200:],
+                           # Everything the model was shown, so tests can tell a fresh conversation
+                           # from one that carries history.
+                           conversation=" ".join(str(m.get("content") or "") for m in msgs
+                                                 if m.get("role") in ("user", "assistant")))
         self._record(summary)
         if path.endswith("/chat/completions"):
             self._chat(body)

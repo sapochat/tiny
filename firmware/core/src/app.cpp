@@ -1671,6 +1671,10 @@ void App::tick() {
     hint_flash_until_ = 0;
     update_model();
   }
+  if (new_chat_hint_until_ && static_cast<int32_t>(t - new_chat_hint_until_) >= 0) {
+    new_chat_hint_until_ = 0;
+    update_model();
+  }
 
   if (static_cast<int32_t>(t - page_at_) >= 0) {
     page_at_ = t + page_dwell_ms();
@@ -1961,6 +1965,9 @@ void App::update_model() {
   m.tap_talk = talk_mode_ == TalkMode::Tap;
   m.talk_control = mode_ == Mode::Idle && !speaking() && can_talk() && hal_.mic && !prompt_showing();
   m.settings_ready = settings_allowed();
+  m.new_chat_ready = new_chat_allowed();
+  m.new_chat_hint = m.new_chat_ready && new_chat_hint_until_ &&
+                    static_cast<int32_t>(new_chat_hint_until_ - now()) > 0;
   // The latest work's ending, compact, where Home's caption is not visible: a reading line
   // (only for text from that work, which is complete only on success) and a quick-controls
   // word on the inert Stop target.

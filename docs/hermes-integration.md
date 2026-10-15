@@ -32,6 +32,7 @@ platforms:
       path: /gadget
       speak_replies: true    # spoken replies for devices with a speaker
       auto_home: true        # first approved device becomes the gadget home channel
+      idle_reset_minutes: 30 # start a new conversation after this much quiet; omit to keep one
       unauthorized_dm_behavior: pair
       # heartbeat_s: 20
       # max_utterance_s: 60
@@ -100,11 +101,20 @@ The SDK reuses Hermes's DM pairing instead of inventing its own:
 
 The pairing code authorizes the chat in Hermes. The device key, enrolled on first contact and proven by HMAC afterwards, keeps another device from impersonating an approved one.
 
+### Conversations and idle reset
+
+Each device is one Hermes chat, so without a reset everything said to it piles into one conversation. Two ways start a fresh one:
+
+- **On the device:** hold **New chat** in quick controls for one second, or hold CANCEL for two seconds. Both send `session.new` (see [Confirmations](#confirmations)).
+- **After a quiet stretch:** with `idle_reset_minutes` set, a request that arrives after that many minutes without a request or a finished turn starts a new conversation first. The adapter calls the gateway's own `SessionStore.reset_session`, so the old session ends with `end_reason = session_reset` and the request goes to the new one. Quiet is measured from the end of the last turn, so a follow-up to a long task keeps that task's context. Nothing resets while a turn is running; the next request after it ends is measured again. The clock is kept in the route's metadata (`gadget_last_activity`) and survives a gateway restart. Unset, `0` or not a number means off; a value that is not a number is logged once at startup.
+
+This setting applies only to gadget chats. A global `session_reset` policy (or the `hermes-session-reset-policy` plugin) still applies on top of it. Resetting drops only the transcript: Hermes memory, Recent results and device settings stay.
+
 ### Confirmations
 
 Hermes asks before destructive commands (`/new`, `/undo`), costly model switches and dangerous shell commands. Chat platforms render those as buttons; the gadget renders them as a yes/no `prompt` (see [protocol.md](protocol.md#questions)):
 
-- **Holding CANCEL** sends `session.new`, which the adapter turns into `/new`. Hermes then asks "Confirm /new". The hold already was a deliberate confirmation, so when the confirmation for `new` arrives within 15 s of the device's own request, the adapter resolves it with `once` and forwards the reset reply. A `/new` typed or spoken any other way still asks.
+- **Holding CANCEL** (or **New chat** in quick controls) sends `session.new`, which the adapter turns into `/new`. Hermes then asks "Confirm /new". The hold already was a deliberate confirmation, so when the confirmation for `new` arrives within 15 s of the device's own request, the adapter resolves it with `once` and forwards the reset reply. A `/new` typed or spoken any other way still asks.
 - **Everything else** goes to the device as a question. The adapter keeps only the header and detail of Hermes's message, dropping the choice list and typed-reply instructions meant for chat apps.
 - **One at a time:** questions queue per device in arrival order, which matches Hermes's first-in, first-out approval queue. A question asked while the device was offline is shown when it reconnects.
 - **Elsewhere:** answering with `/approve` or `/deny` from another chat still works; the device's copy then reports "That question has expired" if pressed.

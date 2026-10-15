@@ -19,6 +19,7 @@ config.yaml::
           path: /gadget
           speak_replies: true    # auto-TTS for devices with a speaker
           auto_home: true        # first approved device becomes the gadget home channel
+          idle_reset_minutes: 30 # a request after this much quiet starts a new conversation (off if unset)
           unauthorized_dm_behavior: pair
 
 Secrets (``~/.hermes/.env``): ``GADGET_ACCESS_TOKEN`` (optional shared token).
@@ -75,6 +76,7 @@ _ECHO_SLOT = "\x00"
 _echo_patterns: Dict[str, Optional[re.Pattern]] = {}
 # Holding CANCEL already is a deliberate "start over", so the /new it sends confirms itself.
 AUTO_CONFIRM_NEW_S = 15.0
+IDLE_CLOCK_KEY = "gadget_last_activity"  # route metadata: epoch seconds of the last request or turn end
 PROMPT_PREFIX = "prompt:"  # message ids of device questions, so edits can withdraw them
 SLASH_CONFIRM_TTL_S = 300  # mirrors tools.slash_confirm.DEFAULT_TIMEOUT_SECONDS
 # Hermes words confirmations for chat apps: a bold header and the detail, then a
@@ -148,6 +150,12 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         self._max_utterance_s = float(extra.get("max_utterance_s") or 60)
         self._speak_replies = _flag(extra.get("speak_replies"), True)
         self._auto_home = _flag(extra.get("auto_home"), True)
+        try:
+            self._idle_reset_s = max(0.0, float(extra.get("idle_reset_minutes") or 0) * 60)
+        except (TypeError, ValueError):
+            logger.warning("[gadget] idle_reset_minutes=%r is not a number; idle reset is off",
+                           extra.get("idle_reset_minutes"))
+            self._idle_reset_s = 0.0
         self._tls_cert = extra.get("tls_cert")
         self._tls_key = extra.get("tls_key")
         self._access_token = extra_or_secret(extra, "access_token", "GADGET_ACCESS_TOKEN") or None
@@ -398,7 +406,56 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         event = self._event(session, msg_id, text, **kw)
         if msg_id:
             self._remember_turn(event.message_id, session.device_id, msg_id)
+        self._reset_if_idle(event)
         return event
+
+    # -- idle reset -------------------------------------------------------------------
+    # A device is talked to in short bursts of unrelated questions. After
+    # ``idle_reset_minutes`` without a request or a finished turn, the next request starts
+    # a new conversation, so a morning's questions are not context for the evening's.
+    # The clock is the route's own metadata, so it survives a gateway restart; a finished
+    # turn advances it too, so a follow-up to a long task keeps that task's context.
+
+    def _route(self, source) -> Tuple[Any, Optional[str]]:
+        store = getattr(self, "_session_store", None)
+        if store is None or not self._idle_reset_s:
+            return None, None
+        try:
+            return store, self._source_session_key(source)
+        except Exception:
+            logger.debug("[%s] idle reset: no session key", self.name, exc_info=True)
+            return store, None
+
+    def _touch_activity(self, source) -> None:
+        store, key = self._route(source)
+        if store is None or not key:
+            return
+        try:
+            if store.lookup_by_session_key(key) is not None:
+                store.set_session_metadata(key, IDLE_CLOCK_KEY, time.time())
+        except Exception:
+            logger.debug("[%s] idle reset: clock stamp failed", self.name, exc_info=True)
+
+    def _reset_if_idle(self, event: MessageEvent) -> None:
+        store, key = self._route(event.source)
+        if store is None or not key:
+            return
+        try:
+            entry = store.lookup_by_session_key(key)
+            if entry is None:
+                return  # no conversation yet
+            meta = getattr(entry, "metadata", None) or {}
+            last = meta.get(IDLE_CLOCK_KEY) if isinstance(meta, dict) else None
+            busy = bool(getattr(entry, "active_turn_token", None)) or event.source.chat_id in self._turns
+            if (isinstance(last, (int, float)) and not busy
+                    and time.time() - float(last) >= self._idle_reset_s):
+                new = store.reset_session(key)
+                logger.info("[%s] idle reset for %s after %.0fs quiet (new session %s)", self.name,
+                            event.source.chat_id, time.time() - float(last), getattr(new, "session_id", "?"))
+            store.set_session_metadata(key, IDLE_CLOCK_KEY, time.time())
+        except Exception:
+            # Never lose a request over this: it goes to the existing conversation.
+            logger.warning("[%s] idle reset failed; continuing the current conversation", self.name, exc_info=True)
 
     async def on_text(self, session: DeviceSession, msg_id: str, text: str) -> None:
         await self.handle_message(self._request_event(session, msg_id, text, message_type=MessageType.TEXT))
@@ -442,6 +499,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         await session.turn_start(turn, request=request or None)
 
     async def on_processing_complete(self, event: MessageEvent, outcome) -> None:
+        self._touch_activity(event.source)  # quiet is measured from the end of the last turn
         session = self._session(event.source.chat_id)
         if session is None:
             device = event.source.chat_id
