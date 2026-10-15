@@ -9,7 +9,7 @@ T = 200; font = ImageFont.load_default(size=16)
 board = Image.new("RGB", (T * n, (T + 22) * len(vids)), (25, 25, 25)); dr = ImageDraw.Draw(board)
 for r, v in enumerate(vids):
     dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(v)], capture_output=True, text=True).stdout)
-    td = pathlib.Path(tempfile.mkdtemp(dir="$TMPDIR"))
+    td = pathlib.Path(tempfile.mkdtemp())
     for i in range(n):
         t = min(dur - 0.05, i * dur / (n - 1))
         f = td / f"{i:03d}.png"

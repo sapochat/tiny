@@ -13,7 +13,7 @@ Am = A > 128
 
 
 def frames(mp4, fps=10):
-    td = tempfile.mkdtemp(dir="$TMPDIR")
+    td = tempfile.mkdtemp()
     subprocess.run(["ffmpeg", "-v", "error", "-i", str(mp4), "-vf", f"fps={fps},scale=256:256", f"{td}/%04d.png"], check=True)
     return sorted(pathlib.Path(td).glob("*.png"))
 

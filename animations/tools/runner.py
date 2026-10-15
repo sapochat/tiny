@@ -3,9 +3,9 @@
 Usage: runner.py <round_dir>   (reads <round_dir>/jobs.json, writes <round_dir>/out/<name>/...)
 jobs.json: [{"name":..., "model":..., "prompt":..., "args": {"--flag": "value", ...}}]
 Skips jobs whose result file already exists (safe to rerun)."""
-import concurrent.futures as cf, json, pathlib, subprocess, sys, urllib.request, hashlib, time
+import concurrent.futures as cf, json, os, pathlib, shutil, subprocess, sys, urllib.request, hashlib, time
 
-HF = "~/.npm-global/bin/higgsfield"
+HF = os.environ.get("HIGGSFIELD_BIN") or shutil.which("higgsfield") or os.path.expanduser("~/.npm-global/bin/higgsfield")
 rd = pathlib.Path(sys.argv[1]).resolve()
 jobs = json.loads((rd / "jobs.json").read_text())
 import os

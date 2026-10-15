@@ -19,7 +19,7 @@ env = os.environ.copy()
 env['PYTHONPATH']='python'
 env['SWIPE_ARTIFACTS']=str(out)
 env['AMOLED_ARTIFACTS']=str(out)
-commands = [[sys.executable,'-m','hermes_gadget','build-sim','--test'], [sys.executable,'-m','pytest',*sys.argv[2:],'--basetemp=$TMPDIR/am-'+run,'--junitxml='+str(out/'results.xml'),'-v']]
+commands = [[sys.executable,'-m','hermes_gadget','build-sim','--test'], [sys.executable,'-m','pytest',*sys.argv[2:],'--basetemp='+os.path.join(os.environ.get('TMPDIR','/tmp'),'am-'+run),'--junitxml='+str(out/'results.xml'),'-v']]
 (out/'commands.txt').write_text('PATH=./.venv/bin:$PATH PYTHONPATH=python\nSWIPE_ARTIFACTS='+str(out)+' AMOLED_ARTIFACTS='+str(out)+'\n'+'\n'.join(' '.join(c) for c in commands))
 for name, command in zip(['build.log','tests.log'], commands):
     with (out/name).open('w') as f:
