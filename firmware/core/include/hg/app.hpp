@@ -170,6 +170,10 @@ class App {
   void h_image_end(const json::Value& m);
   void h_action(const json::Value& m);
   void h_ping(const json::Value& m);
+ public:
+  // Seconds since local midnight from the host's clock; false when no trustworthy time.
+  bool local_time(int& seconds_of_day) const;
+ private:
   void h_notice(const json::Value& m);
   void h_error(const json::Value& m);
   void h_prompt(const json::Value& m);
@@ -326,6 +330,14 @@ class App {
   uint32_t online_since_ = 0;
   uint32_t last_rx_ = 0;
   uint32_t heartbeat_ms_ = 20000;
+  // Host wall clock (welcome/ping `time`), kept as an offset from now_ms(). Trusted for
+  // kWallTrustMs after the last sync, so a long offline stretch never shows a stale time.
+  static constexpr uint32_t kWallTrustMs = 12u * 3600u * 1000u;
+  bool wall_synced_ = false;
+  int64_t wall_unix_ = 0;
+  int32_t wall_offset_s_ = 0;
+  uint32_t wall_sync_ms_ = 0;
+  void sync_wall_clock(const json::Value& time);
   int backoff_ = 0;
   int attempts_ = 0;
   std::string fatal_;   // unrecoverable until reconfigured
