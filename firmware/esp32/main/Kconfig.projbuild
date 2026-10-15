@@ -45,6 +45,15 @@ menu "Hermes Gadget"
             bool "Custom pins (configure below)"
     endchoice
 
+    config HG_LEGACY_MASCOT
+        bool "Include the legacy 1-bit mascot bitmaps"
+        default n if HG_BOARD_AMOLED_175 || HG_BOARD_AMOLED_175C
+        default y
+        help
+            About 27 KB of flash. The 466px round companion boards draw the
+            expression video and never the 1-bit mascot, so they leave it out
+            and link a size-only stub; every other board draws it.
+
     menu "Custom board pins"
         depends on HG_BOARD_CUSTOM
 

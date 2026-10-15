@@ -191,7 +191,7 @@ exactly, so there is nothing to keep in sync.
 The frames are 1-bit bitmaps: row major, most significant bit first, rows padded to a whole
 byte, a set bit meaning ink. Four sizes exist so the UI can pick the largest one that fits the
 space it has, and three frames exist so the face can blink and talk. Between them they take
-about 27 KB of flash. See [architecture.md](architecture.md) for where they are drawn.
+about 27 KB of flash (none on the 466px round companion boards, which draw the expression video and build without them). See [architecture.md](architecture.md) for where they are drawn.
 
 The blink and talk frames are drawn on top of the idle frame: a blink covers each eye and cuts
 a closed lid into it, and a talking mouth is a hole cut into the ink. Both come from the

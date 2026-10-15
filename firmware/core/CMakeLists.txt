@@ -8,7 +8,6 @@ set(HG_CORE_SOURCES
     src/crypto.cpp
     src/font5x7.cpp
     src/json.cpp
-    src/mascot_data.cpp
     src/protocol.cpp
     src/setup.cpp
     src/touch.cpp
@@ -16,9 +15,24 @@ set(HG_CORE_SOURCES
     src/vad.cpp
 )
 
+# The legacy 1-bit mascot (about 27 KB of flash). Round 466px companion boards draw the
+# expression video instead and link a size-only stub (CONFIG_HG_LEGACY_MASCOT=n).
 if(ESP_PLATFORM)
+  if(CONFIG_HG_LEGACY_MASCOT)
+    list(APPEND HG_CORE_SOURCES src/mascot_data.cpp)
+  else()
+    list(APPEND HG_CORE_SOURCES src/mascot_stub.cpp)
+  endif()
   idf_component_register(SRCS ${HG_CORE_SOURCES} INCLUDE_DIRS include)
   return()
+endif()
+
+# The host simulator serves every board profile, so it keeps the mascot unless asked.
+option(HG_LEGACY_MASCOT "Link the legacy 1-bit mascot bitmaps" ON)
+if(HG_LEGACY_MASCOT)
+  list(APPEND HG_CORE_SOURCES src/mascot_data.cpp)
+else()
+  list(APPEND HG_CORE_SOURCES src/mascot_stub.cpp)
 endif()
 
 add_library(hg_core STATIC ${HG_CORE_SOURCES})

@@ -1118,8 +1118,8 @@ void Ui::draw_hero(Canvas& c, const UiModel& m) {
   const int size = g.size, mx = g.x, my = g.y;
   const mascot::Anchors& a = mascot::anchors();
   if (round_companion()) draw_expression(c,mx,my,size);
-  else if (const mascot::Bitmap* b = mascot::pick(size, mascot_frame(m))) {
-    c.bitmap1(mx, my, b->size, b->size, b->bits, kText);
+  else if (const mascot::Bitmap* b = mascot::pick(size, mascot_frame(m)); b && b->bits) {
+    c.bitmap1(mx, my, b->size, b->size, b->bits, kText);  // a size-only stub has no bits
   }
   const int stroke = std::max(2, size / 48);
   auto waves = [&](int cx, int cy, int dir, int lit, int phase, uint16_t on, uint16_t dim, int r0) {
