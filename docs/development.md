@@ -121,6 +121,18 @@ Two checks stop a firmware build that would run with settings nobody asked for. 
 - **`tools/check_config.py`**, from `CMakeLists.txt` after the configuration is generated (so `idf.py` builds run it too). It fails when a line of `sdkconfig.defaults` or the board's defaults didn't reach the generated sdkconfig. That happens when a symbol is misspelled, belongs to another chip, or has an unmet dependency, and when an sdkconfig from an older checkout outlives a change to the defaults. In the last case, delete `sdkconfig.<board>` (PlatformIO) or the build directory, then build again. A board file that picks another option of a choice the base file sets says so with `# CONFIG_<base option> is not set`.
 - **`tools/check_size.py`**, after linking (`tools/pio_checks.py`). It fails when the app leaves less than 10% of its smallest app partition free. For `idf.py` builds, run it by hand: `python tools/check_size.py --app build/hermes_gadget.bin --partitions build/partition_table/partition-table.bin`.
 
+### Design captures of the round companion
+
+`tools/design_capture.py capture OUTDIR [--transitions]` drives the production native core
+against a loopback `DeviceHub` (disposable store, synthetic content) through Home, quick
+controls, Recent, results, approvals, connection and Settings states, and writes raw and
+circle-masked PNGs, `shots.json` and a contact sheet. Each shot names the state it must be
+in and fails when the device is elsewhere, and a shot that repeats its neighbour's
+framebuffer fails unless marked as an intended return. The device runs on a virtual clock
+with seeded randomness, so two runs of one library are byte-identical
+(`design_capture.py identical A B`); `compare` builds before/after sheets and `gaps` lists
+tight vertical gaps. `tests/test_design_capture.py` keeps those guards honest.
+
 ### Flash budget on the round companion
 
 The 466px round boards never draw the legacy 1-bit mascot, so `CONFIG_HG_LEGACY_MASCOT`
