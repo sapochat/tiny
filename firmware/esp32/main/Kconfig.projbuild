@@ -54,6 +54,15 @@ menu "Hermes Gadget"
             expression video and never the 1-bit mascot, so they leave it out
             and link a size-only stub; every other board draws it.
 
+    config HG_EXPRESSION_PACK
+        bool "Include the expression video frames"
+        default y if HG_BOARD_AMOLED_175 || HG_BOARD_AMOLED_175C
+        default n
+        help
+            About 440 KB of flash. Only the 466px round companion boards
+            draw the expression video; every other board compiles against a
+            frame-free stand-in with the same clip metadata.
+
     menu "Custom board pins"
         depends on HG_BOARD_CUSTOM
 

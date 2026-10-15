@@ -143,7 +143,18 @@ the mascot; the host simulator keeps it too unless configured with
 `-DHG_LEGACY_MASCOT=OFF`. `tests/test_mascot_reclaim.py` keeps the stub in step with the
 generated data. To prove the stub renders nothing differently, capture both libraries with
 `tools/design_capture.py` and compare them with its `identical` command (all round
-states and transition frames must match byte for byte). After pulling a Kconfig change,
+states and transition frames must match byte for byte).
+
+The mirror image applies to the expression video. Only the 466px round companion
+(`Ui::round_companion()`) decodes and draws it, so `CONFIG_HG_EXPRESSION_PACK` defaults to
+`y` for `HG_BOARD_AMOLED_175`/`HG_BOARD_AMOLED_175C` and `n` everywhere else. Those boards
+compile `ui.cpp` against `firmware/core/include/hg/expression_stub.hpp` (the same clip
+table, names and frame geometry, no frames) instead of the generated
+`expression_assets.hpp`, which is left untouched. That saves 443,008 bytes of the
+`esp32s3-lcd-154` app image; the round 1.75C image is unchanged. The host simulator keeps
+the pack unless configured with `-DHG_EXPRESSION_PACK=OFF`; non-round simulator boards
+render byte-identically either way, and `tests/test_expression_reclaim.py` keeps the stub
+in step with the pack. After pulling a Kconfig change,
 delete the generated `firmware/esp32/sdkconfig.<env>` so the new default applies.
 
 ESP-WIFI-MESH objects (`libmesh.a`, about 220 KB) are linked into every Wi-Fi build:

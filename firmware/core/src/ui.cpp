@@ -7,7 +7,11 @@
 
 #include "hg/font.hpp"
 #include "hg/geist.hpp"
+#ifdef HG_NO_EXPRESSION_PACK
+#include "hg/expression_stub.hpp"  // boards that never draw the video: metadata only
+#else
 #include "hg/expression_assets.hpp"
+#endif
 
 namespace hg {
 namespace {

@@ -24,6 +24,11 @@ if(ESP_PLATFORM)
     list(APPEND HG_CORE_SOURCES src/mascot_stub.cpp)
   endif()
   idf_component_register(SRCS ${HG_CORE_SOURCES} INCLUDE_DIRS include)
+  # The expression video frames (about 440 KB) are drawn only by the 466px round companion.
+  # Other boards compile ui.cpp against a frame-free stand-in (CONFIG_HG_EXPRESSION_PACK=n).
+  if(NOT CONFIG_HG_EXPRESSION_PACK)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE HG_NO_EXPRESSION_PACK)
+  endif()
   return()
 endif()
 
@@ -38,6 +43,12 @@ endif()
 add_library(hg_core STATIC ${HG_CORE_SOURCES})
 target_include_directories(hg_core PUBLIC include)
 target_compile_features(hg_core PUBLIC cxx_std_17)
+# Likewise the expression video: the simulator serves the round board, so it keeps the pack
+# unless asked (-DHG_EXPRESSION_PACK=OFF builds the non-round boards' frame-free stand-in).
+option(HG_EXPRESSION_PACK "Link the expression video frames" ON)
+if(NOT HG_EXPRESSION_PACK)
+  target_compile_definitions(hg_core PRIVATE HG_NO_EXPRESSION_PACK)
+endif()
 set_target_properties(hg_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
   target_compile_options(hg_core PRIVATE /W4 /utf-8)
