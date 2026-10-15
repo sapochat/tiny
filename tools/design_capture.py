@@ -504,7 +504,23 @@ def group_recent(c: Capture):
         c.close(r)
 
 
-GROUPS = {'home': group_home, 'connection': group_connection, 'recent': group_recent}
+def group_idle(c: Capture):
+    """Idle face modes (R-05) and the glance layer added after the pass-4 baseline."""
+    r = c.make()
+    try:
+        assert r.s.console('set idle_face clock').startswith('@ok')
+        c.shot(r, 'home-clock-face', 0.5, view='home', clock=lambda t: bool(t))
+        assert r.s.console('set idle_face portrait').startswith('@ok')
+        c.shot(r, 'home-portrait-only', 0.5, view='home', title='')
+        assert r.s.console('set idle_face portrait_time').startswith('@ok')
+        hold_title(r)
+        to_row(r, 'Idle face')
+        c.shot(r, 'settings-idle-face', 0.2, screen='settings', detail='Idle face')
+    finally:
+        c.close(r)
+
+
+GROUPS = {'home': group_home, 'connection': group_connection, 'recent': group_recent, 'idle': group_idle}
 
 
 def transitions(c: Capture):

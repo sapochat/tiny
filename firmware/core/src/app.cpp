@@ -104,6 +104,12 @@ void App::load_settings() {
   brightness_ = static_cast<uint8_t>(std::max(5, std::min(100, std::atoi(setting("brightness", "100").c_str()))));
   if (hal_.display && hal_.display->info().has_backlight) hal_.display->set_backlight(brightness_);
   screen_timeout_ms_ = static_cast<uint32_t>(std::max(0, std::min(3600, std::atoi(setting("screen_timeout", "0").c_str())))) * 1000;
+#ifdef HG_ROUND_UI
+  {
+    const std::string face = setting("idle_face", "portrait_time");
+    idle_face_ = face == "portrait" ? IdleFace::Portrait : face == "clock" ? IdleFace::Clock : IdleFace::PortraitTime;
+  }
+#endif
   activity_at_ = now();
   display_dimmed_ = display_sleeping_ = false;
 }
@@ -921,6 +927,17 @@ void App::sync_wall_clock(const json::Value& time) {
   wall_sync_ms_ = now();
   wall_synced_ = true;
 }
+
+#ifdef HG_ROUND_UI
+std::string App::idle_clock() const {
+  int sod = 0;
+  if (idle_face_ == IdleFace::Portrait || !local_time(sod)) return {};
+  const int hour = sod / 3600 % 12;
+  char hm[8];
+  std::snprintf(hm, sizeof hm, "%d:%02d", hour ? hour : 12, sod / 60 % 60);
+  return hm;
+}
+#endif
 
 bool App::local_time(int& seconds_of_day) const {
   if (!wall_synced_) return false;
@@ -2068,6 +2085,16 @@ void App::update_model() {
     }
   }
   if (m.result) { m.talk_control = false; m.outcome = stage_word(reading_work_.stage); }
+#ifdef HG_ROUND_UI
+  // The time only on idle, connected Home: activity, reading and status keep the glass.
+  m.clock.clear();
+  m.clock_face = false;
+  if (round && m.hero && m.screen == Screen::Ready && touch_view() == TouchView::Home && mode_ == Mode::Idle &&
+      !speaking() && m.link == Link::Online) {
+    m.clock = idle_clock();
+    m.clock_face = !m.clock.empty() && idle_face_ == IdleFace::Clock;
+  }
+#endif
   if (!hint_flash_.empty()) m.hint = hint_flash_;
   if (ui_ && !display_sleeping_) ui_->render(m);
 }
@@ -2127,6 +2154,13 @@ json::Value App::status_value() const {
            mode_ == Mode::Thinking ? "thinking" : mode_ == Mode::Responding && !reply_final_ ? "streaming" : "idle")
       .set("scroll", model_.scroll).set("headline", model_.headline).set("detail", model_.detail)
       .set("hint", model_.hint).set("speaking", speaking());
+#ifdef HG_ROUND_UI
+    if (ui_ && ui_->round_companion()) {
+      const char* faces[] = {"portrait", "portrait_time", "clock"};
+      u.set("idle_face", faces[static_cast<unsigned>(idle_face_)]).set("clock", model_.clock)
+       .set("title", Ui::title_slot(model_));
+    }
+#endif
     const char* captures[] = {"none", "touch", "button", "tap"};
     u.set("capture", captures[model_.capture & 3]).set("pressed", control_name(pressed_));
     if (ui_) for (unsigned i = 1; i < kTouchControls; ++i) {
@@ -2182,6 +2216,9 @@ bool App::known_setting(std::string_view key) const {
   for (const auto& k : profile_.extra_settings) {
     if (key == k) return true;
   }
+#ifdef HG_ROUND_UI
+  if (key == "idle_face") return true;
+#endif
   return false;
 }
 
@@ -2196,6 +2233,9 @@ std::string App::console(std::string_view raw) {
     std::string keys;
     for (const char* k : kSettingKeys) keys += std::string(" ") + k;
     for (const auto& k : profile_.extra_settings) keys += " " + k;
+#ifdef HG_ROUND_UI
+    keys += " idle_face";
+#endif
     return "@help commands: status | diag [log] | get <key> | set <key> <value> | say <text> | talk | release | "
            "cancel | new-session | settings [close] | wifi-setup [close] | yes | no | reconnect | forget-key | factory-reset   keys:" + keys;
   }
@@ -2229,6 +2269,10 @@ std::string App::console(std::string_view raw) {
     if (key == "screen_timeout" && !value.empty() &&
         (value.size() > 4 || value.find_first_not_of("0123456789") != std::string::npos || std::atoi(value.c_str()) > 3600))
       return "@error screen_timeout must be 0..3600 seconds";
+#ifdef HG_ROUND_UI
+    if (key == "idle_face" && !value.empty() && value != "portrait" && value != "portrait_time" && value != "clock")
+      return "@error idle_face must be portrait, portrait_time or clock";
+#endif
     if (!hal_.storage) return "@error no storage";
     if (value.empty()) hal_.storage->erase(key);
     else hal_.storage->set(key, value);

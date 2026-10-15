@@ -302,7 +302,11 @@ class App {
   TalkMode talk_mode_ = TalkMode::Hold;
   uint8_t volume_ = 70;
   uint8_t brightness_ = 100;
-  enum class Menu : uint8_t { Closed, Volume, Brightness, TalkMode, Microphone, Speaker, Display, Inputs, Info,
+  enum class Menu : uint8_t { Closed, Volume, Brightness, TalkMode,
+#ifdef HG_ROUND_UI
+                              IdleFace,  // round companion only: what idle Home shows
+#endif
+                              Microphone, Speaker, Display, Inputs, Info,
                               Power, IdleTimer, PowerOff, WifiSetup, Back };
   enum class HardwareCheck : uint8_t { None, Microphone, Speaker, Display, Inputs };
   Menu menu_ = Menu::Closed;
@@ -315,6 +319,14 @@ class App {
   std::optional<PowerStatus> power_status_;
   uint32_t power_read_at_ = 0, activity_at_ = 0;
   uint32_t screen_timeout_ms_ = 0;
+#ifdef HG_ROUND_UI
+  // Idle Home on the round companion (setting idle_face): the face alone, the face with the
+  // time in the title slot (default), or a clock with a small face.
+  enum class IdleFace : uint8_t { Portrait, PortraitTime, Clock };
+  IdleFace idle_face_ = IdleFace::PortraitTime;
+  // The time idle Home shows ("h:mm"), or empty when the face shows none or it is unknown.
+  std::string idle_clock() const;
+#endif
   bool display_dimmed_ = false, display_sleeping_ = false, power_off_armed_ = false;
   uint8_t wake_buttons_ = 0;
 

@@ -252,6 +252,10 @@ void App::settings_input(Button button, bool pressed) {
     }
     if (!on_wifi_setup && menu_ == Menu::WifiSetup)
       menu_ = button == Button::Up ? (can_power_off ? Menu::PowerOff : Menu::IdleTimer) : Menu::Back;
+#ifdef HG_ROUND_UI
+    if (menu_ == Menu::IdleFace && !(ui_ && ui_->round_companion()))
+      menu_ = button == Button::Up ? Menu::TalkMode : Menu::Microphone;
+#endif
     return;
   }
   if (button != Button::Talk || pressed) return;
@@ -274,6 +278,12 @@ void App::settings_input(Button button, bool pressed) {
     case Menu::TalkMode:
       if (hal_.mic) console(talk_mode_ == TalkMode::Hold ? "set talk_mode tap" : "set talk_mode hold");
       break;
+#ifdef HG_ROUND_UI
+    case Menu::IdleFace:
+      console(idle_face_ == IdleFace::PortraitTime ? "set idle_face clock" :
+              idle_face_ == IdleFace::Clock ? "set idle_face portrait" : "set idle_face portrait_time");
+      break;
+#endif
     case Menu::Microphone:
       if (hal_.mic && hal_.mic->start(profile_.mic_rate)) hardware_check_ = HardwareCheck::Microphone;
       else check_result_ = "Microphone unavailable";
@@ -360,6 +370,11 @@ void App::settings_model() {
       m.body = !hal_.mic ? "No microphone driver is active." : talk_mode_ == TalkMode::Hold ? "Hold to record; release to send."
                                                                                          : "Tap to record; pause or tap to send.";
       break;
+#ifdef HG_ROUND_UI
+    case Menu::IdleFace:
+      m.detail = "Idle face";
+      break;
+#endif
     case Menu::Microphone:
       m.detail = "Microphone check";
       m.body = hardware_check_ == HardwareCheck::Microphone ? "Speak now. Level: " + std::to_string(level_) + "%\nLocal only. Nothing is sent."
@@ -441,6 +456,13 @@ void App::round_settings_model() {
         m.body = talk_mode_ == TalkMode::Hold ? "Hold to record; release to send." : "Tap to record; pause or tap to send.";
       }
       break;
+#ifdef HG_ROUND_UI
+    case Menu::IdleFace:
+      m.value = idle_face_ == IdleFace::Portrait ? "Portrait" : idle_face_ == IdleFace::Clock ? "Clock" : "Portrait + time";
+      m.body = idle_face_ == IdleFace::Portrait ? "Just the face, no time." :
+               idle_face_ == IdleFace::Clock ? "Large time, small face." : "The time sits above the face.";
+      break;
+#endif
     case Menu::Microphone:
       if (hardware_check_ == HardwareCheck::Microphone) {
         m.value = "Level " + std::to_string(level_) + "%";

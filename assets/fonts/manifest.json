@@ -255,5 +255,25 @@
   ],
   "coverage_bytes": 66186,
   "glyphs": 606,
-  "format": "RLE gray4 (4-bit run minus one, 4-bit coverage), integer hinted advances, ascender anchor"
+  "format": "RLE gray4 (4-bit run minus one, 4-bit coverage), integer hinted advances, ascender anchor",
+  "round_clock": {
+    "header": "firmware/core/include/hg/geist_clock_assets.hpp",
+    "size": 72,
+    "codepoints": [
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58
+    ],
+    "colon_44px": true,
+    "coverage_bytes": 4134,
+    "sha256": "84e1d41e2474d56d7fbd3391e09e22365a9be640c5b2c136a5780d6a1e22f50d"
+  }
 }

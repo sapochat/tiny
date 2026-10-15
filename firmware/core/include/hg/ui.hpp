@@ -101,6 +101,12 @@ struct UiModel {
   // instead of the header + text layout.
   bool hero = false;
   uint8_t caption_lines = 1;  // hero: lines the detail may wrap to (then "..")
+#ifdef HG_ROUND_UI
+  // Idle Home's host local time ("h:mm"), empty when unknown or not shown; clock_face draws
+  // it large with a small portrait (Clock idle face), otherwise it fills an empty title slot.
+  std::string clock;
+  bool clock_face = false;
+#endif
 };
 
 struct UiLayout {
@@ -139,6 +145,11 @@ class Ui {
   int expression_frame() const { return face_index_; }
   std::vector<std::string> body_lines(std::string_view text, const UiModel& m) const;
   bool round_companion() const { return panel_.round && panel_.width == 466 && panel_.height == 466; }
+#ifdef HG_ROUND_UI
+  // What Home's title slot shows, by precedence: connection status, how the last task
+  // ended, then the time. Empty when nothing occupies it.
+  static std::string title_slot(const UiModel& m);
+#endif
   bool title_hit(int x, int y) const {
     if (round_companion()) return x >= 150 && x < 316 && y >= 45 && y < 92;
     return x >= ox_ && x < ox_ + info_.width && y >= oy_ && y < oy_ + layout_.top_h;
@@ -216,6 +227,9 @@ class Ui {
   bool motion_clock_ = false;  // the slide clock has started (after the destination is cached)
   void flush_bands(const int16_t* lo, const int16_t* hi);
   uint32_t companion_hash_ = 0;
+#ifdef HG_ROUND_UI
+  std::string companion_clock_;  // the time on the glass; a minute change repaints only it
+#endif
   TouchControl companion_pressed_ = TouchControl::None;
   int companion_level_ = -1;
   bool valid_ = false;

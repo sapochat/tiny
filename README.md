@@ -67,6 +67,8 @@ Either way, memory, Recent results and settings stay. See [New chat](docs/using-
 
 Hermes sends its wall clock and timezone when Tiny connects and on every heartbeat, so Tiny needs no NTP. It keeps counting through Wi-Fi drops and stops claiming a time 12 hours after its last sync. Older devices ignore the field, and older hosts just leave it out. See [the protocol](docs/protocol.md).
 
+- **An idle face with the time.** The **Idle face** setting picks **Portrait**, **Portrait + time** (default: the time at 44 px in Home's title slot whenever no status needs it) or **Clock** (72 px digits under a smaller face). Nothing is drawn when Tiny doesn't know the time. Round boards only (`CONFIG_HG_ROUND_UI`). See [Idle face](docs/using-gadget.md#idle-face-round-companion).
+
 ### A faster display
 
 On the 1.75C:
@@ -98,7 +100,6 @@ Each board also carries only the art it draws:
 
 These are being built on the `tiny/improve` branch and are not on `main` yet:
 
-- An idle face with the time (Portrait, Portrait + time or Clock). Until it lands, Tiny receives the time but doesn't draw it.
 - Larger Home text, and a small mark when something needs you.
 - Visible **Retry now** and **Settings** on the offline screens, and **Done** in Settings.
 - Quick controls in four bands, with taller targets and sliders you can drag from anywhere.

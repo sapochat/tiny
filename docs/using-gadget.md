@@ -201,8 +201,8 @@ when there is no recent work). All actions always stay in the same place and are
 outlined when unavailable; Quick controls carry no status line, and status is
 never written inside a button. Home's title slot, where it used to say HERMES,
 shows **OFFLINE** when disconnected and **Last task: Finished / Stopped / Error /
-Unknown** once work has ended; otherwise it is empty. Home's idle support line
-is gone. On Home and in
+Unknown** once work has ended; otherwise it shows the time (see Idle face
+below), or nothing. Home's idle support line is gone. On Home and in
 the reader, Stop task always holds the right slot of the action row while work
 is open (the left slot is Mute voice, or Read reply when a reply is waiting); a
 requested stop leaves it outlined and the status moves to the headline or the
@@ -241,6 +241,7 @@ Tap CANCEL to move to the next item, then tap TALK to change it. On a touchscree
 | Speaker volume | Change volume in steps of 10 percent |
 | Screen brightness | Choose 10, 25, 50, 75, or 100 percent when the display supports it |
 | Talk mode | Choose hold-to-talk or tap-to-talk with silence detection |
+| Idle face | Round companion only: **Portrait**, **Portrait + time** (default) or **Clock** |
 | Microphone check | Show the live input level; nothing is saved or sent to Hermes |
 | Speaker check | Play a short, quiet tone at the current volume |
 | Display check | Show red, green, blue, white, and black bands |
@@ -251,8 +252,18 @@ Tap CANCEL to move to the next item, then tap TALK to change it. On a touchscree
 | Power off | Select twice to shut down a board with a power driver |
 | Wi-Fi setup | Start [phone-based setup](setup-board.md#set-up-wi-fi-with-your-phone) on ESP32 boards |
 
-Volume, brightness, talk mode, and screen timeout survive restarts. Unavailable drivers show as unavailable. These checks help you test the hardware; a completed tone does not prove that a physical speaker produced sound.
+Volume, brightness, talk mode, idle face and screen timeout survive restarts. Unavailable drivers show as unavailable. These checks help you test the hardware; a completed tone does not prove that a physical speaker produced sound.
 
 Screen timeout is off by default. When enabled, a brightness-capable display dims halfway through the idle period, then goes dark. The first button press or touch wakes it without recording or answering a prompt. Incoming replies and prompts wake it too. Recording, playback, settings, pairing and updates keep it awake. The processor and Wi-Fi remain running; this is screen sleep. Use the board's Power off control to shut down the device.
 
 Incoming confirmation prompts and firmware updates close settings. You cannot open settings during a prompt or update. The USB console also accepts `settings`, `settings close`, and `set brightness 50`.
+
+### Idle face (round companion)
+
+The 466px round board chooses what idle Home shows with the **Idle face** setting (console key `idle_face`: `portrait`, `portrait_time` or `clock`):
+
+- **Portrait**: the animated face alone, as before.
+- **Portrait + time** (default): the face, with the local time at 44px in Home's title slot when nothing else uses it. The slot's precedence is connection status (**OFFLINE**), then **Last task: …**, then the time.
+- **Clock**: 72px digits under a smaller face; status keeps the title slot.
+
+The time is the Hermes host's local time, sent in `welcome` and every heartbeat ([protocol](protocol.md)). Tiny shows a 12-hour `h:mm` without a leading zero. When it does not know the time (an older host, or no sync for a day) it draws nothing, and Clock falls back to the full portrait; it never shows an invented or stale time. A new minute repaints only the time. The dim and sleep schedule is unchanged. Other boards do not build this feature (`CONFIG_HG_ROUND_UI`), so their firmware is unchanged.

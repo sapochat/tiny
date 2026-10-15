@@ -12,6 +12,9 @@
 #else
 #include "hg/expression_assets.hpp"
 #endif
+#ifdef HG_ROUND_UI
+#include "hg/geist_clock_assets.hpp"
+#endif
 
 namespace hg {
 namespace {
@@ -84,6 +87,41 @@ int tri(uint32_t frame, int period) {
   int p = static_cast<int>(frame % static_cast<uint32_t>(period));
   return p < period / 2 ? p : period - p;
 }
+
+#ifdef HG_ROUND_UI
+// The time in Geist: the 44px display face's digits with its own colon (title slot), or the
+// 72px clock face (Clock idle face). Draws when `c` is set; returns the width, -1 if a
+// character has no glyph.
+int clock_text(Canvas* c, int x, int y, std::string_view s, bool large, uint16_t fg) {
+  int w = 0;
+  for (const char ch : s) {
+    const geist_data::Glyph* g = nullptr;
+    const uint8_t* pixels = geist_clock_data::pixels;
+    if (large) {
+      const auto* first = geist_clock_data::codes, *last = first + geist_clock_data::count;
+      const auto* it = std::lower_bound(first, last, static_cast<uint32_t>(static_cast<uint8_t>(ch)));
+      if (it != last && *it == static_cast<uint8_t>(ch)) g = &geist_clock_data::glyphs[it - first];
+    } else if (ch == ':') {
+      g = &geist_clock_data::colon44;
+    } else {
+      g = geist::display_glyph(static_cast<uint8_t>(ch));
+      pixels = geist_data::pixels;
+    }
+    if (!g) return -1;
+    if (c) {
+      unsigned i = 0, offset = g->offset;
+      const unsigned n = g->w * g->h;
+      while (i < n) {
+        const unsigned token = pixels[offset++], a = token & 15;
+        const unsigned end = std::min<unsigned>(n, i + (token >> 4) + 1);
+        for (; i < end; ++i) if (a) c->pixel(x + w + g->x + i % g->w, y + g->y + i / g->w, geist::blend(fg, 0, a));
+      }
+    }
+    w += g->advance;
+  }
+  return w;
+}
+#endif
 
 mascot::Frame mascot_frame(const UiModel& m) {
   if (m.screen == Screen::Responding && m.speaking) {
@@ -221,6 +259,18 @@ bool Ui::companion_model(const UiModel& m) const {
 const char* Ui::expression_name() const {
   return round_companion() && face_index_ >= 0 ? expression::names[face_clip_] : "legacy";
 }
+
+#ifdef HG_ROUND_UI
+std::string Ui::title_slot(const UiModel& m) {
+  // Mirrors render_companion's idle Home (hero) branch; other views use the area otherwise.
+  if (!m.hero || m.quick_controls || m.touch_prompt || m.recent || m.result) return {};
+  if (m.screen == Screen::Offline || m.screen == Screen::Connecting || m.screen == Screen::Error) return {};
+  if (m.link != Link::Online) return "OFFLINE";
+  if (m.screen == Screen::Ready && !m.outcome_word.empty()) return "Last task: " + m.outcome_word;
+  if (!m.clock.empty() && !m.clock_face) return m.clock;
+  return {};
+}
+#endif
 
 void Ui::update_expression(const UiModel& m) {
   using namespace expression;
@@ -433,10 +483,35 @@ void Ui::render_companion(const UiModel& m) {
       .val(m.work_page).val(m.work_pages)
       .add(m.work_rows.empty() ? "" : m.work_rows[0]).add(m.work_rows.size()>1 ? m.work_rows[1] : "")
       .add(m.work_rows.size()>2 ? m.work_rows[2] : "").add(m.outcome).add(m.outcome_word)
-      .add(m.code).add(m.value).val(m.color_test).add(m.title).get();
+      .add(m.code).add(m.value).val(m.color_test).add(m.title)
+#ifdef HG_ROUND_UI
+      // Whether and where a time shows, not the time itself: a new minute repaints only it.
+      .val(!m.clock.empty()).val(m.clock_face)
+#endif
+      .get();
   Canvas c(target_ ? target_ : display_.framebuffer(),panel_.width,panel_.height,panel_.swap_bytes);
   const int level = (m.level/5)*5;
+#ifdef HG_ROUND_UI
+  // Clock idle face: large digits under a small portrait, only while the time is known.
+  const bool connection_screen = m.screen==Screen::Offline || m.screen==Screen::Connecting || m.screen==Screen::Error;
+  const bool clock_face = visible && !connection_screen && m.clock_face && !m.clock.empty();
+  const bool title_time = visible && !connection_screen && !m.clock.empty() && !m.clock_face && title_slot(m)==m.clock;
+  const UiRect face_box = clock_face ? UiRect{185,100,96,96} : UiRect{137,96,192,192};
+  auto portrait = [&]() { draw_expression(c,face_box.x,face_box.y,face_box.w); };
+  constexpr UiRect kTitleTime{60,30,346,66}, kClockBand{60,196,346,84};
+  auto draw_time = [&]() {
+    if (title_time) {
+      const int w = clock_text(nullptr,0,0,m.clock,false,text);
+      if (w > 0) clock_text(&c,(466-w)/2,38,m.clock,false,text);
+    } else if (clock_face) {
+      const int w = clock_text(nullptr,0,0,m.clock,true,text);
+      if (w > 0) clock_text(&c,(466-w)/2,200,m.clock,true,text);
+    }
+  };
+#else
   auto portrait = [&]() { draw_expression(c,137,96,192); };
+  constexpr UiRect face_box{137,96,192,192};
+#endif
   auto meter = [&]() {
     c.fill_rect(183,78,100,4,0);
     if(level) c.fill_round_rect(183,78,level,4,2,amber);
@@ -446,7 +521,21 @@ void Ui::render_companion(const UiModel& m) {
   const bool press_only = same && m.pressed!=companion_pressed_;
   if(same && !press_only) {
     // Idle updates send only the columns they touch, not whole panel rows.
-    if(visible && face_changed_ && m.screen!=Screen::Pairing) { portrait(); display_.flush_rect(137,96,329,288); }
+    if(visible && face_changed_ && m.screen!=Screen::Pairing) {
+      portrait();
+      display_.flush_rect(static_cast<uint16_t>(face_box.x),static_cast<uint16_t>(face_box.y),
+                          static_cast<uint16_t>(face_box.x+face_box.w),static_cast<uint16_t>(face_box.y+face_box.h));
+    }
+#ifdef HG_ROUND_UI
+    if((title_time || clock_face) && m.clock!=companion_clock_) {
+      const UiRect r = title_time ? kTitleTime : kClockBand;
+      c.fill_rect(r.x,r.y,r.w,r.h,0);
+      draw_time();
+      display_.flush_rect(static_cast<uint16_t>(r.x),static_cast<uint16_t>(r.y),
+                          static_cast<uint16_t>(r.x+r.w),static_cast<uint16_t>(r.y+r.h));
+    }
+    companion_clock_=m.clock;
+#endif
     if(m.screen==Screen::Pairing && face_changed_) { draw_expression(c,185,92,96); display_.flush_rect(185,92,281,188); }
     if(m.screen==Screen::Listening && level!=companion_level_) { meter(); display_.flush_rect(183,78,283,82); }
     companion_level_=level;
@@ -577,6 +666,9 @@ void Ui::render_companion(const UiModel& m) {
     // The title slot carries status, not a name: offline, or how the last task ended.
     if(m.link!=Link::Online) center(53,"OFFLINE",18,dim);
     else if(m.screen==Screen::Ready && !m.outcome_word.empty()) center(53,"Last task: "+m.outcome_word,18,dim);
+#ifdef HG_ROUND_UI
+    draw_time();  // the time: in an otherwise empty title slot, or the Clock face's digits
+#endif
     portrait();
     center(tight?280:299,m.headline,30,text);
     if(!m.detail.empty()) center(tight?322:342,m.detail,18,dim);
@@ -674,11 +766,14 @@ void Ui::render_companion(const UiModel& m) {
       if(r.w) display_.flush_rect(static_cast<uint16_t>(r.x),static_cast<uint16_t>(r.y),
                                   static_cast<uint16_t>(r.x+r.w),static_cast<uint16_t>(r.y+r.h));
     }
-    if(visible && face_changed_) display_.flush_rect(137,96,329,288);
+    if(visible && face_changed_) display_.flush_rect(137,96,329,288);  // covers either portrait size
   } else {
     if (!motion_flush_) display_.flush(0,panel_.height);
   }
   companion_hash_=key; companion_level_=level; companion_pressed_=m.pressed;
+#ifdef HG_ROUND_UI
+  companion_clock_=m.clock;
+#endif
   companion_valid_=valid_=true; hero_valid_=false;
 }
 
