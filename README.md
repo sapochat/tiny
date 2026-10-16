@@ -23,6 +23,7 @@ Tiny is a fork of [Hermes Gadget](https://github.com/Adolanium/hermes-gadget-sdk
 
 - **Face-first layout** set in [Geist](assets/fonts/README.md): smooth proportional text, a state word under the face, and status in Home's title slot.
 - **Companion-style pairing, Settings, Wi-Fi setup and connection screens.** Offline, connecting and setup-needed screens say what's wrong, what it means and what to do next, instead of developer text in a pixel font.
+- **Visible ways out when Hermes is unreachable.** Offline, connecting and setup-needed screens show **Retry now** and **Settings**, and Settings has a **Done** button. Retry connects at once, opens nothing new while an attempt is under way, and never resends a task the disconnect cut off. See [Touch navigation](docs/using-gadget.md#touch-navigation).
 - **Every target sits inside the circle.** Each one lights up while a finger rests on it and never acts from the highlight alone.
 
 ### Touch and navigation
@@ -101,7 +102,6 @@ Each board also carries only the art it draws:
 
 These are being built on the `tiny/improve` branch and are not on `main` yet:
 
-- Visible **Retry now** and **Settings** on the offline screens, and **Done** in Settings.
 - Quick controls in four bands, with taller targets and sliders you can drag from anywhere.
 - How long ago each Recent job ran, and a tappable **Last task**.
 - A countdown timer Hermes can set, with a local alarm that works without Wi-Fi.

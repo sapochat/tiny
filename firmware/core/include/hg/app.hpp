@@ -206,6 +206,9 @@ class App {
   std::string diag_report();
   std::string setting(std::string_view key, std::string_view fallback = {}) const;
   void connect_now();
+  // Retry now (R-09): the reconnect path brought forward. Idempotent while an attempt is in
+  // flight; never resends work (a dropped session is not replayed).
+  void retry_connection();
   void schedule_reconnect();
   void drop_session(std::string_view reason);
   void send(const json::Value& msg);

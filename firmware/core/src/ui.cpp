@@ -231,7 +231,7 @@ const char* screen_name(Screen s) {
 const char* control_name(TouchControl c) {
   static const char* const names[kTouchControls] = {"none", "volume", "brightness", "stop", "yes", "no", "reply",
       "silence", "discard", "finish", "talk", "controls", "home", "settings", "new_chat", "recent", "work0", "work1",
-      "work2", "next"};
+      "work2", "next", "retry", "done"};
   const auto i = static_cast<unsigned>(c);
   return i < kTouchControls ? names[i] : "none";
 }
@@ -524,7 +524,9 @@ void Ui::render_companion(const UiModel& m) {
   const bool connection_screen = m.screen==Screen::Offline || m.screen==Screen::Connecting || m.screen==Screen::Error;
   const bool clock_face = visible && !connection_screen && m.clock_face && !m.clock.empty();
   const bool title_time = visible && !connection_screen && !m.clock.empty() && !m.clock_face && title_slot(m)==m.clock;
-  const UiRect face_box = clock_face ? UiRect{185,100,96,96} : UiRect{137,96,192,192};
+  // Connection screens lift the portrait 18px to make room for their recovery targets.
+  const UiRect face_box = clock_face ? UiRect{185,100,96,96} :
+                          connection_screen ? UiRect{137,78,192,192} : UiRect{137,96,192,192};
   auto portrait = [&]() { draw_expression(c,face_box.x,face_box.y,face_box.w); };
   constexpr UiRect kTitleTime{60,30,346,66}, kClockBand{60,196,346,84};
   auto draw_time = [&]() {
@@ -733,10 +735,19 @@ void Ui::render_companion(const UiModel& m) {
   if(connection) {
     center(53,"HERMES",18,dim);
     portrait();
+#ifdef HG_ROUND_UI
+    // What happened, what it means, what happens next; then the two ways out (R-09).
+    center(270,m.headline,30,text);
+    center(308,m.detail,18,dim);
+    center(332,m.hint,18,dim);
+    pill_at(control_rect(TouchControl::Retry,m),TouchControl::Retry,"Retry now",true,24);
+    pill_at(control_rect(TouchControl::Settings,m),TouchControl::Settings,"Settings",true,24);
+#else
     center(286,m.headline,30,text);
     center(327,m.detail,18,dim);
     auto next=geist::wrap(m.hint,300,18);
     for(unsigned i=0;i<next.size() && i<2;++i) center(365+i*24,next[i],18,dim);
+#endif
   } else if(visible) {
     // With both a support line and actions, the caption stack tightens to keep clearances.
     const bool tight=n>0 && !m.detail.empty();
@@ -863,7 +874,7 @@ void Ui::render_companion(const UiModel& m) {
       if(r.w) display_.flush_rect(static_cast<uint16_t>(r.x),static_cast<uint16_t>(r.y),
                                   static_cast<uint16_t>(r.x+r.w),static_cast<uint16_t>(r.y+r.h));
     }
-    if(visible && face_changed_) display_.flush_rect(137,96,329,288);  // covers either portrait size
+    if(visible && face_changed_) display_.flush_rect(137,static_cast<uint16_t>(std::min(96,face_box.y)),329,288);  // any portrait
   } else {
     if (!motion_flush_) display_.flush(0,panel_.height);
   }
@@ -939,8 +950,19 @@ void Ui::render_local(Canvas& c, const UiModel& m) {
     const int x0=233-(m.work_pages-1)*7;
     for (int p=0;p<m.work_pages;++p) c.fill_circle(x0+p*14,338,p==m.work_page?4:3,p==m.work_page?text:dim);
   }
+#ifdef HG_ROUND_UI
+  center(settings?350:352,m.hint,18,dim);
+  // A visible way out (R-09); holding the title still closes Settings too.
+  const UiRect done=control_rect(TouchControl::Done,m);
+  if (done.w) {
+    const uint16_t fill=m.pressed==TouchControl::Done ? rgb565(56,56,61) : surface;
+    c.fill_round_rect(done.x,done.y,done.w,done.h,done.h/2,fill);
+    geist::text(c,done.x+(done.w-geist::width("Done",24))/2,done.y+(done.h-30)/2,"Done",24,text,fill);
+  }
+#else
   center(settings?362:352,m.hint,18,dim);
   if (settings) center(392,"Hold the title to close",18,dim);
+#endif
 }
 
 void Ui::render(const UiModel& m) {
@@ -1390,7 +1412,12 @@ UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
       if (control == TouchControl::No) return prompt_answer_rect(false);
       return {};
     }
-    if (local_screen(m)) return {};  // pairing, settings and Wi-Fi setup keep their own input
+    if (local_screen(m)) {  // pairing, settings and Wi-Fi setup keep their own input
+#ifdef HG_ROUND_UI
+      if (control == TouchControl::Done && m.screen == Screen::Settings && !m.color_test) return {163,386,140,48};
+#endif
+      return {};
+    }
     if (m.recent) {
       if (control == TouchControl::Home) return {108,44,250,52};
       if (control == TouchControl::Next && m.work_pages > 1) return {163,388,140,40};
@@ -1413,6 +1440,14 @@ UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
       if (control == TouchControl::Home) return {108,44,250,52};
       return {};
     }
+#ifdef HG_ROUND_UI
+    if (m.screen == Screen::Offline || m.screen == Screen::Connecting || m.screen == Screen::Error) {
+      // Recovery routes (R-09): Retry now beside Settings, inside the safe circle.
+      if (control == TouchControl::Retry) return {97,366,132,48};
+      if (control == TouchControl::Settings) return {237,366,132,48};
+      return {};
+    }
+#endif
     TouchControl slots[2];
     const int n = action_slots(m, slots);
     for (int i = 0; i < n; ++i) {

@@ -412,7 +412,10 @@ def group_connection(c: Capture):
     try:
         r.s.set_network(False)
         r.s.run_for(0.3)
-        c.shot(r, 'offline-plain', screen='offline')
+        c.shot(r, 'offline-plain', screen='offline', controls=lambda cs: {'retry', 'settings'} <= set(cs))
+        tap_ctl(r, 'retry')  # R-09: Retry with Wi-Fi down says so and opens nothing
+        c.shot(r, 'offline-retry-no-wifi', 0.2, screen='offline', detail='Hermes is out of reach')
+        r.s.run_for(2.7)  # the hint flash expires before the next state is captured
         r.s.set_network(True)
         assert r.s.wait_screen('ready', timeout=10)
         r.run(r.session.send_pairing('482913', 'hermes gadget pair 482913'))
@@ -426,7 +429,8 @@ def group_connection(c: Capture):
         assert r.s.wait_screen('ready', timeout=5)
         r.s.run_for(0.3)
         hold_title(r)
-        c.shot(r, 'settings-volume', 0.3, screen='settings', detail='Speaker volume')
+        c.shot(r, 'settings-volume', 0.3, screen='settings', detail='Speaker volume',
+               controls=lambda cs: 'done' in cs)
         swipe(r.s, dy=100)
         c.shot(r, 'settings-brightness', 0.2, screen='settings', detail='Screen brightness')
         swipe(r.s, dy=100)

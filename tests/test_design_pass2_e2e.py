@@ -106,7 +106,9 @@ def test_offline_is_geist_and_recovery_settings_work(ix):
     r,s=ix,ix.s
     s.set_network(False); assert s.wait_screen('offline')
     assert r.shows('No network',30,TEXT)
-    assert r.shows('Hold title for Settings',18,DIM)
+    # R-09: the hint says what happens next; Settings is a visible target (the hold stays).
+    assert r.shows('Reconnects when Wi-Fi returns',18,DIM)
+    assert r.shows('Settings',24,TEXT,SURFACE,tuple(ui(s)['controls']['settings']))
     s.touch(True,233,62); s.run_for(1.3); s.touch(False); s.step()
     assert s.device.screen()=='settings'
 

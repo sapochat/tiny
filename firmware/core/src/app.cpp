@@ -247,6 +247,31 @@ void App::connect_now() {
   update_model();
 }
 
+void App::retry_connection() {
+  if (!network_up_) {
+    set_hint_flash("Waiting for Wi-Fi");
+    update_model();
+    return;
+  }
+  const bool in_flight = phase_ == Phase::Handshake || (phase_ == Phase::Connecting && transport_active_);
+  if (fatal_.empty() && (in_flight || phase_ == Phase::Online)) {
+    if (in_flight) set_hint_flash("Already connecting");
+    update_model();
+    return;
+  }
+  if (!fatal_.empty()) {
+    // Setup needed (the server refused this device): try once more with the same settings.
+    fatal_.clear();
+    if (phase_ == Phase::Connecting || phase_ == Phase::Handshake || phase_ == Phase::Online) {
+      hal_.transport->close();
+      drop_session("manual retry");
+    }
+  }
+  backoff_ = 0;
+  log(LogLevel::Info, "retry now");
+  connect_now();
+}
+
 void App::schedule_reconnect() {
   if (online_since_ && now() - online_since_ >= kStableSessionMs) backoff_ = 0;
   uint32_t delay = kBackoffMs[std::min<size_t>(static_cast<size_t>(backoff_), kBackoffSteps - 1)];
@@ -2072,9 +2097,10 @@ void App::update_model() {
       *power_status_->battery_percent <= 10 && power_status_->external_power == false)
     m.detail = "Low battery: connect USB";
   if (round && (m.screen==Screen::Offline || m.screen==Screen::Connecting || m.screen==Screen::Error)) {
+    // Retry now and Settings are drawn as targets below this line (R-09).
     if(m.screen==Screen::Offline) {
       m.detail = interrupted_ || outcome_==Outcome::Unknown ? "Task status unknown" : "Hermes is out of reach";
-      m.hint = "Hold title for Settings";
+      m.hint = "Reconnects when Wi-Fi returns";
     } else if(m.screen==Screen::Connecting) {
       m.headline = "Connecting";
       m.detail = interrupted_ || outcome_==Outcome::Unknown ? "Task status unknown" : "Waiting for Hermes";

@@ -53,9 +53,16 @@ place; recording, speech, approval, offline and errors never wait for motion.
 Navigation during speech is immediate. Text scrolling and paging stay immediate.
 
 Offline, connecting and connection-error screens use the same companion typography.
-They name the state, its consequence, and the next step. On offline screens, hold
-**HERMES** at the top for Settings, then use the existing Wi-Fi setup flow where
-supported. USB connection setup remains available. Pairing, detailed Settings,
+They name the state, its consequence, and the next step. On the round board each
+also shows two targets: **Retry now** and **Settings**. Retry now tries the
+connection at once instead of waiting out the backoff, using the same reconnect
+path as the `reconnect` console command. While an attempt is already under way it
+says **Already connecting** and opens nothing new; with Wi-Fi down it says
+**Waiting for Wi-Fi**; on **Setup needed** it clears the error and tries once more
+with the same settings. Retry never resends work: a task cut off by the
+disconnect stays **Task status unknown**. **Settings** opens the local menu, where
+**Wi-Fi setup** lives where supported. Holding **HERMES** at the top still opens
+Settings as a shortcut. USB connection setup remains available. Pairing, detailed Settings,
 Wi-Fi setup, cards and images retain their existing functional layouts.
 
 | Starting view | Up / down | Right | Left |
@@ -114,7 +121,7 @@ Streaming follows new text only while at the bottom. Scrolling up holds your rea
 
 A gesture belongs to its starting view and to the revision of the target it touched: a Mute voice contact cannot quiet a newer stream, a Stop task contact cannot stop a newer turn, and a Discard or Finish contact cannot act on a later recording. A newly arrived/replaced approval cannot consume an older contact, and a control that appears under a resting finger does not take it. Ambiguous diagonals and drags outside a button do not decide anything. A stationary hold on Home starts push-to-talk after 120 ms; once recording has started, movement is ignored and lifting the original talk contact finishes normally. Another contact during recording does nothing unless it taps a visible Discard or Finish target.
 
-Quick controls are separate from the legacy settings/hardware-check menu. When Tiny is idle, quick controls show **Settings**; otherwise it is outlined and inert. Holding the title area at the top on Home for one second **while idle** still opens the menu, as do the physical chord and console command when idle. On the offline, connecting and pairing screens, holding the title (the top bar on rectangular touch boards) opens it too, because there is no other on-device route to Wi-Fi and server settings there; this works even when the last task's outcome is unknown, and never cancels or resends that work. Settings never stop a recording, speech or work: the chord and console are refused while busy, and a refused chord is consumed rather than acting as CANCEL. A pending title hold is consumed if its view or idle eligibility changes; it cannot cancel a recording or speech that starts later. Starting a recording also invalidates older navigation contacts, without changing the original touch-owned TALK release. Its local item-navigation and Wi-Fi setup gestures are unchanged.
+Quick controls are separate from the legacy settings/hardware-check menu. When Tiny is idle, quick controls show **Settings**; otherwise it is outlined and inert. Holding the title area at the top on Home for one second **while idle** still opens the menu, as do the physical chord and console command when idle. On the round board's offline, connecting and setup-needed screens, a visible **Settings** target opens it. On those screens and pairing, holding the title (the top bar on rectangular touch boards) opens it too; this works even when the last task's outcome is unknown, and never cancels or resends that work. Settings never stop a recording, speech or work: the chord and console are refused while busy, and a refused chord is consumed rather than acting as CANCEL. A pending title hold is consumed if its view or idle eligibility changes; it cannot cancel a recording or speech that starts later. Starting a recording also invalidates older navigation contacts, without changing the original touch-owned TALK release. Its local item-navigation and Wi-Fi setup gestures are unchanged.
 
 ## New chat
 
@@ -216,7 +223,8 @@ Pairing, Settings and Wi-Fi setup use the same design on the round board: Geist
 on true black, no pixel font. Pairing shows the code in a large 44px face with
 the host command beneath it. Settings show one row at a time on a rounded card:
 the row name, its current value large, a one-line description, a dot for each
-row, and **Tap to change · Swipe for next** / **Hold the title to close**. The
+row, **Tap to change · Swipe for next**, and a **Done** button that closes
+Settings (holding the title still closes them too). The
 rows, values, tap/swipe/hold behaviour, the display check and the Wi-Fi setup
 flow are unchanged; Wi-Fi setup instructions are never truncated. Rectangular
 boards keep their existing renderer. Functional text on the round board is at

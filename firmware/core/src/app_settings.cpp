@@ -87,7 +87,7 @@ void App::touch_press(TouchControl control) {
 }
 
 uint32_t App::control_revision(TouchControl control) const {
-  if (control >= TouchControl::Recent) return shelf_epoch_;
+  if (control >= TouchControl::Recent && control <= TouchControl::Next) return shelf_epoch_;
   switch (control) {
     case TouchControl::Reply: return reply_epoch_;
     case TouchControl::Silence: return output_epoch_;
@@ -110,7 +110,12 @@ void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) 
   const auto previous_navigation = navigation_;
   if (owner != touch_view()) return;
   if (owner == TouchView::Other && settings_open()) {
-    settings_input(Button::Talk, false);
+    if (control == TouchControl::Done) close_settings();  // visible exit (R-09)
+    else settings_input(Button::Talk, false);
+  } else if (owner == TouchView::Other && control == TouchControl::Retry) {
+    retry_connection();
+  } else if (owner == TouchView::Other && control == TouchControl::Settings) {
+    open_settings();  // the visible route to local recovery on the connection screens
   } else if (owner == TouchView::Approval) {
     if (prompt_read() && prompt_armed(pressed_at) && (control == TouchControl::Yes || control == TouchControl::No))
       answer_prompt(control == TouchControl::Yes);
@@ -475,7 +480,7 @@ void App::round_settings_model() {
       action = checking ? "Tap to stop" : "Tap to start";
       break;
     case Menu::Inputs:
-      action = checking ? "Hold the title to leave" : "Tap to start";
+      action = checking ? "Tap Done to leave" : "Tap to start";
       break;
     case Menu::IdleTimer:
       m.value = screen_timeout_ms_ ? std::to_string(screen_timeout_ms_ / 1000) + " seconds" : "Always on";

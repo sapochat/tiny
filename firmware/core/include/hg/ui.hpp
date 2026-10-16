@@ -39,10 +39,12 @@ enum class Link : uint8_t { Offline, Network, Connecting, Online };
 
 enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, Other, Recent, Result };
 // Stop means "Stop work" (a cancellation request). Silence only quiets local playback.
-// NewChat acts on a one-second hold, never on a tap. Shelf targets (Recent onward) stay last.
+// NewChat acts on a one-second hold, never on a tap. Shelf targets (Recent to Next) follow;
+// Retry (connection screens) and Done (round Settings) are local recovery routes (R-09).
 enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No, Reply, Silence, Discard, Finish,
-                                    Talk, Controls, Home, Settings, NewChat, Recent, Work0, Work1, Work2, Next };
-constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::Next) + 1;
+                                    Talk, Controls, Home, Settings, NewChat, Recent, Work0, Work1, Work2, Next,
+                                    Retry, Done };
+constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::Done) + 1;
 const char* control_name(TouchControl c);
 // The word a host work stage reads as on screen (\"cancelled\" reads \"Stopped\").
 const char* stage_word(const std::string& stage);
