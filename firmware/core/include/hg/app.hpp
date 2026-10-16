@@ -286,7 +286,11 @@ class App {
   std::unique_ptr<Ui> ui_;
   UiModel model_;
   enum class Navigation : uint8_t { Auto, Home, Response, Controls, Recent, Result };
-  struct WorkItem { std::string id, stage, glance; int revision = 0, scroll = 0; };
+  struct WorkItem { std::string id, stage, glance, turn; int revision = 0, scroll = 0; int64_t updated = 0; };
+  // R-10: "Just now", "12 min", "3 hr", "Yesterday", "3 days"; empty without trusted host time.
+  std::string work_age(int64_t updated) const;
+  // R-10: the shelf record of the work Home's "Last task" names, or null.
+  const WorkItem* last_task_item() const;
   std::vector<WorkItem> recent_;
   WorkItem reading_work_;
   bool work_available_ = false;

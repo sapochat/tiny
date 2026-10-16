@@ -20,6 +20,7 @@ void TouchGestures::tick(uint32_t now_ms) {
     }
     if (!moved_ && now_ms - t0_ >= 1000) {
       state_ = State::Ignored;
+      app_.touch_press(TouchControl::None);
       app_.open_settings();
     }
   }
@@ -51,6 +52,10 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
     else if (state_ == State::Pending && !moved_ && epoch_ == app_.touch_epoch() &&
              app_.control_revision(control_) == revision_)
       app_.touch_tap(owner_, control_, t0_);
+    // The title is also a tap target (R-10 Last task): a short, still title contact taps it.
+    else if (state_ == State::Settings && control_ == TouchControl::LastTask && !moved_ &&
+             epoch_ == app_.touch_epoch() && app_.control_revision(control_) == revision_)
+      app_.touch_tap(owner_, control_, t0_);
     state_ = State::Idle;
     return;
   }
@@ -66,7 +71,8 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
     state_ = owner_ == TouchView::Recording ? (capture_control ? State::Pending : State::Ignored) :
              app_.settings_title_hit(x, y) ? State::Settings : State::Pending;
     x0_ = x; y0_ = y; t0_ = now_ms;
-    if (state_ == State::Pending) app_.touch_press(control_);
+    if (state_ == State::Pending || (state_ == State::Settings && control_ == TouchControl::LastTask))
+      app_.touch_press(control_);
     return;
   }
   if (epoch_ != app_.touch_epoch() && state_ != State::Talk) {

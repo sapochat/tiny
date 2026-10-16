@@ -38,6 +38,8 @@ REPO = Path(__file__).resolve().parents[1]
 W = 466
 HOST_TIME = 1_792_000_000  # 2026-10-15 ~05:46 UTC; the host clock every capture shows
 HOST_OFFSET = -7 * 3600   # America/Los_Angeles in October (PDT)
+# The work journal's clock (updated_at, R-10 card ages): fixed per job so ages repeat.
+WORK_NOW = [HOST_TIME - 60]
 PORTRAIT = (137, 96, 192, 192)  # the animated face's box on Home and the connection screens
 
 SHORT = 'Lamp is on.'
@@ -128,6 +130,10 @@ class Capture:
         from hermes_gadget_plugin.hub import DeviceHub
         from hermes_gadget_plugin.store import DeviceStore
         tmp = Path(tempfile.mkdtemp(prefix='cap', dir=os.environ.get('TMPDIR')))
+        import types
+        import hermes_gadget_plugin.work as work_journal
+        work_journal.time = types.SimpleNamespace(time=lambda: WORK_NOW[0])
+        WORK_NOW[0] = HOST_TIME - 60
         lt = LoopThread()
         brain = _brain_class()()
         kw = dict(hub_kwargs or {})
@@ -246,7 +252,8 @@ def view(r):
     return ui(r.s)['view']
 
 
-def turn(r, t, text, outcome='success', request=True):
+def turn(r, t, text, outcome='success', request=True, ago=60):
+    WORK_NOW[0] = HOST_TIME - ago  # when the host journal records this job (R-10 ages)
     r.turn_start(t, request=('req-' + t) if request else None)
     if text:
         r.reply(text, turn=t)
@@ -342,7 +349,7 @@ def group_home(c: Capture):
         swipe(r.s, dy=100)
         c.shot(r, 'controls-idle-finished', view='controls', controls=lambda cs: 'settings' in cs)
         swipe(r.s, dx=100); r.s.run_for(0.35)
-        c.shot(r, 'home-last-task', view='home', activity='idle')
+        c.shot(r, 'home-last-task', view='home', activity='idle', controls=lambda cs: 'last_task' in cs)
         r.s.type_text('draft the email to Ana')
         req = [m for m in r.s.sent if m.get('type') == 'text'][-1]['id']
         r.turn_start('t2', request=req)
@@ -483,7 +490,10 @@ def group_recent(c: Capture):
                                     ('six', 'Groceries added: oat milk, lemons, basil.', 'success'),
                                     ('seven', 'Reminder saved for Friday 9 am: compost delivery.', 'success'),
                                     ('eight', '', 'success')]:
-            turn(r, name, text, outcome)
+            # Oldest first, as they happened: three days ago up to just now.
+            ago = {'one': 3 * 86400, 'two': 26 * 3600, 'three': 9 * 3600, 'four': 3 * 3600,
+                   'five': 50 * 60, 'six': 12 * 60, 'seven': 3 * 60, 'eight': 20}[name]
+            turn(r, name, text, outcome, ago=ago)
         r.s.run_for(0.4)
         to_recent(r)
         c.shot(r, 'recent-8-page1', view='recent')

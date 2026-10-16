@@ -120,6 +120,7 @@ bool App::touch_slide(TouchView owner, TouchControl control, int y, bool done) {
 
 uint32_t App::control_revision(TouchControl control) const {
   if (control >= TouchControl::Recent && control <= TouchControl::Next) return shelf_epoch_;
+  if (control == TouchControl::LastTask) return shelf_epoch_ * 31u + work_epoch_;
   switch (control) {
     case TouchControl::Reply: return reply_epoch_;
     case TouchControl::Silence: return output_epoch_;
@@ -186,6 +187,8 @@ void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) 
       on_touch_talk(true);
       on_touch_talk(false);
     }  // hold mode: the target itself says "Hold to talk"; a tap does nothing
+  } else if (owner == TouchView::Home && control == TouchControl::LastTask && model_.last_task) {
+    if (const WorkItem* item = last_task_item()) { reading_work_ = *item; navigation_ = Navigation::Result; }
   } else if (owner == TouchView::Home && control == TouchControl::Reply && model_.unread_reply) {
     navigation_ = Navigation::Response;
   } else if (owner == TouchView::Home && control == TouchControl::None && mode_ == Mode::Idle &&

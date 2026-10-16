@@ -7,7 +7,12 @@ On the 466px round touchscreen, swipe down from Home to Quick controls and tap
 Each card leads with a small coloured status mark and word (**Finished** green,
 **Failed** red, **Stopped** amber for a cancelled job, **Working** blue,
 **Unknown** grey), then up to two lines of the host's own final-reply excerpt,
-ending in "…" when longer. A job with no text says **No reply text**. Tap a
+ending in "…" when longer. A job with no text says **No reply text**. The
+status line also says how long ago the job last changed, right-aligned: **Just
+now**, **12 min**, **3 hr**, **Yesterday** (the host's previous local calendar
+day) or **3 days**. Ages come from the host's `updated_at` and the host time Tiny
+already keeps, so they move with the device clock; without a trusted host time
+(an older host, or 12 hours offline) no age is shown rather than a guess. Tap a
 card to read it; vertical swipes scroll using the normal reading layout, and the
 reader leads with the stage mark and word above the body. It shows six text rows
 below that header; vertical swipes still reach the entire retained excerpt. With more than three
@@ -213,7 +218,9 @@ stays empty until the host offers the shelf). All actions always stay in the sam
 outlined when unavailable; Quick controls carry no status line, and status is
 never written inside a button. Home's title slot, where it used to say HERMES,
 shows **OFFLINE** when disconnected and **Last task: Finished / Stopped / Error /
-Unknown** once work has ended; otherwise it shows the time (see Idle face
+Unknown** once work has ended. When that job is on the Recent shelf, tapping
+**Last task: …** opens its result directly (a finger on it lights the title;
+holding it for a second still opens Settings instead); otherwise it shows the time (see Idle face
 below), or nothing. Home's idle support line is gone. On Home and in
 the reader, Stop task always holds the right slot of the action row while work
 is open (the left slot is Mute voice, or Read reply when a reply is waiting); a

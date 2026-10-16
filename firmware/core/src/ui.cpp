@@ -231,7 +231,7 @@ const char* screen_name(Screen s) {
 const char* control_name(TouchControl c) {
   static const char* const names[kTouchControls] = {"none", "volume", "brightness", "stop", "yes", "no", "reply",
       "silence", "discard", "finish", "talk", "controls", "home", "settings", "new_chat", "recent", "work0", "work1",
-      "work2", "next", "retry", "done"};
+      "work2", "next", "retry", "done", "last_task"};
   const auto i = static_cast<unsigned>(c);
   return i < kTouchControls ? names[i] : "none";
 }
@@ -511,6 +511,8 @@ void Ui::render_companion(const UiModel& m) {
       .val(m.work_page).val(m.work_pages)
       .add(m.work_rows.empty() ? "" : m.work_rows[0]).add(m.work_rows.size()>1 ? m.work_rows[1] : "")
       .add(m.work_rows.size()>2 ? m.work_rows[2] : "").add(m.outcome).add(m.outcome_word)
+      .add(m.work_ages.empty() ? "" : m.work_ages[0]).add(m.work_ages.size()>1 ? m.work_ages[1] : "")
+      .add(m.work_ages.size()>2 ? m.work_ages[2] : "")
       .add(m.code).add(m.value).val(m.color_test).add(m.title)
 #ifdef HG_ROUND_UI
       // Whether and where a time shows, not the time itself: a new minute repaints only it.
@@ -693,6 +695,9 @@ void Ui::render_companion(const UiModel& m) {
       const uint16_t tone=stage_color(stage);
       c.fill_circle(r.x+26,r.y+20,4,tone);
       geist::text(c,r.x+38,r.y+7,stage_word(stage),18,tone,fill);
+      // How long ago it last changed (R-10), right-aligned on the status line.
+      if(i<m.work_ages.size() && !m.work_ages[i].empty())
+        geist::text(c,r.x+r.w-22-geist::width(m.work_ages[i],18),r.y+7,m.work_ages[i],18,dim,fill);
       const int inner=r.w-44;
       if(glance.empty()) {
         geist::text(c,r.x+22,r.y+32,"No reply text",18,dim,fill);
@@ -759,7 +764,13 @@ void Ui::render_companion(const UiModel& m) {
     // Glance sizes (R-06): status 24px in the title slot; the state word 44px where it fits
     // below the portrait box (y288) without a new row, else 30px; the detail line 24px.
     if(m.link!=Link::Online) center(48,"OFFLINE",24,dim);
-    else if(m.screen==Screen::Ready && !m.outcome_word.empty()) center(48,"Last task: "+m.outcome_word,24,dim);
+    else if(m.screen==Screen::Ready && !m.outcome_word.empty()) {
+      // R-10: the title is a route to that job's result; a finger on it lights it.
+      const auto r=control_rect(TouchControl::LastTask,m);
+      const bool lit_title=r.w && m.pressed==TouchControl::LastTask;
+      if(lit_title) c.fill_round_rect(r.x,r.y,r.w,r.h,20,lit);
+      center(48,"Last task: "+m.outcome_word,24,dim,lit_title?lit:0);
+    }
     draw_time();  // the time: in an otherwise empty title slot, or the Clock face's digits
     // Needs-you (R-07): one bright dot above the title slot, clear of the time's repaint band
     // (y30+); it says only that something waits, never what.
@@ -1477,6 +1488,9 @@ UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
       if (control == TouchControl::Settings) return {237,366,132,48};
       return {};
     }
+    // Home's "Last task" title (R-10): one tap opens that job's result.
+    if (control == TouchControl::LastTask)
+      return m.last_task && title_slot(m).rfind("Last task: ",0)==0 ? UiRect{118,40,230,52} : UiRect{};
 #endif
     TouchControl slots[2];
     const int n = action_slots(m, slots);

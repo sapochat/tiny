@@ -43,8 +43,8 @@ enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, 
 // Retry (connection screens) and Done (round Settings) are local recovery routes (R-09).
 enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No, Reply, Silence, Discard, Finish,
                                     Talk, Controls, Home, Settings, NewChat, Recent, Work0, Work1, Work2, Next,
-                                    Retry, Done };
-constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::Done) + 1;
+                                    Retry, Done, LastTask };
+constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::LastTask) + 1;
 const char* control_name(TouchControl c);
 // The word a host work stage reads as on screen (\"cancelled\" reads \"Stopped\").
 const char* stage_word(const std::string& stage);
@@ -72,6 +72,10 @@ struct UiModel {
   bool prompt_unread = false;  // touch question not yet read to its end: answers are inert
   bool work_available = false, recent = false, result = false;
   std::vector<std::string> work_rows;   // "stage\nglance" for the visible shelf page
+  // R-10: each visible card's age ("12 min", "Yesterday"); empty without a trusted host time.
+  std::vector<std::string> work_ages;
+  // R-10: Home's "Last task" title opens that job's result (its record is on the shelf).
+  bool last_task = false;
   uint8_t work_page = 0, work_pages = 0;  // shelf page index and count (paging shows when > 1);
                                           // round settings reuse them for the row position
   // The target under a finger that has not yet moved or lifted; drawn lit, flushed alone.

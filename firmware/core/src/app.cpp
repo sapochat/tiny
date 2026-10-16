@@ -472,6 +472,8 @@ void App::h_work(const json::Value& m) {
     item.stage = r["stage"].as_string();
     item.glance = r["result"]["glance"].as_string();
     item.revision = r["result"]["revision"].as_int();
+    item.turn = r["origin"]["turn"].as_string();
+    if (r["updated_at"].is_number()) item.updated = static_cast<int64_t>(r["updated_at"].as_number());
     if (item.id.empty() || item.id.size() > 64 || item.glance.size() > 960) continue;
     for (const auto& old : recent_)
       if (old.id == item.id && old.revision == item.revision) item.scroll = old.scroll;
@@ -963,6 +965,29 @@ std::string App::idle_clock() const {
   return hm;
 }
 #endif
+
+std::string App::work_age(int64_t updated) const {
+  if (!wall_synced_ || updated <= 0) return {};
+  const uint32_t since = now() - wall_sync_ms_;
+  if (since >= kWallTrustMs) return {};
+  const int64_t now_s = wall_unix_ + since / 1000u;
+  const int64_t age = std::max<int64_t>(0, now_s - updated);
+  if (age < 60) return "Just now";
+  if (age < 3600) return std::to_string(age / 60) + " min";
+  // Beyond an hour, the host's local calendar day decides "Yesterday", not elapsed hours.
+  auto day = [&](int64_t t) { const int64_t l = t + wall_offset_s_; return (l >= 0 ? l : l - 86399) / 86400; };
+  const int64_t days = day(now_s) - day(std::min(updated, now_s));
+  if (days <= 0) return std::to_string(age / 3600) + " hr";
+  if (days == 1) return "Yesterday";
+  return std::to_string(days) + " days";
+}
+
+const App::WorkItem* App::last_task_item() const {
+  if (!work_available_ || active_turn_.empty()) return nullptr;
+  for (const auto& item : recent_)
+    if (item.turn == active_turn_) return &item;
+  return nullptr;
+}
 
 bool App::local_time(int& seconds_of_day) const {
   if (!wall_synced_) return false;
@@ -1784,6 +1809,7 @@ void App::update_model() {
   // Navigation-owned views are rebuilt every time: leaving one must not leave it drawn.
   m.work_available = m.recent = m.result = false;
   m.work_rows.clear();
+  m.work_ages.clear();
   m.work_page = m.work_pages = 0;
   m.pressed = pressed_;
 
@@ -1974,7 +2000,10 @@ void App::update_model() {
       m.screen = Screen::Ready; m.hero = false; m.recent = true;
       m.body.clear(); m.detail.clear();
       for (unsigned i = work_page_; i < recent_.size() && i < work_page_ + 3; ++i)
+      {
         m.work_rows.push_back(recent_[i].stage + "\n" + recent_[i].glance);
+        m.work_ages.push_back(work_age(recent_[i].updated));
+      }
       m.work_page = static_cast<uint8_t>(work_page_ / 3);
       m.work_pages = static_cast<uint8_t>((recent_.size() + 2) / 3);
     } else if (navigation_ == Navigation::Result && work_available_) {
@@ -2111,6 +2140,7 @@ void App::update_model() {
     }
   }
   if (m.result) { m.talk_control = false; m.outcome = stage_word(reading_work_.stage); }
+  m.last_task = m.hero && !m.outcome_word.empty() && touch_view() == TouchView::Home && last_task_item();
 #ifdef HG_ROUND_UI
   // The time only on idle, connected Home: activity, reading and status keep the glass.
   m.clock.clear();
@@ -2186,6 +2216,9 @@ json::Value App::status_value() const {
            mode_ == Mode::Thinking ? "thinking" : mode_ == Mode::Responding && !reply_final_ ? "streaming" : "idle")
       .set("scroll", model_.scroll).set("headline", model_.headline).set("detail", model_.detail)
       .set("hint", model_.hint).set("speaking", speaking());
+    json::Value ages = json::Value::array();
+    for (const auto& a : model_.work_ages) ages.push(a);
+    u.set("work_ages", ages);
 #ifdef HG_ROUND_UI
     if (ui_ && ui_->round_companion()) {
       const char* faces[] = {"portrait", "portrait_time", "clock"};

@@ -51,7 +51,7 @@ When Hermes asks before doing something, the whole question scrolls, and equal *
 
 ### Recent work
 
-The last eight jobs (seven days at most) sit on a shelf as cards, each with a coloured outcome (Finished, Failed, Stopped, Working, Unknown) and an excerpt of the reply. Tap a card to read it. The shelf is kept on the host ([`plugin/work.py`](plugin/work.py)), so it survives restarts on both sides, and opening a job never reruns it. A job cut off by a disconnect shows as Unknown, not Finished. See [Recent results](docs/using-gadget.md#recent-results).
+The last eight jobs (seven days at most) sit on a shelf as cards, each with a coloured outcome (Finished, Failed, Stopped, Working, Unknown) and an excerpt of the reply. Each card says how long ago it ran (**12 min**, **Yesterday**), and tapping **Last task: …** on Home opens that job's result in one tap. Tap a card to read it. The shelf is kept on the host ([`plugin/work.py`](plugin/work.py)), so it survives restarts on both sides, and opening a job never reruns it. A job cut off by a disconnect shows as Unknown, not Finished. See [Recent results](docs/using-gadget.md#recent-results).
 
 ### Replies go to the right request
 
@@ -102,7 +102,6 @@ Each board also carries only the art it draws:
 
 These are being built on the `tiny/improve` branch and are not on `main` yet:
 
-- How long ago each Recent job ran, and a tappable **Last task**.
 - A countdown timer Hermes can set, with a local alarm that works without Wi-Fi.
 
 ## What comes from Hermes Gadget
