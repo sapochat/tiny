@@ -132,6 +132,11 @@ class Capture:
         tmp = Path(tempfile.mkdtemp(prefix='cap', dir=os.environ.get('TMPDIR')))
         import types
         import hermes_gadget_plugin.work as work_journal
+        # The journal clock is module state: replace it only while this capture has rigs
+        # open, and restore the real one in close(), or every later user of the journal in
+        # the same process (other tests) stamps each job with one frozen time.
+        if not self.open:
+            self._journal = (work_journal, work_journal.time)
         work_journal.time = types.SimpleNamespace(time=lambda: WORK_NOW[0])
         WORK_NOW[0] = HOST_TIME - 60
         lt = LoopThread()
@@ -165,6 +170,10 @@ class Capture:
         r.lt.run(r.hub.stop())
         r.lt.stop()
         self.open.remove(r)
+        if not self.open and getattr(self, '_journal', None):
+            module, real = self._journal
+            module.time = real
+            self._journal = None
 
     # shots ---------------------------------------------------------------------------------
     def shot(self, r, name, settle=0.35, same_ok=False, volatile=None, **expect):
