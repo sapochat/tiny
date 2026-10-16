@@ -190,6 +190,9 @@ void App::begin() {
 
   if (hal_.display) ui_ = std::make_unique<Ui>(*hal_.display);
   add_display_bench();
+#ifdef HG_ROUND_UI
+  add_timer_actions();
+#endif
   phase_ = Phase::Boot;
   phase_since_ = now();
   boot_until_ = now() + kBootScreenMs;
@@ -730,6 +733,9 @@ void App::h_audio_start(const json::Value& m) {
     return;
   }
   in_stream_ = static_cast<int>(m["stream"].as_int(0));
+#ifdef HG_ROUND_UI
+  tone_out_ = false;  // begin() cut the alarm tone; this stream is speech
+#endif
   out_turn_ = !turn.empty() ? turn : (work_ == Work::Started ? active_turn_ : std::string());
   ++output_epoch_;
   last_turn_rx_ = now();
@@ -769,7 +775,23 @@ void App::stop_playback() {
   in_stream_ = -1;
 }
 
-bool App::speaking() const { return hal_.speaker && (in_stream_ >= 0 || hal_.speaker->busy()); }
+bool App::speaking() const {
+#ifdef HG_ROUND_UI
+  if (tone_out_ && in_stream_ < 0) return false;  // the timer alarm's tone is not speech
+#endif
+  return hal_.speaker && (in_stream_ >= 0 || hal_.speaker->busy());
+}
+
+bool App::play_tone(int16_t amplitude, uint32_t ms) {
+  if (!hal_.speaker || !hal_.speaker->begin(profile_.speaker_rate)) return false;
+  // A square wave at about 500 Hz, generated here: nothing comes from or goes to the host.
+  std::vector<int16_t> tone(static_cast<size_t>(profile_.speaker_rate) * ms / 1000);
+  const uint32_t half_period = std::max<uint32_t>(1, profile_.speaker_rate / 1000);
+  for (size_t i = 0; i < tone.size(); ++i) tone[i] = (i / half_period) % 2 ? amplitude : static_cast<int16_t>(-amplitude);
+  hal_.speaker->write(tone.data(), tone.size());
+  hal_.speaker->end();
+  return true;
+}
 
 void App::on_transport_binary(const uint8_t* data, size_t len) {
   last_rx_ = now();
@@ -1658,6 +1680,9 @@ void App::tick() {
   const uint32_t t = now();
   power_tick();
   settings_tick();
+#ifdef HG_ROUND_UI
+  timer_tick();
+#endif
 
   if (phase_ == Phase::Boot && static_cast<int32_t>(t - boot_until_) >= 0) {
     phase_ = network_up_ ? Phase::Connecting : Phase::NoNetwork;
@@ -2142,6 +2167,18 @@ void App::update_model() {
   if (m.result) { m.talk_control = false; m.outcome = stage_word(reading_work_.stage); }
   m.last_task = m.hero && !m.outcome_word.empty() && touch_view() == TouchView::Home && last_task_item();
 #ifdef HG_ROUND_UI
+  // A fired timer (R-13) has the screen, whatever view or connection state was showing.
+  m.alarm = round && profile_.touch_screen && alarm_showing();
+  if (m.alarm) {
+    m.screen = Screen::Ready;
+    m.hero = m.quick_controls = m.recent = m.result = m.last_task = m.unread_reply = false;
+    m.work_rows.clear();
+    m.work_ages.clear();
+    m.body.clear();
+    m.headline = "Time’s up";
+    m.detail = timer_line(true);
+    m.hint = "Tap Dismiss";
+  }
   // The time only on idle, connected Home: activity, reading and status keep the glass.
   m.clock.clear();
   m.clock_face = false;
@@ -2152,10 +2189,11 @@ void App::update_model() {
   }
   // Needs-you (R-07): idle Home only, from state the device already has. Persistent until
   // its reason clears (the text is read); an approval takes over the screen instead.
+  if (round) timer_model(m);
   m.needs_you.clear();
   if (round && m.hero && m.screen == Screen::Ready && touch_view() == TouchView::Home && mode_ == Mode::Idle &&
-      !speaking() && m.unread_reply)
-    m.needs_you = "reply";
+      !speaking() && (m.timer_done || m.unread_reply))
+    m.needs_you = m.timer_done ? "timer" : "reply";  // a missed alarm is the more urgent
 #endif
   if (!hint_flash_.empty()) m.hint = hint_flash_;
   if (ui_ && !display_sleeping_) ui_->render(m);
@@ -2209,7 +2247,8 @@ json::Value App::status_value() const {
       .set("earlier_stop", stops[static_cast<unsigned>(earlier_stop_)]);
   s.set("work", work);
   if (profile_.touch_screen) {
-    const char* views[] = {"home", "response", "controls", "approval", "recording", "other", "recent", "result"};
+    const char* views[] = {"home", "response", "controls", "approval", "recording", "other", "recent", "result",
+                           "alarm"};
     json::Value u = json::Value::object(), controls = json::Value::object();
     u.set("view", views[static_cast<unsigned>(touch_view())])
       .set("activity", mode_ == Mode::Listening ? "recording" : speaking() ? "speaking" :
@@ -2223,7 +2262,7 @@ json::Value App::status_value() const {
     if (ui_ && ui_->round_companion()) {
       const char* faces[] = {"portrait", "portrait_time", "clock"};
       u.set("idle_face", faces[static_cast<unsigned>(idle_face_)]).set("clock", model_.clock)
-       .set("title", Ui::title_slot(model_)).set("needs_you", model_.needs_you);
+       .set("title", Ui::title_slot(model_)).set("needs_you", model_.needs_you).set("timer", timer_status());
     }
 #endif
     const char* captures[] = {"none", "touch", "button", "tap"};

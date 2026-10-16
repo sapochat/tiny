@@ -231,7 +231,7 @@ const char* screen_name(Screen s) {
 const char* control_name(TouchControl c) {
   static const char* const names[kTouchControls] = {"none", "volume", "brightness", "stop", "yes", "no", "reply",
       "silence", "discard", "finish", "talk", "controls", "home", "settings", "new_chat", "recent", "work0", "work1",
-      "work2", "next", "retry", "done", "last_task"};
+      "work2", "next", "retry", "done", "last_task", "dismiss"};
   const auto i = static_cast<unsigned>(c);
   return i < kTouchControls ? names[i] : "none";
 }
@@ -383,6 +383,9 @@ void Ui::render_motion(const UiModel& m) {
   // Arrival motion, not a second scene: destination owns input from the first tick.
   // 220ms cubic ease-out, 32px travel. The destination is drawn once; frames are shifted copies.
   const bool urgent = m.capture || m.touch_prompt || m.speaking || m.screen == Screen::Error ||
+#ifdef HG_ROUND_UI
+      m.alarm ||
+#endif
       m.screen == Screen::Offline || m.screen == Screen::Connecting || local_screen(m);
   const int view = urgent ? -1 : m.recent ? 3 : m.result ? 4 : m.quick_controls ? 2 : m.hero ? 0 : 1;
   if (view != motion_view_) {
@@ -502,8 +505,17 @@ void Ui::render_companion(const UiModel& m) {
   constexpr uint16_t surface = rgb565(32,32,35), amber = rgb565(212,164,92);
   constexpr uint16_t lit = rgb565(56,56,61), ink = rgb565(23,19,13);
   const bool visible = m.hero && !m.quick_controls && !m.touch_prompt;
+#ifdef HG_ROUND_UI
+  // Home's countdown (R-13) is the state word; a new second repaints only its band (below),
+  // unless the tight caption stack (action row + detail) moves it, then it redraws whole.
+  TouchControl timer_slots[2];
+  const bool timer_band = m.timer_slot==1 && !(action_slots(m,timer_slots)>0 && !m.detail.empty());
+  const std::string& key_headline = timer_band ? m.detail : m.headline;
+#else
+  const std::string& key_headline = m.headline;
+#endif
   const uint32_t key = Hash().val(m.screen).val(m.link).val(m.hero)
-      .add(m.headline).add(m.detail).add(m.body).add(m.hint).val(m.scroll)
+      .add(key_headline).add(m.detail).add(m.body).add(m.hint).val(m.scroll)
       .val(m.quick_controls).val(m.touch_prompt).val(m.prompt_unread).val(m.unread_reply).val(m.reply_ready)
       .val(m.volume).val(m.brightness).val(m.speaking).val(m.has_reply).val(m.can_stop)
       .val(m.can_silence).val(m.stop_pending).val(m.capture).val(m.talk_control).val(m.tap_talk)
@@ -517,6 +529,7 @@ void Ui::render_companion(const UiModel& m) {
 #ifdef HG_ROUND_UI
       // Whether and where a time shows, not the time itself: a new minute repaints only it.
       .val(!m.clock.empty()).val(m.clock_face).add(m.needs_you)
+      .val(m.alarm).val(m.timer_done).val(m.timer_slot).val(timer_band)
 #endif
       .get();
   Canvas c(target_ ? target_ : display_.framebuffer(),panel_.width,panel_.height,panel_.swap_bytes);
@@ -531,6 +544,18 @@ void Ui::render_companion(const UiModel& m) {
                           connection_screen ? UiRect{137,78,192,192} : UiRect{137,96,192,192};
   auto portrait = [&]() { draw_expression(c,face_box.x,face_box.y,face_box.w); };
   constexpr UiRect kTitleTime{60,30,346,66}, kClockBand{60,196,346,84};
+  // R-13 countdown bands: Home's 44px state word (glyphs start at y288, below the portrait
+  // box) and a connection screen's 24px title.
+  constexpr UiRect kTimerWord{40,288,386,40}, kTimerTitle{60,44,346,40};
+  auto draw_timer = [&]() {
+    if (m.timer_slot==1) {
+      const int w = glance_text(nullptr,0,0,m.timer_text,text);
+      if (w > 0) glance_text(&c,(466-w)/2,276,m.timer_text,text);
+    } else if (m.timer_slot==2) {
+      const auto fitted=geist::fit(m.timer_text,320,24);
+      geist::text(c,(466-geist::width(fitted,24))/2,48,fitted,24,text);
+    }
+  };
   auto draw_time = [&]() {
     if (title_time) {
       const int w = clock_text(nullptr,0,0,m.clock,false,text);
@@ -567,6 +592,16 @@ void Ui::render_companion(const UiModel& m) {
                           static_cast<uint16_t>(r.x+r.w),static_cast<uint16_t>(r.y+r.h));
     }
     companion_clock_=m.clock;
+    if(m.timer_slot && m.timer_text!=companion_timer_ && (timer_band || m.timer_slot==2)) {
+      // The countdown's own band: Home's state word under the portrait, or a connection
+      // screen's title. Nothing else on the glass is rewritten.
+      const UiRect r = m.timer_slot==1 ? kTimerWord : kTimerTitle;
+      c.fill_rect(r.x,r.y,r.w,r.h,0);
+      draw_timer();
+      display_.flush_rect(static_cast<uint16_t>(r.x),static_cast<uint16_t>(r.y),
+                          static_cast<uint16_t>(r.x+r.w),static_cast<uint16_t>(r.y+r.h));
+    }
+    companion_timer_=m.timer_text;
 #endif
     if(m.screen==Screen::Pairing && face_changed_) { draw_expression(c,185,92,96); display_.flush_rect(185,92,281,188); }
     if(m.screen==Screen::Listening && level!=companion_level_) { meter(); display_.flush_rect(183,78,283,82); }
@@ -625,6 +660,7 @@ void Ui::render_companion(const UiModel& m) {
       case TouchControl::Settings: pill(control,"Settings",true); break;
       case TouchControl::Yes: pill(control,"Yes",true); break;  // equal emphasis: no assent colour
       case TouchControl::No: pill(control,"No",true); break;
+      case TouchControl::Dismiss: pill_at(slot_rect.w?slot_rect:control_rect(control,m),control,"Dismiss",true,24); break;
       default: break;
     }
   };
@@ -676,6 +712,23 @@ void Ui::render_companion(const UiModel& m) {
   };
   if (local_screen(m)) {
     render_local(c,m);
+#ifdef HG_ROUND_UI
+  } else if (m.alarm) {
+    // A fired timer (R-13): which timer, a bell, the word, and one large Dismiss. Nothing
+    // else is a target here, so a stray touch or swipe cannot end or skip the alarm.
+    center(56,m.detail,24,dim);
+    c.arc(233,233,218,3,-1,kAccent); c.arc(233,233,218,3,1,kAccent);
+    c.ring(233,148,40,7,kAccent);
+    c.fill_rect(229,100,8,10,kAccent);
+    c.fill_circle(233,148,9,kAccent);
+    const int w=glance_text(nullptr,0,0,m.headline,text);
+    if(w>0) glance_text(&c,(466-w)/2,196,m.headline,text);
+    else center(208,m.headline,30,text);
+    const UiRect r=control_rect(TouchControl::Dismiss,m);
+    const uint16_t fill=m.pressed==TouchControl::Dismiss ? lit : surface;
+    c.fill_round_rect(r.x,r.y,r.w,r.h,r.h/2,fill);
+    geist::text(c,r.x+(r.w-geist::width("Dismiss",30))/2,r.y+(r.h-38)/2,"Dismiss",30,text,fill);
+#endif
   } else if (m.recent) {
     back("Recent");
     if (m.work_rows.empty()) {
@@ -742,6 +795,10 @@ void Ui::render_companion(const UiModel& m) {
   if(visible && m.screen==Screen::Listening) meter();
   const bool connection = m.screen==Screen::Offline || m.screen==Screen::Connecting || m.screen==Screen::Error;
   if(connection) {
+#ifdef HG_ROUND_UI
+    if(m.timer_slot==2) draw_timer();  // a running timer keeps counting offline (R-13)
+    else
+#endif
     center(53,"HERMES",18,dim);
     portrait();
 #ifdef HG_ROUND_UI
@@ -923,6 +980,7 @@ void Ui::render_companion(const UiModel& m) {
   companion_hash_=key; companion_level_=level; companion_pressed_=m.pressed;
 #ifdef HG_ROUND_UI
   companion_clock_=m.clock;
+  companion_timer_=m.timer_text;
 #endif
   companion_valid_=valid_=true; hero_valid_=false;
 }
@@ -1446,6 +1504,9 @@ void Ui::draw_hero(Canvas& c, const UiModel& m) {
 UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
   if (round_companion()) {
     if (!companion_model(m)) return {};
+#ifdef HG_ROUND_UI
+    if (m.alarm) return control == TouchControl::Dismiss ? UiRect{108,290,250,100} : UiRect{};
+#endif
     if (m.touch_prompt) {
       // Equal targets, as large as the circle allows below five readable rows; none
       // while the question has not been read to its end.
@@ -1531,6 +1592,9 @@ int Ui::action_slots(const UiModel& m, TouchControl (&slots)[2]) const {
   int n = 0;
   auto add = [&](TouchControl c) { if (n < 2) slots[n++] = c; };
   if (!round_companion() || !companion_model(m) || m.quick_controls || m.touch_prompt || local_screen(m)) return 0;
+#ifdef HG_ROUND_UI
+  if (m.alarm) return 0;
+#endif
   if (m.capture == 2) add(TouchControl::Discard);  // physical TALK held: the screen is free
   else if (m.capture == 3) {
     add(TouchControl::Discard);
@@ -1543,6 +1607,9 @@ int Ui::action_slots(const UiModel& m, TouchControl (&slots)[2]) const {
       else add(TouchControl::Silence);
       add(TouchControl::Stop);
     } else {
+#ifdef HG_ROUND_UI
+      if (m.hero && m.timer_done) add(TouchControl::Dismiss);  // a missed alarm (R-13)
+#endif
       if (m.can_silence) add(TouchControl::Silence);
       if (m.hero && m.unread_reply) add(TouchControl::Reply);
       if (!m.hero && n == 0 && m.talk_control) add(TouchControl::Talk);

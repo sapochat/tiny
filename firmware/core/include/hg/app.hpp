@@ -197,6 +197,32 @@ class App {
   // display.bench (app_bench.cpp): on-device slide/redraw timing for the round companion.
   void add_display_bench();
   bool run_display_bench(json::Value& result, std::string& error);
+  // A short square tone at `amplitude`, entirely local (the speaker check; the timer alarm).
+  bool play_tone(int16_t amplitude, uint32_t ms);
+#ifdef HG_ROUND_UI
+  // Local timers (app_timer.cpp, R-13): timer.start/cancel/list actions. They count on the
+  // monotonic now_ms(), so they run through Wi-Fi loss and ignore host clock changes; a
+  // reboot loses them.
+  struct LocalTimer { std::string id, label; uint32_t start = 0, duration = 0; bool expired = false; };
+  enum class TimerState : uint8_t { None, Running, Ringing, Done };
+  void add_timer_actions();
+  void timer_tick();
+  TimerState timer_state() const;
+  bool alarm_showing() const;  // the alarm has the screen (not over a recording or question)
+  void dismiss_timers();       // ends every fired timer: the alarm, or Home's Dismiss
+  void timers_changed();
+  void timer_model(UiModel& m);   // Home's countdown / missed alarm, and the status slot
+  json::Value timer_status() const;
+  uint32_t timer_left_ms(const LocalTimer& t) const;
+  json::Value timer_value(const LocalTimer& t) const;
+  // "Pasta", "Timer", or "Eggs · +1 more": the fired (or running) timers, for one line.
+  std::string timer_line(bool expired) const;
+  const LocalTimer* next_timer() const;  // the running timer that ends first
+  std::vector<LocalTimer> timers_;
+  uint32_t timer_seq_ = 0, alarm_until_ = 0, beep_at_ = 0, timer_epoch_ = 0;
+  TimerState timer_shown_ = TimerState::None;
+  bool tone_out_ = false;  // the alarm tone is playing: not speech, so never "Speaking"
+#endif
 
   void load_settings();
   void settings_input(Button button, bool pressed);

@@ -290,7 +290,27 @@ The time is the Hermes host's local time, sent in `welcome` and every heartbeat 
 
 ### Needs-you mark (round companion)
 
-When something waits for you, idle Home on the 466px round board shows one bright amber dot centred above the title slot. Today that means reply text you haven't opened yet (the same unread state as **Read reply**); a fired timer will use it too. The dot persists until its reason clears: opening the reply removes it, waiting does not. It never says what is waiting, so it gives nothing away when someone else is at your desk, and it sits beside the title slot's status or time instead of replacing them. It shows only on idle Home: while Hermes is thinking or speaking, during a recording, or on another view it is not drawn. An approval needs no mark, because a question takes over the screen until you answer it. It uses state the device already has; there is no protocol change, and other boards don't build it (`CONFIG_HG_ROUND_UI`).
+When something waits for you, idle Home on the 466px round board shows one bright amber dot centred above the title slot. That means reply text you haven't opened yet (the same unread state as **Read reply**) or a timer that ended while nobody answered ([Timers](#timers-round-companion)). The dot persists until its reason clears: opening the reply removes it, waiting does not. It never says what is waiting, so it gives nothing away when someone else is at your desk, and it sits beside the title slot's status or time instead of replacing them. It shows only on idle Home: while Hermes is thinking or speaking, during a recording, or on another view it is not drawn. An approval needs no mark, because a question takes over the screen until you answer it. It uses state the device already has; there is no protocol change, and other boards don't build it (`CONFIG_HG_ROUND_UI`).
+
+### Timers (round companion)
+
+Hermes can set countdown timers on the 466px round board with its existing `gadget_action` tool, so "set a pasta timer for 9 minutes" works by voice. The device actions are:
+
+| Action | Arguments | Result |
+|---|---|---|
+| `timer.start` | `seconds` (1 to 86400, required), `label` (optional, up to 32 bytes) | the timer: `id`, `label`, `seconds`, `remaining_s`, `state` |
+| `timer.cancel` | `id` (optional when only one timer is set) | `cancelled` (the timer) and `timers` (how many remain) |
+| `timer.list` | none | `timers`, soonest first |
+
+Up to four run at once. With several set, `timer.cancel` without an `id` refuses and lists the ids rather than guessing. Cancelling a ringing timer also stops its alarm.
+
+While a timer runs, idle Home shows the time left (`9:00`, `1:02:05`) in place of **Hold to talk**, at 44px, with its label (or **Timer**) underneath; with several, the soonest one and **+N more**. Each second repaints only the countdown. On the offline and connecting screens the countdown takes the title (**Pasta · 8:58**).
+
+When a timer ends, Tiny takes over the screen from any view (Home, reading, Recent, quick controls, Settings or an offline screen): **Time’s up**, the timer's name, and one 250×100px **Dismiss**. It beeps locally, a short square tone (the speaker check's generator) about once a second, at the current volume. Only **Dismiss** ends it: swipes, taps elsewhere and the title hold do nothing. A recording keeps the screen until you release it (and nothing beeps into the microphone), and a question from Hermes still takes over; the alarm comes back after either while it is still ringing. A reply's speech interrupts the beep but not the alarm screen.
+
+After a minute unanswered the beeping stops and the alarm moves to Home: **Timer done** with the timer's name, a **Dismiss** target and the [needs-you mark](#needs-you-mark-round-companion), until you dismiss it.
+
+Timers count on the device's monotonic clock, not on the host's time, so they keep running and ring through Wi-Fi loss, and a host clock change (DST, NTP) does not move them. Nothing is sent to Hermes when a timer ends. They are kept in memory only: **a restart or power loss loses every timer, silently**. Other boards do not build timers (`CONFIG_HG_ROUND_UI`) and do not offer the actions.
 
 ### Glance sizes (round companion)
 

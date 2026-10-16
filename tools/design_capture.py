@@ -553,7 +553,45 @@ def group_idle(c: Capture):
         c.close(r)
 
 
-GROUPS = {'home': group_home, 'connection': group_connection, 'recent': group_recent, 'idle': group_idle}
+def act(r, name, args=None):
+    """A device action through the production hub, as Hermes's gadget_action calls it."""
+    import asyncio
+    fut = asyncio.run_coroutine_threadsafe(r.session.invoke_action(name, args or {}, timeout=5), r.lt.loop)
+    assert r.s.wait_wall(fut.done, timeout=7), f'{name} did not answer'
+    return fut.result()
+
+
+def group_timer(c: Capture):
+    """Local timers (R-13): countdown on Home and offline, the alarm, and a missed alarm."""
+    r = c.make()
+    try:
+        act(r, 'timer.start', {'seconds': 540, 'label': 'Pasta'})
+        c.shot(r, 'timer-home-countdown', 0.4, view='home', timer=lambda t: t['text'] == '9:00')
+        r.s.run_for(1.0)
+        c.shot(r, 'timer-home-next-second', 0.1, view='home', timer=lambda t: t['text'] == '8:59')
+        act(r, 'timer.start', {'seconds': 300, 'label': 'Eggs'})
+        c.shot(r, 'timer-home-two', 0.4, view='home', timer=lambda t: t['count'] == 2 and t['label'] == 'Eggs')
+        act(r, 'timer.cancel', {'id': act(r, 'timer.list')['timers'][0]['id']})
+        r.s.set_network(False)
+        c.shot(r, 'timer-offline', 0.4, screen='offline', timer=lambda t: t['state'] == 'running')
+        r.s.set_network(True)
+        assert r.s.wait_for(lambda: r.s.status()['phase'] == 'online', timeout=20)
+        act(r, 'timer.cancel')
+        act(r, 'timer.start', {'seconds': 2, 'label': 'Tea'})
+        r.s.run_for(2.2)
+        c.shot(r, 'timer-alarm', 0.2, view='alarm', timer=lambda t: t['state'] == 'ringing')
+        for _ in range(16):   # the alarm rings for a minute; pings keep the session up
+            r.s.run_for(4.0)
+            r.send('ping', ts=1)
+        c.shot(r, 'timer-missed', 0.3, view='home', needs_you='timer', headline='Timer done')
+        tap_ctl(r, 'dismiss')
+        c.shot(r, 'timer-dismissed', 0.4, view='home', needs_you='', timer=lambda t: t['state'] == 'none')
+    finally:
+        c.close(r)
+
+
+GROUPS = {'home': group_home, 'connection': group_connection, 'recent': group_recent, 'idle': group_idle,
+          'timer': group_timer}
 
 
 def transitions(c: Capture):

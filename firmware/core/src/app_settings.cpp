@@ -8,6 +8,9 @@ namespace hg {
 TouchView App::touch_view() const {
   if (mode_ == Mode::Listening) return TouchView::Recording;
   if (prompt_showing()) return TouchView::Approval;
+#ifdef HG_ROUND_UI
+  if (profile_.touch_screen && alarm_showing()) return TouchView::Alarm;
+#endif
   if (settings_open() || wifi_setup_open() || !can_talk() || ota_busy() ||
       ota_ == Ota::Restarting || !fatal_.empty()) return TouchView::Other;
   if (overlay_ != Overlay::None) return TouchView::Other;
@@ -27,6 +30,7 @@ TouchControl App::touch_hit(int x, int y) const {
 void App::touch_swipe(TouchView owner, int dx, int dy, TouchControl control) {
   const auto previous_navigation = navigation_;
   if (mode_ == Mode::Listening || !ui_) return;
+  if (owner == TouchView::Alarm) return;  // only Dismiss ends an alarm; a swipe never does
   // Preserve the separate, explicit legacy setup/check workflow. Quick controls
   // never enter this menu and never use its Cancel/new-session button path.
   if (owner == TouchView::Other && wifi_setup_open()) {
@@ -121,6 +125,9 @@ bool App::touch_slide(TouchView owner, TouchControl control, int y, bool done) {
 uint32_t App::control_revision(TouchControl control) const {
   if (control >= TouchControl::Recent && control <= TouchControl::Next) return shelf_epoch_;
   if (control == TouchControl::LastTask) return shelf_epoch_ * 31u + work_epoch_;
+#ifdef HG_ROUND_UI
+  if (control == TouchControl::Dismiss) return timer_epoch_;
+#endif
   switch (control) {
     case TouchControl::Reply: return reply_epoch_;
     case TouchControl::Silence: return output_epoch_;
@@ -142,6 +149,12 @@ void App::on_touch_talk(bool pressed) {
 void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) {
   const auto previous_navigation = navigation_;
   if (owner != touch_view()) return;
+#ifdef HG_ROUND_UI
+  if (owner == TouchView::Alarm || (owner == TouchView::Home && control == TouchControl::Dismiss)) {
+    if (control == TouchControl::Dismiss && (owner == TouchView::Alarm || model_.timer_done)) dismiss_timers();
+    return;
+  }
+#endif
   if (owner == TouchView::Other && settings_open()) {
     if (control == TouchControl::Done) close_settings();  // visible exit (R-09)
     else settings_input(Button::Talk, false);
@@ -222,6 +235,9 @@ bool App::settings_title_hit(int x, int y) const {
   // use that area for navigation. Settings never cancel or replay remote work.
   if (!ui_ || mode_ != Mode::Idle || speaking() || prompt_showing() || ota_busy() || wifi_setup_open())
     return false;
+#ifdef HG_ROUND_UI
+  if (alarm_showing()) return false;  // the alarm keeps the screen until Dismiss
+#endif
   const bool local_only = !can_talk() && overlay_ == Overlay::None;
   return (local_only || (navigation_ != Navigation::Controls &&
                          (settings_open() || touch_view() == TouchView::Home))) && ui_->title_hit(x, y);
@@ -234,6 +250,9 @@ bool App::settings_allowed() const {
 
 bool App::open_settings() {
   if (prompt_showing() || ota_busy() || ota_ == Ota::Restarting || !wifi_setup_text_.empty()) return false;
+#ifdef HG_ROUND_UI
+  if (alarm_showing()) return false;
+#endif
   wake_display();
   if (settings_open()) { close_settings(); return true; }
   // Settings never cancel a recording, a reply or remote work: they open when idle.
@@ -329,13 +348,7 @@ void App::settings_input(Button button, bool pressed) {
       else check_result_ = "Microphone unavailable";
       break;
     case Menu::Speaker:
-      if (hal_.speaker && hal_.speaker->begin(profile_.speaker_rate)) {
-        // A quiet quarter-second square tone, entirely local to the device.
-        std::vector<int16_t> tone(profile_.speaker_rate / 4);
-        const uint32_t half_period = std::max<uint32_t>(1, profile_.speaker_rate / 1000);
-        for (size_t i = 0; i < tone.size(); ++i) tone[i] = (i / half_period) % 2 ? 900 : -900;
-        hal_.speaker->write(tone.data(), tone.size());
-        hal_.speaker->end();
+      if (play_tone(900, 250)) {  // a quiet quarter-second square tone, entirely local
         hardware_check_ = HardwareCheck::Speaker;
         check_result_ = "Listen for a short tone";
       } else check_result_ = "Speaker unavailable";

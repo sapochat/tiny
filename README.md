@@ -71,6 +71,10 @@ Hermes sends its wall clock and timezone when Tiny connects and on every heartbe
 - **An idle face with the time.** The **Idle face** setting picks **Portrait**, **Portrait + time** (default: the time at 44 px in Home's title slot whenever no status needs it) or **Clock** (72 px digits under a smaller face). Nothing is drawn when Tiny doesn't know the time. Round boards only (`CONFIG_HG_ROUND_UI`). See [Idle face](docs/using-gadget.md#idle-face-round-companion).
 - **A mark when something needs you.** A bright dot above Home's title slot while unread reply text waits. It says nothing about what is waiting, stays until you've opened it, and sits beside the time or status rather than replacing it. See [Needs-you mark](docs/using-gadget.md#needs-you-mark-round-companion).
 
+### A timer that rings without Wi-Fi
+
+Ask Hermes for "a pasta timer for 9 minutes" and it sets one on Tiny through its existing device-action tool (`timer.start`, `timer.cancel`, `timer.list`); there is no protocol or plugin change. The countdown replaces Home's state word at 44 px and keeps running on the device's own clock through Wi-Fi drops and host clock changes. When it ends, Tiny takes over the screen with **Time’s up**, a large **Dismiss** and a local beep. If nobody answers for a minute the beeping stops, and Home keeps the needs-you mark and a **Dismiss** until you clear it. A restart loses timers. Round boards only (`CONFIG_HG_ROUND_UI`). See [Timers](docs/using-gadget.md#timers-round-companion).
+
 ### A faster display
 
 On the 1.75C:
@@ -97,12 +101,6 @@ Each board also carries only the art it draws:
 
 - **Workflow tests** drive the real device core and the production device hub over loopback with disposable stores, plus a lane against a real Hermes gateway. They cover navigation, touch ownership, stop outcomes, the shelf, approvals, New chat, idle reset, time and the display path.
 - **Screenshot checks.** [`tools/design_capture.py`](tools/design_capture.py) walks the core through every screen, confirms each one reached its intended state, and produces byte-identical captures from run to run, so before/after comparisons show only real changes.
-
-## In progress
-
-These are being built on the `tiny/improve` branch and are not on `main` yet:
-
-- A countdown timer Hermes can set, with a local alarm that works without Wi-Fi.
 
 ## What comes from Hermes Gadget
 

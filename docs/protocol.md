@@ -234,6 +234,8 @@ Hermes asks before some actions: destructive commands such as `/new`, a costly m
 
 Devices must answer every `action` exactly once. The server times out after about 18 s.
 
+Actions are how devices add features without protocol changes. For example, the round 466px companion offers `timer.start {seconds, label?}`, `timer.cancel {id?}` and `timer.list`: local timers that run and ring on the device, including without a connection, and report nothing when they end ([Timers](using-gadget.md#timers-round-companion)).
+
 ### Telemetry and events (device → server)
 
 | Message | Meaning |

@@ -37,14 +37,16 @@ enum class Screen : uint8_t {
 
 enum class Link : uint8_t { Offline, Network, Connecting, Online };
 
-enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, Other, Recent, Result };
+// Alarm: a fired local timer (R-13) has the screen until Dismiss; only that target acts.
+enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, Other, Recent, Result, Alarm };
 // Stop means "Stop work" (a cancellation request). Silence only quiets local playback.
 // NewChat acts on a one-second hold, never on a tap. Shelf targets (Recent to Next) follow;
 // Retry (connection screens) and Done (round Settings) are local recovery routes (R-09).
+// Dismiss ends a fired local timer (R-13): on the alarm, and on Home once it stops ringing.
 enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No, Reply, Silence, Discard, Finish,
                                     Talk, Controls, Home, Settings, NewChat, Recent, Work0, Work1, Work2, Next,
-                                    Retry, Done, LastTask };
-constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::LastTask) + 1;
+                                    Retry, Done, LastTask, Dismiss };
+constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::Dismiss) + 1;
 const char* control_name(TouchControl c);
 // The word a host work stage reads as on screen (\"cancelled\" reads \"Stopped\").
 const char* stage_word(const std::string& stage);
@@ -115,6 +117,13 @@ struct UiModel {
   // Idle Home's needs-you mark (R-07): why something waits for the user ("reply": unread
   // text; "timer": a timer has fired), or empty. Drawn as one content-free dot.
   std::string needs_you;
+  // Local timers (R-13). alarm: a fired timer has the screen (headline/detail say which).
+  // timer_done: it stopped ringing unanswered; Home offers Dismiss. timer_slot: where the
+  // countdown timer_text is drawn: 1 Home's state word (44px), 2 a connection screen's
+  // title; each second repaints only that band.
+  bool alarm = false, timer_done = false;
+  uint8_t timer_slot = 0;
+  std::string timer_text;
 #endif
 };
 
@@ -240,6 +249,7 @@ class Ui {
   uint32_t companion_hash_ = 0;
 #ifdef HG_ROUND_UI
   std::string companion_clock_;  // the time on the glass; a minute change repaints only it
+  std::string companion_timer_;  // the countdown on the glass; a new second repaints only it
 #endif
   TouchControl companion_pressed_ = TouchControl::None;
   int companion_level_ = -1;

@@ -2,6 +2,7 @@
 set(HG_CORE_SOURCES
     src/app.cpp
     src/app_bench.cpp
+    src/app_timer.cpp
     src/app_settings.cpp
     src/app_power.cpp
     src/canvas.cpp
