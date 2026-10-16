@@ -53,6 +53,7 @@ PORTRAIT = (137, 96, 192, 192)    # approved face position, compared with MP4 de
 HEADLINE = (0, 276, 466, 62)
 DETAIL = (0, 316, 466, 54)
 ACTION_ROW_Y = 356                # Home's action row: 24px labels (R-06); elsewhere 18px
+QUICK_ROWS = (250, 322, 394)      # R-08: quick controls' three action bands, 24px labels
 REQUESTS = {'text', 'audio.start', 'audio.end', 'audio.cancel', 'cancel', 'session.new', 'prompt.reply'}
 
 
@@ -257,8 +258,9 @@ class Rig:
 
     def label(self, name, text, size=None, fg=TEXT, bg=SURFACE):
         rect = tuple(self.rect(name))
-        if size is None:  # R-06: Home's action row labels are 24px; other targets 18px
-            size = 24 if rect[1] == ACTION_ROW_Y else 18
+        if size is None:  # R-06/R-08: Home's action row and quick controls' bands are 24px
+            quick = self.s.status()['ui']['view'] == 'controls' and rect[1] in QUICK_ROWS
+            size = 24 if rect[1] == ACTION_ROW_Y or quick else 18
         return find_text(self.s, text, size, fg, bg, rect)
 
     def require_label(self, name, text, size=None, fg=TEXT, bg=SURFACE):
@@ -1152,7 +1154,7 @@ LABELS = {
     # size None: Rig.label picks 24px on Home's action row (R-06), 18px elsewhere.
     'silence': ('Mute voice', None, TEXT, SURFACE), 'stop': ('Stop task', None, TEXT, SURFACE),
     'discard': ('Discard', None, TEXT, SURFACE), 'finish': ('Finish', None, TEXT, SURFACE),
-    'talk': ('Hold to talk', None, TEXT, SURFACE), 'settings': ('Settings', 18, TEXT, SURFACE),
+    'talk': ('Hold to talk', None, TEXT, SURFACE), 'settings': ('Settings', None, TEXT, SURFACE),
     'reply': ('Read reply  ↑', None, TEXT, SURFACE), 'controls': ('↓  Controls', 24, DIM, 0),
     'yes': ('Yes', 18, TEXT, SURFACE), 'no': ('No', 18, TEXT, SURFACE),
 }
@@ -1212,7 +1214,7 @@ def test_new_controls_fit_safe_circle_and_render_supported_glyphs(ix):
     assert not r.shows('Last task: Finished',24,DIM,0,(0,100,466,366))   # pass 6: status lives on Home (24px, R-06)
     assert not r.shows('Finished',18,DIM,0,(238,329,160,60))
     check('controls-idle', {'silence', 'settings', 'home'},
-          {'silence': ('Mute voice', 18, DIM, 0),
+          {'silence': ('Mute voice', 24, DIM, 0),
            'home': ('Quick controls', 24, TEXT, 0)}, hero=False)
     r.send('prompt', id='geo-q', title='Permission', text='Allow?')
     s.run_for(0.7)

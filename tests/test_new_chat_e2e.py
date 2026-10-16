@@ -42,10 +42,15 @@ def test_new_chat_sits_in_the_action_row_on_the_glass(ix):
     rect = c['new_chat']
     assert inside_circle(rect), rect
     r.require_label('new_chat', 'New chat')
-    # One row with Mute voice and Stop task, same height, no overlaps with anything.
+    # R-08: its own band directly below Mute voice | Stop task, the same 64px height,
+    # beside Recent when the host offers the shelf; no overlaps with anything.
     for name in ('silence', 'stop'):
-        assert c[name][1] == rect[1] and c[name][3] == rect[3], (name, c[name], rect)
-        r.require_label(name, 'Mute voice' if name == 'silence' else 'Stop task', fg=DIM, bg=0)
+        if name in c:
+            assert c[name][3] == rect[3] and c[name][1] + c[name][3] <= rect[1] <= c[name][1] + c[name][3] + 16, \
+                (name, c[name], rect)
+            r.require_label(name, 'Mute voice' if name == 'silence' else 'Stop task', fg=DIM, bg=0)
+    if 'recent' in c:
+        assert c['recent'][1] == rect[1] and c['recent'][3] == rect[3], (c['recent'], rect)
     for name, other in c.items():
         if name != 'new_chat':
             assert not overlap(rect, other), (name, other, rect)
@@ -119,7 +124,7 @@ def test_new_chat_is_inert_while_hermes_is_busy(ix):
     idle_rect = ui(s)['controls']['new_chat']
     r.turn_start('busy2', request='req-busy2')
     s.run_for(0.3)
-    assert r.shows('New chat', 18, DIM, 0, tuple(idle_rect)), 'inert New chat is not drawn in place'
+    assert r.shows('New chat', 24, DIM, 0, tuple(idle_rect)), 'inert New chat is not drawn in place'
     m = r.mark()
     hold(s, idle_rect[0] + idle_rect[2] // 2, idle_rect[1] + idle_rect[3] // 2, HOLD_S + 0.4)
     assert not new_requests(r, m), 'New chat fired during work'

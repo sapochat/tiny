@@ -31,12 +31,12 @@ class TouchGestures {
   void tick(uint32_t now_ms);
 
  private:
-  enum class State : uint8_t { Idle, Pending, Settings, Talk, Swipe, Ignored };
+  enum class State : uint8_t { Idle, Pending, Settings, Talk, Swipe, Slide, Ignored };
 
   App& app_;
   Config cfg_;
   State state_ = State::Idle;
-  int x0_ = 0, y0_ = 0;
+  int x0_ = 0, y0_ = 0, last_y_ = 0;
   uint32_t t0_ = 0;
   TouchView owner_ = TouchView::Other;
   TouchControl control_ = TouchControl::None;

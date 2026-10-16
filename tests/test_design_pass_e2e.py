@@ -98,7 +98,7 @@ def test_press_feedback_on_touch_down_and_gone_after_release(ix):
     f = framebuffer(s)
     inside = f[y:y + h, x:x + w]
     assert (inside == PRESSED).sum() > w * h // 3, 'touched target is not highlighted'
-    assert find_text(s, 'Recent', 18, TEXT, PRESSED, (x, y, w, h)), 'label lost on the pressed fill'
+    assert find_text(s, 'Recent', 24, TEXT, PRESSED, (x, y, w, h)), 'label lost on the pressed fill'
     changed = np.argwhere(f != before)
     assert changed.size and changed[:, 0].min() >= y and changed[:, 0].max() < y + h, 'press repainted beyond its target'
     # Slide well away (a cancelled press), then lift: highlight gone, nothing happened.
@@ -192,12 +192,12 @@ def test_quick_control_values_do_not_collide_with_recent(ix):
     to_controls(r)
     c = ui(r.s)['controls']
     rx, ry, rw, rh = c['recent']
-    assert find_text(r.s, '70%', 18, rgb(23, 19, 13), rgb(212, 164, 92), tuple(c['volume'])), 'volume value not in track'
+    assert find_text(r.s, '70%', 24, rgb(23, 19, 13), rgb(212, 164, 92), tuple(c['volume'])), 'volume value not in track'
     f = framebuffer(r.s)
     left, right = c['volume'], c['brightness']
-    # Pass 5: Recent sits beside Settings at the foot, well below the tracks.
-    assert ry >= max(left[1] + left[3], right[1] + right[3]) + 40, 'Recent crowds the tracks'
-    sx, sy, sw, sh = c['settings']
-    assert sy == ry and sh == rh, 'Recent and Settings share one row'
-    # Nothing but black between the two pills on their row.
-    assert sx - (rx + rw) >= 6 and not f[ry:ry + rh, rx + rw:sx].any(), 'text crowds the Recent target'
+    # R-08: Recent pairs with New chat in the third band, a whole band below the tracks.
+    assert ry >= max(left[1] + left[3], right[1] + right[3]) + 64, 'Recent crowds the tracks'
+    nx, ny, nw, nh = c['new_chat']
+    assert ny == ry and nh == rh, 'New chat and Recent share one band'
+    # Nothing but black between the two pills on their band.
+    assert rx - (nx + nw) >= 6 and not f[ry:ry + rh, nx + nw:rx].any(), 'text crowds the Recent target'

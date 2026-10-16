@@ -76,7 +76,8 @@ def test_native_ui_known_symbols_match_source_font(rig,view):
     def pill(name,label):
         from PIL import ImageFont
         x,y,w,h=s.status()['ui']['controls'][name]
-        size=24 if y==356 else 18  # R-06: Home/reader action row labels are 24px, others 18px
+        # R-06: Home/reader action row labels are 24px; R-08: so are quick controls' bands.
+        size=24 if y==356 or (view=='controls' and y in (250,322,394)) else 18
         width=sum(round(ImageFont.truetype(str(ROOT/'assets/fonts/Geist-Regular.ttf'),size).getlength(c)) for c in label)
         assert_text(s,label,size,y+(h-(30 if size==24 else 22))//2,text,surface,x=x+(w-width)//2,pill=(x,y,w,h))
     # Interaction v1 replaced the swipe-only footers with visible tap routes; the same

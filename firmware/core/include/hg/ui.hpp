@@ -169,10 +169,12 @@ class Ui {
     return !m.quick_controls && (m.screen == Screen::Pairing || m.screen == Screen::Settings || m.screen == Screen::Setup);
   }
   void render_local(Canvas& c, const UiModel& m);
-  // Quick controls' action row: Mute voice, Stop task, New chat; even 8px gaps inside the glass.
-  static constexpr UiRect kQuickSilence{57,318,112,48}, kQuickStop{177,318,112,48}, kQuickNewChat{297,318,112,48},
-                          kQuickSettings{236,386,104,42},
-                          kQuickSettingsAlone{181,386,104,42};
+  // Quick controls in four bands (R-08): sliders, Mute voice | Stop task, New chat | Recent,
+  // then Settings alone. Paired targets are 64px tall; every corner stays in the safe circle.
+  static constexpr UiRect kQuickVolume{111,126,88,114}, kQuickBrightness{267,126,88,114},
+                          kQuickSilence{62,250,166,64}, kQuickStop{238,250,166,64},
+                          kQuickNewChat{72,322,156,64}, kQuickRecent{238,322,156,64},
+                          kQuickSettings{150,394,166,48};
   static UiRect prompt_answer_rect(bool yes) { return yes ? UiRect{238,296,150,96} : UiRect{78,296,150,96}; }
   // The 466px companion's shared bottom action row (Home, recording and reading):
   // at most two targets, in priority order. Drawing and hit testing both use it.

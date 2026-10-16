@@ -86,6 +86,38 @@ void App::touch_press(TouchControl control) {
   update_model();
 }
 
+bool App::touch_slide(TouchView owner, TouchControl control, int y, bool done) {
+#ifdef HG_ROUND_UI
+  const bool volume = control == TouchControl::Volume && hal_.speaker;
+  const bool light = control == TouchControl::Brightness && hal_.display && hal_.display->info().has_backlight;
+  if (done) {  // the lift: save the value the finger left, once
+    if (volume) console("set volume " + std::to_string(volume_));
+    else if (light) console("set brightness " + std::to_string(brightness_));
+    return true;
+  }
+  if (!ui_ || !ui_->round_companion() || owner != TouchView::Controls || owner != touch_view() ||
+      navigation_ != Navigation::Controls || !(volume || light))
+    return false;
+  // The same mapping the track draws: its inner span (8px insets) is 0..100%.
+  const UiRect r = ui_->control_rect(control, model_);
+  const int inner = r.h - 16;
+  if (inner <= 0) return false;
+  const int v = std::clamp((r.y + 8 + inner - y) * 100 / inner, light ? 10 : 0, 100);
+  if (volume && v != volume_) {
+    volume_ = static_cast<uint8_t>(v);
+    hal_.speaker->set_volume(volume_);
+  } else if (light && v != brightness_) {
+    brightness_ = static_cast<uint8_t>(v);
+    hal_.display->set_backlight(brightness_);
+  }
+  update_model();
+  return true;
+#else
+  (void)owner; (void)control; (void)y; (void)done;
+  return false;
+#endif
+}
+
 uint32_t App::control_revision(TouchControl control) const {
   if (control >= TouchControl::Recent && control <= TouchControl::Next) return shelf_epoch_;
   switch (control) {

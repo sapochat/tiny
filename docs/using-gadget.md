@@ -69,7 +69,7 @@ Wi-Fi setup, cards and images retain their existing functional layouts.
 |---|---|---|---|
 | Home | Up opens the latest reply; down opens quick controls | No action | No action |
 | Response | Scroll text, including at either boundary | Home, retaining reading position | No action |
-| Quick controls | Adjust only the volume or brightness slider where the gesture starts | Home | No action |
+| Quick controls | On the round board, drag a slider to set its level; elsewhere adjust only the slider where the gesture starts | Home | No action |
 | Approval | Scroll the question | No action | No action |
 | Recording | No navigation | No navigation | No navigation |
 
@@ -125,7 +125,7 @@ Quick controls are separate from the legacy settings/hardware-check menu. When T
 
 ## New chat
 
-Tiny keeps one conversation with Hermes until you start another. On the 466px round touchscreen, swipe down to quick controls and **hold New chat for one second**. It sits to the right of Mute voice and Stop task. While your finger rests on it, the pill lights and reads **Hold 1 sec**; at one second Tiny sends `session.new`, returns to Home, and shows **Starting a new session** until Hermes answers. A tap only shows **Hold 1 sec** for two seconds, and a finger that moves off the pill does nothing, so you can't start over by accident.
+Tiny keeps one conversation with Hermes until you start another. On the 466px round touchscreen, swipe down to quick controls and **hold New chat for one second**. It sits below Mute voice, beside Recent. While your finger rests on it, the pill lights and reads **Hold 1 sec**; at one second Tiny sends `session.new`, returns to Home, and shows **Starting a new session** until Hermes answers. A tap only shows **Hold 1 sec** for two seconds, and a finger that moves off the pill does nothing, so you can't start over by accident.
 
 New chat is offered only when Settings would be (nothing recording, speaking, asking or working) and Tiny is connected. Otherwise it stays in place, outlined and inert. A finger that went down while it was available does nothing if Hermes starts work before the second is up.
 
@@ -201,10 +201,15 @@ Generic questions are not relabeled as permissions. Unsupported characters have
 a visible replacement glyph; full Unicode shaping and browser kerning are not
 implemented. Native results do not establish physical readability.
 
-Quick controls use **72×158px** rounded filled tracks labeled **Volume** and
-**Brightness**, with actual percentages, then **148×48px Mute voice** and **Stop
-task** targets, then **Recent** beside **Settings** (Settings alone, centred,
-when there is no recent work). All actions always stay in the same place and are
+Quick controls come in four bands. First, **88×114px** tracks labeled **Volume**
+and **Brightness**: drag anywhere along a track and the level follows your finger
+(top is 100%, bottom is 0%, or 10% for brightness), live; the value is saved once,
+when you lift. Both tracks draw the same light handle at the level and show the
+percentage inside the track, clear of the handle. A tap on a track changes nothing,
+and a sideways swipe that starts on one still goes Home. Then **Mute voice | Stop
+task** and **New chat | Recent** as **166×64px** and **156×64px** pairs, with
+24px labels, and finally **Settings** as one **166×48px** pill (Recent's place
+stays empty until the host offers the shelf). All actions always stay in the same place and are
 outlined when unavailable; Quick controls carry no status line, and status is
 never written inside a button. Home's title slot, where it used to say HERMES,
 shows **OFFLINE** when disconnected and **Last task: Finished / Stopped / Error /

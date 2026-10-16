@@ -35,7 +35,7 @@ Tiny is a fork of [Hermes Gadget](https://github.com/Adolanium/hermes-gadget-sdk
 
 ### Quick controls
 
-Swipe down from Home for volume and brightness sliders, **Mute voice**, **Stop task**, **New chat**, **Recent** and **Settings**. Buttons keep fixed positions and are outlined when unavailable, rather than moving or disappearing.
+Swipe down from Home for four bands: volume and brightness sliders, **Mute voice | Stop task**, **New chat | Recent**, then **Settings**. The paired buttons are 64 px tall with 24 px labels. Drag anywhere along a slider and the level follows your finger, with the value inside the track; it's saved once when you lift. Buttons keep fixed positions and are outlined when unavailable, rather than moving or disappearing. See [Round AMOLED companion face](docs/using-gadget.md#round-amoled-companion-face-466466).
 
 ### Mute is not Stop
 
@@ -102,7 +102,6 @@ Each board also carries only the art it draws:
 
 These are being built on the `tiny/improve` branch and are not on `main` yet:
 
-- Quick controls in four bands, with taller targets and sliders you can drag from anywhere.
 - How long ago each Recent job ran, and a tappable **Last task**.
 - A countdown timer Hermes can set, with a local alarm that works without Wi-Fi.
 

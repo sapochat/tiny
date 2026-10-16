@@ -108,6 +108,10 @@ class App {
   void touch_hold(TouchView owner, TouchControl control);
   // Touch-down feedback only: lights a target under a still finger. Never acts.
   void touch_press(TouchControl control);
+  // Round quick-controls slider drag (R-08): the value follows the finger's position along
+  // the whole track, live; `done` (the lift) saves it once. False: not an absolute slider
+  // here (other boards keep their relative swipe).
+  bool touch_slide(TouchView owner, TouchControl control, int y, bool done);
   // A touch-owned TALK press. Unlike a physical TALK press it never answers a question.
   void on_touch_talk(bool pressed);
   // Returns true when this input only wakes a sleeping display.

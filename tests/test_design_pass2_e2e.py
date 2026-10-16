@@ -99,7 +99,7 @@ def test_speech_start_preempts_motion(ix):
     r.send('audio.start',stream=92,rate=16000,format='pcm16')
     assert ui(s)['speaking']
     assert not ui(s)['transition']['active']
-    assert r.shows('Mute voice',18,TEXT,SURFACE,tuple(ui(s)['controls']['silence']))
+    assert r.shows('Mute voice',24,TEXT,SURFACE,tuple(ui(s)['controls']['silence']))
 
 
 def test_offline_is_geist_and_recovery_settings_work(ix):

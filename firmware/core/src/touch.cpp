@@ -47,6 +47,7 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
   if (!touching) {
     app_.touch_press(TouchControl::None);  // feedback ends before the tap acts
     if (state_ == State::Talk) app_.on_touch_talk(false);  // normal push-to-talk release only
+    else if (state_ == State::Slide) app_.touch_slide(owner_, control_, last_y_, true);  // save once
     else if (state_ == State::Pending && !moved_ && epoch_ == app_.touch_epoch() &&
              app_.control_revision(control_) == revision_)
       app_.touch_tap(owner_, control_, t0_);
@@ -69,6 +70,7 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
     return;
   }
   if (epoch_ != app_.touch_epoch() && state_ != State::Talk) {
+    if (state_ == State::Slide) app_.touch_slide(owner_, control_, last_y_, true);  // keep what was set
     state_ = State::Ignored;
     app_.touch_press(TouchControl::None);
     return;
@@ -79,7 +81,20 @@ void TouchGestures::update(bool touching, int x, int y, uint32_t now_ms) {
     app_.touch_press(TouchControl::None);  // a moving finger is not pressing anything
   }
   if (state_ == State::Talk) return;  // movement while recording never submits/discards
+  if (state_ == State::Slide) {
+    last_y_ = y;
+    app_.touch_slide(owner_, control_, y, false);
+    return;
+  }
   if (state_ != State::Pending && state_ != State::Settings) return;
+  // A clearly vertical drag that began on a slider moves it with the finger (round board).
+  if (state_ == State::Pending && moved_ && (control_ == TouchControl::Volume || control_ == TouchControl::Brightness) &&
+      std::abs(dy) > cfg_.slop_px && std::abs(dy) * 2 > std::abs(dx) * 3 &&
+      app_.touch_slide(owner_, control_, y, false)) {
+    state_ = State::Slide;
+    last_y_ = y;
+    return;
+  }
   // Require a clear dominant axis. Ambiguous diagonals cannot become taps/holds.
   bool vertical = std::abs(dy) >= cfg_.swipe_px && std::abs(dy) * 2 > std::abs(dx) * 3;
   bool horizontal = std::abs(dx) >= cfg_.swipe_px && std::abs(dx) * 2 > std::abs(dy) * 3;

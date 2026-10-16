@@ -607,7 +607,7 @@ void Ui::render_companion(const UiModel& m) {
         // Requested is not stopped: the target stays in place, inert, naming the request.
         // Quick controls keep it in place too; how work ended goes on the status line.
         const auto r=m.quick_controls ? kQuickStop : slot_rect.w ? slot_rect : control_rect(control,m);
-        pill_at(r,control,"Stop task",m.can_stop,slot_rect.w?slot_size:18);
+        pill_at(r,control,"Stop task",m.can_stop,slot_rect.w||m.quick_controls?slot_size:18);
         break;
       }
       case TouchControl::Discard: pill_at(slot_rect.w?slot_rect:control_rect(control,m),control,"Discard",true,slot_rect.w?slot_size:18); break;
@@ -719,7 +719,11 @@ void Ui::render_companion(const UiModel& m) {
         c.fill_circle(x0+p*14,444,p==m.work_page?4:3,p==m.work_page?text:dim);
     }
   } else {
+#ifdef HG_ROUND_UI
+  if (m.quick_controls && m.work_available) pill_at(kQuickRecent,TouchControl::Recent,"Recent",true,24);
+#else
   if (m.quick_controls && m.work_available) pill(TouchControl::Recent,"Recent",true);
+#endif
   TouchControl slots[2];
   const int n=action_slots(m,slots);
   // Decorative perimeter marks stop above an action row instead of crossing its targets.
@@ -826,6 +830,24 @@ void Ui::render_companion(const UiModel& m) {
         if(!r.w) continue;
         const int value=control==TouchControl::Volume?m.volume:m.brightness;
         const char* label=control==TouchControl::Volume?"Volume":"Brightness";
+#ifdef HG_ROUND_UI
+        // R-08: the whole track is the slider. Its inner span (8px insets) maps 0..100%, the
+        // mapping touch uses; one light handle marks the level on both tracks at every
+        // value, and the value reads inside the track, clear of the handle.
+        geist::text(c,r.x+(r.w-geist::width(label,18))/2,r.y-29,label,18,dim);
+        c.fill_round_rect(r.x,r.y,r.w,r.h,20,surface);
+        const int inner=r.h-16, level=r.y+8+inner*(100-value)/100;
+        if(value>0) {  // a full level fills the whole track, end cap included
+          c.set_clip_rows(value>=100?r.y:level,r.y+r.h);
+          c.fill_round_rect(r.x,r.y,r.w,r.h,20,amber);
+          c.set_clip_rows(0,466);
+        }
+        c.fill_rect(r.x+22,level-2,r.w-44,4,text);
+        const auto pct=std::to_string(value)+"%";
+        const bool on_fill=value>=50;
+        geist::text(c,r.x+(r.w-geist::width(pct,24))/2,on_fill?r.y+r.h-38:r.y+12,pct,24,
+                    on_fill?ink:text,on_fill?amber:surface);
+#else
         geist::text(c,r.x+(r.w-geist::width(label,18))/2,r.y-34,label,18,dim);
         c.fill_round_rect(r.x,r.y,r.w,r.h,30,surface);
         // Clip the fill to the same rounded track without a scratch framebuffer.
@@ -840,15 +862,24 @@ void Ui::render_companion(const UiModel& m) {
         if(fill>8 && !(on_fill && fill>r.h-8)) c.fill_round_rect(r.x+23,r.y+r.h-std::max(7,fill)+3,26,4,2,ink);
         geist::text(c,r.x+(r.w-geist::width(pct,18))/2,on_fill?r.y+r.h-36:r.y+16,pct,18,
                     on_fill?ink:text,on_fill?amber:surface);
+#endif
       }
-      pill_at(kQuickSilence,TouchControl::Silence,"Mute voice",m.can_silence);
+#ifdef HG_ROUND_UI
+      pill_at(kQuickSilence,TouchControl::Silence,"Mute voice",m.can_silence,24);
       draw_control(TouchControl::Stop);
       // New chat acts on a hold: a finger on it, or a tap, shows how long to hold.
       const bool holding=m.pressed==TouchControl::NewChat;
-      pill_at(kQuickNewChat,TouchControl::NewChat,holding||m.new_chat_hint?"Hold 1 sec":"New chat",m.new_chat_ready);
+      pill_at(kQuickNewChat,TouchControl::NewChat,holding||m.new_chat_hint?"Hold 1 sec":"New chat",m.new_chat_ready,24);
       // Settings never interrupt work, speech or a recording: the target stays in place,
       // inert. How the last task ended is Home's support line, not a row here.
-      pill_at(m.work_available?kQuickSettings:kQuickSettingsAlone,TouchControl::Settings,"Settings",m.settings_ready);
+      pill_at(kQuickSettings,TouchControl::Settings,"Settings",m.settings_ready,24);
+#else
+      pill_at(kQuickSilence,TouchControl::Silence,"Mute voice",m.can_silence);
+      draw_control(TouchControl::Stop);
+      const bool holding=m.pressed==TouchControl::NewChat;
+      pill_at(kQuickNewChat,TouchControl::NewChat,holding||m.new_chat_hint?"Hold 1 sec":"New chat",m.new_chat_ready);
+      pill_at(kQuickSettings,TouchControl::Settings,"Settings",m.settings_ready);
+#endif
     } else if(m.touch_prompt) {
       if(m.prompt_unread) {
         // Unread question: both answers stay in place, equally inert, until its end is shown.
@@ -1426,17 +1457,16 @@ UiRect Ui::control_rect(TouchControl control, const UiModel& m) const {
       return {};
     }
     if (m.quick_controls) {
-      // Title, sliders, actions, then Recent beside Settings. Status lives on Home, not here.
-      if (control == TouchControl::Recent && m.work_available) return {126,386,104,42};
-      if (control == TouchControl::Volume && m.volume >= 0) return {122,130,72,158};
-      if (control == TouchControl::Brightness && m.brightness >= 0) return {272,130,72,158};
+      // Title, sliders, then three action bands (R-08). Status lives on Home, not here.
+      if (control == TouchControl::Recent && m.work_available) return kQuickRecent;
+      if (control == TouchControl::Volume && m.volume >= 0) return kQuickVolume;
+      if (control == TouchControl::Brightness && m.brightness >= 0) return kQuickBrightness;
       // Stable positions: unavailable actions stay visible but inert. Silence, then Stop,
       // in the same order as the Home and reading action row.
       if (control == TouchControl::Silence) return kQuickSilence;
       if (control == TouchControl::Stop && (m.can_stop || m.stop_pending || m.outcome_word.empty())) return kQuickStop;
       if (control == TouchControl::NewChat && m.new_chat_ready) return kQuickNewChat;
-      if (control == TouchControl::Settings && m.settings_ready)
-        return m.work_available ? kQuickSettings : kQuickSettingsAlone;
+      if (control == TouchControl::Settings && m.settings_ready) return kQuickSettings;
       if (control == TouchControl::Home) return {108,44,250,52};
       return {};
     }
