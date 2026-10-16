@@ -106,6 +106,9 @@ struct UiModel {
   // it large with a small portrait (Clock idle face), otherwise it fills an empty title slot.
   std::string clock;
   bool clock_face = false;
+  // Idle Home's needs-you mark (R-07): why something waits for the user ("reply": unread
+  // text; "timer": a timer has fired), or empty. Drawn as one content-free dot.
+  std::string needs_you;
 #endif
 };
 

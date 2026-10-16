@@ -514,7 +514,7 @@ void Ui::render_companion(const UiModel& m) {
       .add(m.code).add(m.value).val(m.color_test).add(m.title)
 #ifdef HG_ROUND_UI
       // Whether and where a time shows, not the time itself: a new minute repaints only it.
-      .val(!m.clock.empty()).val(m.clock_face)
+      .val(!m.clock.empty()).val(m.clock_face).add(m.needs_you)
 #endif
       .get();
   Canvas c(target_ ? target_ : display_.framebuffer(),panel_.width,panel_.height,panel_.swap_bytes);
@@ -746,6 +746,9 @@ void Ui::render_companion(const UiModel& m) {
     if(m.link!=Link::Online) center(48,"OFFLINE",24,dim);
     else if(m.screen==Screen::Ready && !m.outcome_word.empty()) center(48,"Last task: "+m.outcome_word,24,dim);
     draw_time();  // the time: in an otherwise empty title slot, or the Clock face's digits
+    // Needs-you (R-07): one bright dot above the title slot, clear of the time's repaint band
+    // (y30+); it says only that something waits, never what.
+    if(!m.needs_you.empty()) c.fill_circle(233,21,8,kAccent);
     portrait();
     const int big=tight ? -1 : glance_text(nullptr,0,0,m.headline,text);
     if(big>0 && big<=400) glance_text(&c,(466-big)/2,276,m.headline,text);

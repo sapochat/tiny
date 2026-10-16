@@ -2094,6 +2094,12 @@ void App::update_model() {
     m.clock = idle_clock();
     m.clock_face = !m.clock.empty() && idle_face_ == IdleFace::Clock;
   }
+  // Needs-you (R-07): idle Home only, from state the device already has. Persistent until
+  // its reason clears (the text is read); an approval takes over the screen instead.
+  m.needs_you.clear();
+  if (round && m.hero && m.screen == Screen::Ready && touch_view() == TouchView::Home && mode_ == Mode::Idle &&
+      !speaking() && m.unread_reply)
+    m.needs_you = "reply";
 #endif
   if (!hint_flash_.empty()) m.hint = hint_flash_;
   if (ui_ && !display_sleeping_) ui_->render(m);
@@ -2158,7 +2164,7 @@ json::Value App::status_value() const {
     if (ui_ && ui_->round_companion()) {
       const char* faces[] = {"portrait", "portrait_time", "clock"};
       u.set("idle_face", faces[static_cast<unsigned>(idle_face_)]).set("clock", model_.clock)
-       .set("title", Ui::title_slot(model_));
+       .set("title", Ui::title_slot(model_)).set("needs_you", model_.needs_you);
     }
 #endif
     const char* captures[] = {"none", "touch", "button", "tap"};
