@@ -123,6 +123,34 @@ int clock_text(Canvas* c, int x, int y, std::string_view s, bool large, uint16_t
 }
 #endif
 
+#ifdef HG_ROUND_UI
+// Home's state word at 44px (R-06): printable ASCII plus ’ and …. Draws when `c` is set;
+// returns the width, or -1 when a character is not in the face (the caller uses 30px).
+int glance_text(Canvas* c, int x, int y, std::string_view s, uint16_t fg) {
+  using namespace geist_clock_data;
+  int w = 0;
+  size_t p = 0;
+  while (p < s.size()) {
+    const uint32_t cp = geist::next(s, p);
+    const auto* first = glance_codes, *last = first + glance_count;
+    const auto* it = std::lower_bound(first, last, cp);
+    if (it == last || *it != cp) return -1;
+    const auto& g = glance_glyphs[it - first];
+    if (c) {
+      unsigned i = 0, offset = g.offset;
+      const unsigned n = g.w * g.h;
+      while (i < n) {
+        const unsigned token = pixels[offset++], a = token & 15;
+        const unsigned end = std::min<unsigned>(n, i + (token >> 4) + 1);
+        for (; i < end; ++i) if (a) c->pixel(x + w + g.x + i % g.w, y + g.y + i / g.w, geist::blend(fg, 0, a));
+      }
+    }
+    w += g.advance;
+  }
+  return w;
+}
+#endif
+
 mascot::Frame mascot_frame(const UiModel& m) {
   if (m.screen == Screen::Responding && m.speaking) {
     return (m.frame / 2) % 2 ? mascot::Frame::Talk : mascot::Frame::Idle;
@@ -549,6 +577,54 @@ void Ui::render_companion(const UiModel& m) {
   // Every target is drawn from control_rect, the same rectangle hit testing uses.
   // Available actions are filled; unavailable ones stay in place, outlined and dimmed.
   // A finger resting on an available target lights it until it moves or lifts.
+#ifdef HG_ROUND_UI
+  auto pill_at = [&](UiRect r,TouchControl control,std::string_view label,bool enabled,int size=18) {
+    if(!r.w) return;
+    const int radius=r.h/2;
+    const uint16_t fill=control==m.pressed ? lit : surface;
+    if(enabled) c.fill_round_rect(r.x,r.y,r.w,r.h,radius,fill);
+    else {
+      c.fill_round_rect(r.x,r.y,r.w,r.h,radius,kFaint);
+      c.fill_round_rect(r.x+2,r.y+2,r.w-4,r.h-4,radius-2,0);
+    }
+    geist::text(c,r.x+(r.w-geist::width(label,size))/2,r.y+(r.h-(size==24?30:22))/2,label,size,
+                enabled?text:dim,enabled?fill:0);
+  };
+  auto pill = [&](TouchControl control,std::string_view label,bool enabled) {
+    pill_at(control_rect(control,m),control,label,enabled);
+  };
+  UiRect slot_rect{};
+  // Home's action row is read from the desk: its labels are 24px (R-06). Elsewhere 18px.
+  const int slot_size = 24;
+  auto draw_control = [&](TouchControl control) {
+    switch(control) {
+      case TouchControl::Silence: pill_at(slot_rect,control,"Mute voice",m.can_silence,slot_rect.w?slot_size:18); break;
+      case TouchControl::Stop: {
+        // Requested is not stopped: the target stays inert until an outcome arrives. Home
+        // already says "Stop requested" in its headline, so its target just says "Requested".
+        // Requested is not stopped: the target stays in place, inert, naming the request.
+        // Quick controls keep it in place too; how work ended goes on the status line.
+        const auto r=m.quick_controls ? kQuickStop : slot_rect.w ? slot_rect : control_rect(control,m);
+        pill_at(r,control,"Stop task",m.can_stop,slot_rect.w?slot_size:18);
+        break;
+      }
+      case TouchControl::Discard: pill_at(slot_rect.w?slot_rect:control_rect(control,m),control,"Discard",true,slot_rect.w?slot_size:18); break;
+      case TouchControl::Finish: pill_at(slot_rect.w?slot_rect:control_rect(control,m),control,"Finish",true,slot_rect.w?slot_size:18); break;
+      case TouchControl::Talk: pill_at(slot_rect.w?slot_rect:control_rect(control,m),control,m.tap_talk?"Tap to talk":"Hold to talk",true,slot_rect.w?slot_size:18); break;
+      case TouchControl::Reply: {
+        // The arrow (swipe up) stays when the 24px label fits its slot; a half slot drops it.
+        const auto r=slot_rect.w?slot_rect:control_rect(control,m);
+        const int size=slot_rect.w?slot_size:18;
+        pill_at(r,control,geist::width("Read reply  ↑",size)+20<=r.w?"Read reply  ↑":"Read reply",true,size);
+        break;
+      }
+      case TouchControl::Settings: pill(control,"Settings",true); break;
+      case TouchControl::Yes: pill(control,"Yes",true); break;  // equal emphasis: no assent colour
+      case TouchControl::No: pill(control,"No",true); break;
+      default: break;
+    }
+  };
+#else
   auto pill_at = [&](UiRect r,TouchControl control,std::string_view label,bool enabled) {
     if(!r.w) return;
     const int radius=r.h/2;
@@ -587,6 +663,7 @@ void Ui::render_companion(const UiModel& m) {
       default: break;
     }
   };
+#endif
   // Return to Home: the view title with a drawn chevron (the atlas has no ‹ glyph).
   auto back = [&](std::string_view title) {
     center(55,title,24,text);
@@ -663,21 +740,38 @@ void Ui::render_companion(const UiModel& m) {
   } else if(visible) {
     // With both a support line and actions, the caption stack tightens to keep clearances.
     const bool tight=n>0 && !m.detail.empty();
+#ifdef HG_ROUND_UI
+    // Glance sizes (R-06): status 24px in the title slot; the state word 44px where it fits
+    // below the portrait box (y288) without a new row, else 30px; the detail line 24px.
+    if(m.link!=Link::Online) center(48,"OFFLINE",24,dim);
+    else if(m.screen==Screen::Ready && !m.outcome_word.empty()) center(48,"Last task: "+m.outcome_word,24,dim);
+    draw_time();  // the time: in an otherwise empty title slot, or the Clock face's digits
+    portrait();
+    const int big=tight ? -1 : glance_text(nullptr,0,0,m.headline,text);
+    if(big>0 && big<=400) glance_text(&c,(466-big)/2,276,m.headline,text);
+    else center(tight?278:292,m.headline,30,text);
+    if(!m.detail.empty()) {
+      const auto fitted=geist::fit(m.detail,360,24);
+      geist::text(c,(466-geist::width(fitted,24))/2,tight?316:334,fitted,24,dim);
+    }
+#else
     // The title slot carries status, not a name: offline, or how the last task ended.
     if(m.link!=Link::Online) center(53,"OFFLINE",18,dim);
     else if(m.screen==Screen::Ready && !m.outcome_word.empty()) center(53,"Last task: "+m.outcome_word,18,dim);
-#ifdef HG_ROUND_UI
-    draw_time();  // the time: in an otherwise empty title slot, or the Clock face's digits
-#endif
     portrait();
     center(tight?280:299,m.headline,30,text);
     if(!m.detail.empty()) center(tight?322:342,m.detail,18,dim);
+#endif
     for(int i=0;i<n;++i) {
       slot_rect = n==1 ? UiRect{128,356,210,55} : i==0 ? UiRect{91,356,138,55} : UiRect{237,356,138,55};
       draw_control(slots[i]);
       slot_rect = {};
     }
+#ifdef HG_ROUND_UI
+    if(control_rect(TouchControl::Controls,m).w) center(395,"↓  Controls",24,dim);
+#else
     if(control_rect(TouchControl::Controls,m).w) center(402,"↓  Controls",18,dim);
+#endif
   } else {
     if(m.quick_controls) back("Quick controls");
     else if(m.touch_prompt) center(55,m.headline,24,text);

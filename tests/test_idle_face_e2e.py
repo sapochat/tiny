@@ -95,7 +95,7 @@ def test_status_outranks_the_time(rig):
     assert ui(r.s)['view'] == 'home'
     assert ui(r.s)['title'] == 'Last task: Finished'
     assert not shows(r, '10:46', 44, TEXT, TITLE), 'time drawn over status'
-    assert shows(r, 'Last task: Finished', 18, DIM, TITLE)
+    assert shows(r, 'Last task: Finished', 24, DIM, TITLE)  # R-06: Home's title slot is 24px
     # Clock mode keeps the status in the title slot and the time in its own band.
     assert r.s.console('set idle_face clock').startswith('@ok')
     r.s.run_for(0.4)

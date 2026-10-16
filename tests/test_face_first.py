@@ -110,4 +110,6 @@ def test_tap_mode_and_no_reply_speaking_cue(rig):
     from test_face_first_font import rgb
     assert 'reply' not in ui(s)['controls'] and {'silence','stop'} <= set(ui(s)['controls'])
     assert find_text(s,'↑  Read reply',14,rgb(164,164,169)) is None
-    assert find_text(s,'Read reply  ↑',18,rgb(240,239,235),rgb(32,32,35)) is None
+    for size in (18, 24):  # R-06: Home's action row labels are 24px
+        assert find_text(s,'Read reply  ↑',size,rgb(240,239,235),rgb(32,32,35)) is None
+        assert find_text(s,'Read reply',size,rgb(240,239,235),rgb(32,32,35)) is None
