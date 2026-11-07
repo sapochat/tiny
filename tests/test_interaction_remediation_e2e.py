@@ -279,11 +279,11 @@ def test_f5_reading_and_controls_show_compact_outcome_in_place(ix, case):
     r.snap(f'controls-{case}')
     assert 'stop' not in ui(s)['controls']
     # Pass 6: Quick controls carry no status row; Home's title slot names the ending.
-    assert not r.shows('Last task: ' + word, 18, DIM, 0, (0, 100, 466, 366))
+    assert not r.shows('Last task: ' + word, 24, DIM, 0, (0, 100, 466, 366))  # R-06: Home's title slot is 24px
     tap(s, *r.control('home'))
     s.run_for(0.3)
     assert ui(s)['view'] == 'home' and s.device.screen() == 'ready'
-    assert r.shows('Last task: ' + word, 18, DIM, 0, (0, 44, 466, 40))
+    assert r.shows('Last task: ' + word, 24, DIM, 0, (0, 44, 466, 40))  # R-06: Home's title slot is 24px
     assert not r.shows(word, 18, DIM, 0, (238, 329, 160, 60)), 'outcome word in the Stop slot'
 
 

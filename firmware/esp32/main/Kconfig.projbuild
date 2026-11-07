@@ -63,6 +63,15 @@ menu "Hermes Gadget"
             draw the expression video; every other board compiles against a
             frame-free stand-in with the same clip metadata.
 
+    config HG_ROUND_UI
+        bool "Include round-companion-only interface features"
+        default y if HG_BOARD_AMOLED_175 || HG_BOARD_AMOLED_175C
+        default n
+        help
+            Idle face modes, the clock faces and later glance features drawn
+            only by the 466px round companion. Other boards compile none of
+            this code or its assets, so their app images do not grow.
+
     menu "Custom board pins"
         depends on HG_BOARD_CUSTOM
 

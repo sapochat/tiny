@@ -7,7 +7,12 @@ On the 466px round touchscreen, swipe down from Home to Quick controls and tap
 Each card leads with a small coloured status mark and word (**Finished** green,
 **Failed** red, **Stopped** amber for a cancelled job, **Working** blue,
 **Unknown** grey), then up to two lines of the host's own final-reply excerpt,
-ending in "…" when longer. A job with no text says **No reply text**. Tap a
+ending in "…" when longer. A job with no text says **No reply text**. The
+status line also says how long ago the job last changed, right-aligned: **Just
+now**, **12 min**, **3 hr**, **Yesterday** (the host's previous local calendar
+day) or **3 days**. Ages come from the host's `updated_at` and the host time Tiny
+already keeps, so they move with the device clock; without a trusted host time
+(an older host, or 12 hours offline) no age is shown rather than a guess. Tap a
 card to read it; vertical swipes scroll using the normal reading layout, and the
 reader leads with the stage mark and word above the body. It shows six text rows
 below that header; vertical swipes still reach the entire retained excerpt. With more than three
@@ -53,16 +58,23 @@ place; recording, speech, approval, offline and errors never wait for motion.
 Navigation during speech is immediate. Text scrolling and paging stay immediate.
 
 Offline, connecting and connection-error screens use the same companion typography.
-They name the state, its consequence, and the next step. On offline screens, hold
-**HERMES** at the top for Settings, then use the existing Wi-Fi setup flow where
-supported. USB connection setup remains available. Pairing, detailed Settings,
+They name the state, its consequence, and the next step. On the round board each
+also shows two targets: **Retry now** and **Settings**. Retry now tries the
+connection at once instead of waiting out the backoff, using the same reconnect
+path as the `reconnect` console command. While an attempt is already under way it
+says **Already connecting** and opens nothing new; with Wi-Fi down it says
+**Waiting for Wi-Fi**; on **Setup needed** it clears the error and tries once more
+with the same settings. Retry never resends work: a task cut off by the
+disconnect stays **Task status unknown**. **Settings** opens the local menu, where
+**Wi-Fi setup** lives where supported. Holding **HERMES** at the top still opens
+Settings as a shortcut. USB connection setup remains available. Pairing, detailed Settings,
 Wi-Fi setup, cards and images retain their existing functional layouts.
 
 | Starting view | Up / down | Right | Left |
 |---|---|---|---|
 | Home | Up opens the latest reply; down opens quick controls | No action | No action |
 | Response | Scroll text, including at either boundary | Home, retaining reading position | No action |
-| Quick controls | Adjust only the volume or brightness slider where the gesture starts | Home | No action |
+| Quick controls | On the round board, drag a slider to set its level; elsewhere adjust only the slider where the gesture starts | Home | No action |
 | Approval | Scroll the question | No action | No action |
 | Recording | No navigation | No navigation | No navigation |
 
@@ -114,11 +126,11 @@ Streaming follows new text only while at the bottom. Scrolling up holds your rea
 
 A gesture belongs to its starting view and to the revision of the target it touched: a Mute voice contact cannot quiet a newer stream, a Stop task contact cannot stop a newer turn, and a Discard or Finish contact cannot act on a later recording. A newly arrived/replaced approval cannot consume an older contact, and a control that appears under a resting finger does not take it. Ambiguous diagonals and drags outside a button do not decide anything. A stationary hold on Home starts push-to-talk after 120 ms; once recording has started, movement is ignored and lifting the original talk contact finishes normally. Another contact during recording does nothing unless it taps a visible Discard or Finish target.
 
-Quick controls are separate from the legacy settings/hardware-check menu. When Tiny is idle, quick controls show **Settings**; otherwise it is outlined and inert. Holding the title area at the top on Home for one second **while idle** still opens the menu, as do the physical chord and console command when idle. On the offline, connecting and pairing screens, holding the title (the top bar on rectangular touch boards) opens it too, because there is no other on-device route to Wi-Fi and server settings there; this works even when the last task's outcome is unknown, and never cancels or resends that work. Settings never stop a recording, speech or work: the chord and console are refused while busy, and a refused chord is consumed rather than acting as CANCEL. A pending title hold is consumed if its view or idle eligibility changes; it cannot cancel a recording or speech that starts later. Starting a recording also invalidates older navigation contacts, without changing the original touch-owned TALK release. Its local item-navigation and Wi-Fi setup gestures are unchanged.
+Quick controls are separate from the legacy settings/hardware-check menu. When Tiny is idle, quick controls show **Settings**; otherwise it is outlined and inert. Holding the title area at the top on Home for one second **while idle** still opens the menu, as do the physical chord and console command when idle. On the round board's offline, connecting and setup-needed screens, a visible **Settings** target opens it. On those screens and pairing, holding the title (the top bar on rectangular touch boards) opens it too; this works even when the last task's outcome is unknown, and never cancels or resends that work. Settings never stop a recording, speech or work: the chord and console are refused while busy, and a refused chord is consumed rather than acting as CANCEL. A pending title hold is consumed if its view or idle eligibility changes; it cannot cancel a recording or speech that starts later. Starting a recording also invalidates older navigation contacts, without changing the original touch-owned TALK release. Its local item-navigation and Wi-Fi setup gestures are unchanged.
 
 ## New chat
 
-Tiny keeps one conversation with Hermes until you start another. On the 466px round touchscreen, swipe down to quick controls and **hold New chat for one second**. It sits to the right of Mute voice and Stop task. While your finger rests on it, the pill lights and reads **Hold 1 sec**; at one second Tiny sends `session.new`, returns to Home, and shows **Starting a new session** until Hermes answers. A tap only shows **Hold 1 sec** for two seconds, and a finger that moves off the pill does nothing, so you can't start over by accident.
+Tiny keeps one conversation with Hermes until you start another. On the 466px round touchscreen, swipe down to quick controls and **hold New chat for one second**. It sits below Mute voice, beside Recent. While your finger rests on it, the pill lights and reads **Hold 1 sec**; at one second Tiny sends `session.new`, returns to Home, and shows **Starting a new session** until Hermes answers. A tap only shows **Hold 1 sec** for two seconds, and a finger that moves off the pill does nothing, so you can't start over by accident.
 
 New chat is offered only when Settings would be (nothing recording, speaking, asking or working) and Tiny is connected. Otherwise it stays in place, outlined and inert. A finger that went down while it was available does nothing if Hermes starts work before the second is up.
 
@@ -194,15 +206,22 @@ Generic questions are not relabeled as permissions. Unsupported characters have
 a visible replacement glyph; full Unicode shaping and browser kerning are not
 implemented. Native results do not establish physical readability.
 
-Quick controls use **72×158px** rounded filled tracks labeled **Volume** and
-**Brightness**, with actual percentages, then **148×48px Mute voice** and **Stop
-task** targets, then **Recent** beside **Settings** (Settings alone, centred,
-when there is no recent work). All actions always stay in the same place and are
+Quick controls come in four bands. First, **88×114px** tracks labeled **Volume**
+and **Brightness**: drag anywhere along a track and the level follows your finger
+(top is 100%, bottom is 0%, or 10% for brightness), live; the value is saved once,
+when you lift. Both tracks draw the same light handle at the level and show the
+percentage inside the track, clear of the handle. A tap on a track changes nothing,
+and a sideways swipe that starts on one still goes Home. Then **Mute voice | Stop
+task** and **New chat | Recent** as **166×64px** and **156×64px** pairs, with
+24px labels, and finally **Settings** as one **166×48px** pill (Recent's place
+stays empty until the host offers the shelf). All actions always stay in the same place and are
 outlined when unavailable; Quick controls carry no status line, and status is
 never written inside a button. Home's title slot, where it used to say HERMES,
 shows **OFFLINE** when disconnected and **Last task: Finished / Stopped / Error /
-Unknown** once work has ended; otherwise it is empty. Home's idle support line
-is gone. On Home and in
+Unknown** once work has ended. When that job is on the Recent shelf, tapping
+**Last task: …** opens its result directly (a finger on it lights the title;
+holding it for a second still opens Settings instead); otherwise it shows the time (see Idle face
+below), or nothing. Home's idle support line is gone. On Home and in
 the reader, Stop task always holds the right slot of the action row while work
 is open (the left slot is Mute voice, or Read reply when a reply is waiting); a
 requested stop leaves it outlined and the status moves to the headline or the
@@ -216,7 +235,8 @@ Pairing, Settings and Wi-Fi setup use the same design on the round board: Geist
 on true black, no pixel font. Pairing shows the code in a large 44px face with
 the host command beneath it. Settings show one row at a time on a rounded card:
 the row name, its current value large, a one-line description, a dot for each
-row, and **Tap to change · Swipe for next** / **Hold the title to close**. The
+row, **Tap to change · Swipe for next**, and a **Done** button that closes
+Settings (holding the title still closes them too). The
 rows, values, tap/swipe/hold behaviour, the display check and the Wi-Fi setup
 flow are unchanged; Wi-Fi setup instructions are never truncated. Rectangular
 boards keep their existing renderer. Functional text on the round board is at
@@ -241,6 +261,7 @@ Tap CANCEL to move to the next item, then tap TALK to change it. On a touchscree
 | Speaker volume | Change volume in steps of 10 percent |
 | Screen brightness | Choose 10, 25, 50, 75, or 100 percent when the display supports it |
 | Talk mode | Choose hold-to-talk or tap-to-talk with silence detection |
+| Idle face | Round companion only: **Portrait**, **Portrait + time** (default) or **Clock** |
 | Microphone check | Show the live input level; nothing is saved or sent to Hermes |
 | Speaker check | Play a short, quiet tone at the current volume |
 | Display check | Show red, green, blue, white, and black bands |
@@ -251,8 +272,46 @@ Tap CANCEL to move to the next item, then tap TALK to change it. On a touchscree
 | Power off | Select twice to shut down a board with a power driver |
 | Wi-Fi setup | Start [phone-based setup](setup-board.md#set-up-wi-fi-with-your-phone) on ESP32 boards |
 
-Volume, brightness, talk mode, and screen timeout survive restarts. Unavailable drivers show as unavailable. These checks help you test the hardware; a completed tone does not prove that a physical speaker produced sound.
+Volume, brightness, talk mode, idle face and screen timeout survive restarts. Unavailable drivers show as unavailable. These checks help you test the hardware; a completed tone does not prove that a physical speaker produced sound.
 
 Screen timeout is off by default. When enabled, a brightness-capable display dims halfway through the idle period, then goes dark. The first button press or touch wakes it without recording or answering a prompt. Incoming replies and prompts wake it too. Recording, playback, settings, pairing and updates keep it awake. The processor and Wi-Fi remain running; this is screen sleep. Use the board's Power off control to shut down the device.
 
 Incoming confirmation prompts and firmware updates close settings. You cannot open settings during a prompt or update. The USB console also accepts `settings`, `settings close`, and `set brightness 50`.
+
+### Idle face (round companion)
+
+The 466px round board chooses what idle Home shows with the **Idle face** setting (console key `idle_face`: `portrait`, `portrait_time` or `clock`):
+
+- **Portrait**: the animated face alone, as before.
+- **Portrait + time** (default): the face, with the local time at 44px in Home's title slot when nothing else uses it. The slot's precedence is connection status (**OFFLINE**), then **Last task: …**, then the time.
+- **Clock**: 72px digits under a smaller face; status keeps the title slot.
+
+The time is the Hermes host's local time, sent in `welcome` and every heartbeat ([protocol](protocol.md)). Tiny shows a 12-hour `h:mm` without a leading zero. When it does not know the time (an older host, or no sync for a day) it draws nothing, and Clock falls back to the full portrait; it never shows an invented or stale time. A new minute repaints only the time. The dim and sleep schedule is unchanged. Other boards do not build this feature (`CONFIG_HG_ROUND_UI`), so their firmware is unchanged.
+
+### Needs-you mark (round companion)
+
+When something waits for you, idle Home on the 466px round board shows one bright amber dot centred above the title slot. That means reply text you haven't opened yet (the same unread state as **Read reply**) or a timer that ended while nobody answered ([Timers](#timers-round-companion)). The dot persists until its reason clears: opening the reply removes it, waiting does not. It never says what is waiting, so it gives nothing away when someone else is at your desk, and it sits beside the title slot's status or time instead of replacing them. It shows only on idle Home: while Hermes is thinking or speaking, during a recording, or on another view it is not drawn. An approval needs no mark, because a question takes over the screen until you answer it. It uses state the device already has; there is no protocol change, and other boards don't build it (`CONFIG_HG_ROUND_UI`).
+
+### Timers (round companion)
+
+Hermes can set countdown timers on the 466px round board with its existing `gadget_action` tool, so "set a pasta timer for 9 minutes" works by voice. The device actions are:
+
+| Action | Arguments | Result |
+|---|---|---|
+| `timer.start` | `seconds` (1 to 86400, required), `label` (optional, up to 32 bytes) | the timer: `id`, `label`, `seconds`, `remaining_s`, `state` |
+| `timer.cancel` | `id` (optional when only one timer is set) | `cancelled` (the timer) and `timers` (how many remain) |
+| `timer.list` | none | `timers`, soonest first |
+
+Up to four run at once. With several set, `timer.cancel` without an `id` refuses and lists the ids rather than guessing. Cancelling a ringing timer also stops its alarm.
+
+While a timer runs, idle Home shows the time left (`9:00`, `1:02:05`) in place of **Hold to talk**, at 44px, with its label (or **Timer**) underneath; with several, the soonest one and **+N more**. Each second repaints only the countdown. On the offline and connecting screens the countdown takes the title (**Pasta · 8:58**).
+
+When a timer ends, Tiny takes over the screen from any view (Home, reading, Recent, quick controls, Settings or an offline screen): **Time’s up**, the timer's name, and one 250×100px **Dismiss**. It beeps locally, a short square tone (the speaker check's generator) about once a second, at the current volume. Only **Dismiss** ends it: swipes, taps elsewhere and the title hold do nothing. A recording keeps the screen until you release it (and nothing beeps into the microphone), and a question from Hermes still takes over; the alarm comes back after either while it is still ringing. A reply's speech interrupts the beep but not the alarm screen.
+
+After a minute unanswered the beeping stops and the alarm moves to Home: **Timer done** with the timer's name, a **Dismiss** target and the [needs-you mark](#needs-you-mark-round-companion), until you dismiss it.
+
+Timers count on the device's monotonic clock, not on the host's time, so they keep running and ring through Wi-Fi loss, and a host clock change (DST, NTP) does not move them. Nothing is sent to Hermes when a timer ends. They are kept in memory only: **a restart or power loss loses every timer, silently**. Other boards do not build timers (`CONFIG_HG_ROUND_UI`) and do not offer the actions.
+
+### Glance sizes (round companion)
+
+Home is read from across a desk, so on the 466px round board its state word (**Hold to talk**, **Speaking**, **Reply ready**, …) is 44px Geist whenever it fits under the face without adding a row. When an action row and a detail line both need that space (for example **Thinking** · Sending… or **Stop requested** · Waiting for Hermes to confirm), or the word is wider than 400px (**Task status unknown**), it stays 30px. The title-slot status (**OFFLINE**, **Last task: …**), the detail line, the action-row labels and **↓ Controls** are 24px; nothing functional on Home is smaller. In a half-width action slot **Read reply** drops its arrow so the 24px label fits. Reader, Recent, Settings and quick-controls text is read at arm's length and is unchanged. The 44px face is part of the round-only build (`CONFIG_HG_ROUND_UI`); other boards keep their sizes. These are native-simulator pixel sizes, not a physical legibility measurement.

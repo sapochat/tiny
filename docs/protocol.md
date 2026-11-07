@@ -11,6 +11,8 @@ Without that mutual negotiation no work messages are sent and the shelf is hidde
 - Each item has `work_id` (independent host UUID), `device_id`,
   `origin: {request, turn}`, `stage`, `result: {revision, glance}`, and Unix-second
   `created_at`, `updated_at`, `expires_at`. A glance is at most 240 characters.
+  A round client may show each card's age from `updated_at` and the welcome/ping
+  `time` field; without a trusted host time it shows none. No new field or message.
 - Stages are `running`, `finished`, `failed`, `cancelled`, `unknown`. Only matched
   turn lifecycle evidence establishes an outcome; final reply text is not completion.
   Disconnect/startup makes running records unknown. A duplicate start cannot revive
@@ -231,6 +233,8 @@ Hermes asks before some actions: destructive commands such as `/new`, a costly m
 | `{"type": "action.result", "id": "x1", "ok": false, "error": "color is required"}` | device → server |
 
 Devices must answer every `action` exactly once. The server times out after about 18 s.
+
+Actions are how devices add features without protocol changes. For example, the round 466px companion offers `timer.start {seconds, label?}`, `timer.cancel {id?}` and `timer.list`: local timers that run and ring on the device, including without a connection, and report nothing when they end ([Timers](using-gadget.md#timers-round-companion)).
 
 ### Telemetry and events (device → server)
 

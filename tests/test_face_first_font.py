@@ -35,14 +35,23 @@ def oracle(label, size, fg, bg=0):
         cursor += round(font.getlength(ch))
     return width,pixels
 
-def assert_text(s,label,size,y,fg,bg=0,x=None):
+def _in_pill(px,py,rect):
+    # Inside the rounded pill (radius h/2) that the renderer fills.
+    x,y,w,h=rect; r=h//2
+    if not (x<=px<x+w and y<=py<y+h): return False
+    cx=min(max(px,x+r),x+w-1-r); cy=min(max(py,y+r),y+h-1-r)
+    return (px-cx)**2+(py-cy)**2<=r*r
+def assert_text(s,label,size,y,fg,bg=0,x=None,pill=None):
     width,expected=oracle(label,size,fg,bg)
     if x is None: x=(466-width)//2
     actual=struct.unpack('<'+'H'*(466*466),s.device.framebuffer_rows())
-    # Include blank margins so extra fallback-box pixels cannot go unnoticed.
+    # Include blank margins so extra fallback-box pixels cannot go unnoticed. On a pill, a
+    # blank margin pixel outside its rounded fill is the glass, not the label (R-06: a 24px
+    # label's margin reaches the corner of a 138px pill); every glyph pixel is still compared.
     mismatches=[(xx,yy,actual[(y+yy)*466+x+xx],value)
                 for yy,row in enumerate(expected) for xx,value in enumerate(row)
-                if actual[(y+yy)*466+x+xx]!=value]
+                if actual[(y+yy)*466+x+xx]!=value
+                and not (pill and value==bg and not _in_pill(x+xx,y+yy,pill))]
     OUT.mkdir(parents=True,exist_ok=True)
     with (OUT/'font-comparisons.jsonl').open('a') as f:
         f.write(json.dumps(dict(label=label,size=size,x=x,y=y,mismatches=len(mismatches),
@@ -67,8 +76,10 @@ def test_native_ui_known_symbols_match_source_font(rig,view):
     def pill(name,label):
         from PIL import ImageFont
         x,y,w,h=s.status()['ui']['controls'][name]
-        width=sum(round(ImageFont.truetype(str(ROOT/'assets/fonts/Geist-Regular.ttf'),18).getlength(c)) for c in label)
-        assert_text(s,label,18,y+(h-22)//2,text,surface,x=x+(w-width)//2)
+        # R-06: Home/reader action row labels are 24px; R-08: so are quick controls' bands.
+        size=24 if y==356 or (view=='controls' and y in (250,322,394)) else 18
+        width=sum(round(ImageFont.truetype(str(ROOT/'assets/fonts/Geist-Regular.ttf'),size).getlength(c)) for c in label)
+        assert_text(s,label,size,y+(h-(30 if size==24 else 22))//2,text,surface,x=x+(w-width)//2,pill=(x,y,w,h))
     # Interaction v1 replaced the swipe-only footers with visible tap routes; the same
     # source-TTF oracle now checks their labels, and the reply body keeps ↑ ↓ › coverage.
     if view=='reading':
@@ -80,8 +91,8 @@ def test_native_ui_known_symbols_match_source_font(rig,view):
     elif view=='controls':
         assert_text(s,'Quick controls',24,55,text)
         pill('settings','Settings')
-    elif view=='idle': assert_text(s,'↓  Controls',18,402,dim)
-    elif view=='reply-ready': assert_text(s,'Read reply  ↑',18,372,text,surface)
+    elif view=='idle': assert_text(s,'↓  Controls',24,395,dim)  # R-06: 24px (was 18px at y402)
+    elif view=='reply-ready': assert_text(s,'Read reply  ↑',24,368,text,surface)  # R-06: 24px (was 18px at y372)
     else:
         pill('silence','Mute voice')
         pill('stop','Stop task')

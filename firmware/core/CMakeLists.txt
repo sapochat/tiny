@@ -2,6 +2,7 @@
 set(HG_CORE_SOURCES
     src/app.cpp
     src/app_bench.cpp
+    src/app_timer.cpp
     src/app_settings.cpp
     src/app_power.cpp
     src/canvas.cpp
@@ -29,6 +30,11 @@ if(ESP_PLATFORM)
   if(NOT CONFIG_HG_EXPRESSION_PACK)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE HG_NO_EXPRESSION_PACK)
   endif()
+  # Round-companion-only features and their assets (CONFIG_HG_ROUND_UI); other boards
+  # compile exactly the code they had before.
+  if(CONFIG_HG_ROUND_UI)
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC HG_ROUND_UI)
+  endif()
   return()
 endif()
 
@@ -48,6 +54,12 @@ target_compile_features(hg_core PUBLIC cxx_std_17)
 option(HG_EXPRESSION_PACK "Link the expression video frames" ON)
 if(NOT HG_EXPRESSION_PACK)
   target_compile_definitions(hg_core PRIVATE HG_NO_EXPRESSION_PACK)
+endif()
+# Round-companion-only features: the simulator serves the round board, so it keeps them
+# (each still checks round_companion() at run time, so other simulator boards are unchanged).
+option(HG_ROUND_UI "Build round-companion-only interface features" ON)
+if(HG_ROUND_UI)
+  target_compile_definitions(hg_core PUBLIC HG_ROUND_UI)
 endif()
 set_target_properties(hg_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(MSVC)

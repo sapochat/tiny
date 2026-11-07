@@ -49,18 +49,27 @@ def test_idle_face_updates_send_only_the_portrait(ix):
     s = ix.s
     s.run_for(.3)
     assert_glass_current(s, 'Home after connect')
+    clock_before = s.status()['ui'].get('clock')
     log, start, restore = watch(s)
     for _ in range(40):  # ~4 s of idle expression playback
         s.run_for(.1)
         assert_glass_current(s, 'idle face update')
     restore()
+    clock_after = s.status()['ui'].get('clock')
     flushes = per_flush(log, start)
     assert flushes, 'the face never animated on Home'
+    minute = 0
     for y0, y1, px in flushes:
         rows = y1 - y0
         assert rows <= 192, (y0, y1)
+        # R-05: Home's title slot shows the time and redraws once when the minute turns.
+        # That flush stays above the portrait and happens only if the shown time changed.
+        if y0 >= 30 and y1 <= 100 and px > rows * 192:
+            minute += 1
+            continue
         # The portrait is 192 px wide inside 466 px rows.
         assert px <= rows * 192, f'face update sent {px} px for {rows} rows (whole rows would be {rows * 466})'
+    assert minute <= (1 if clock_before != clock_after else 0), (minute, clock_before, clock_after)
 
 
 def test_press_highlight_sends_only_the_target(ix):

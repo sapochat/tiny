@@ -99,14 +99,16 @@ def test_speech_start_preempts_motion(ix):
     r.send('audio.start',stream=92,rate=16000,format='pcm16')
     assert ui(s)['speaking']
     assert not ui(s)['transition']['active']
-    assert r.shows('Mute voice',18,TEXT,SURFACE,tuple(ui(s)['controls']['silence']))
+    assert r.shows('Mute voice',24,TEXT,SURFACE,tuple(ui(s)['controls']['silence']))
 
 
 def test_offline_is_geist_and_recovery_settings_work(ix):
     r,s=ix,ix.s
     s.set_network(False); assert s.wait_screen('offline')
     assert r.shows('No network',30,TEXT)
-    assert r.shows('Hold title for Settings',18,DIM)
+    # R-09: the hint says what happens next; Settings is a visible target (the hold stays).
+    assert r.shows('Reconnects when Wi-Fi returns',18,DIM)
+    assert r.shows('Settings',24,TEXT,SURFACE,tuple(ui(s)['controls']['settings']))
     s.touch(True,233,62); s.run_for(1.3); s.touch(False); s.step()
     assert s.device.screen()=='settings'
 
@@ -117,7 +119,7 @@ def test_outcome_is_status_not_a_hit_target(ix):
     swipe(s,dx=100); swipe(s,dy=100); s.run_for(.3)
     assert 'stop' not in ui(s)['controls']
     # Pass 3: the outcome is a status line of its own; the Stop slot only ever holds Stop.
-    assert not r.shows('Last task: Finished',18,DIM,0,(0,100,466,366))   # pass 6: status lives on Home
+    assert not r.shows('Last task: Finished',24,DIM,0,(0,100,466,366))   # pass 6: status lives on Home (24px, R-06)
     assert not r.shows('Finished',18,DIM,0,(238,329,160,60))
     m=r.mark(); tap(s,233,292); tap(s,316,342)
     assert not (r.sent_types(m)&REQUESTS)

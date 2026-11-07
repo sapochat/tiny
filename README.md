@@ -23,6 +23,7 @@ Tiny is a fork of [Hermes Gadget](https://github.com/Adolanium/hermes-gadget-sdk
 
 - **Face-first layout** set in [Geist](assets/fonts/README.md): smooth proportional text, a state word under the face, and status in Home's title slot.
 - **Companion-style pairing, Settings, Wi-Fi setup and connection screens.** Offline, connecting and setup-needed screens say what's wrong, what it means and what to do next, instead of developer text in a pixel font.
+- **Visible ways out when Hermes is unreachable.** Offline, connecting and setup-needed screens show **Retry now** and **Settings**, and Settings has a **Done** button. Retry connects at once, opens nothing new while an attempt is under way, and never resends a task the disconnect cut off. See [Touch navigation](docs/using-gadget.md#touch-navigation).
 - **Every target sits inside the circle.** Each one lights up while a finger rests on it and never acts from the highlight alone.
 
 ### Touch and navigation
@@ -34,7 +35,7 @@ Tiny is a fork of [Hermes Gadget](https://github.com/Adolanium/hermes-gadget-sdk
 
 ### Quick controls
 
-Swipe down from Home for volume and brightness sliders, **Mute voice**, **Stop task**, **New chat**, **Recent** and **Settings**. Buttons keep fixed positions and are outlined when unavailable, rather than moving or disappearing.
+Swipe down from Home for four bands: volume and brightness sliders, **Mute voice | Stop task**, **New chat | Recent**, then **Settings**. The paired buttons are 64 px tall with 24 px labels. Drag anywhere along a slider and the level follows your finger, with the value inside the track; it's saved once when you lift. Buttons keep fixed positions and are outlined when unavailable, rather than moving or disappearing. See [Round AMOLED companion face](docs/using-gadget.md#round-amoled-companion-face-466466).
 
 ### Mute is not Stop
 
@@ -50,7 +51,7 @@ When Hermes asks before doing something, the whole question scrolls, and equal *
 
 ### Recent work
 
-The last eight jobs (seven days at most) sit on a shelf as cards, each with a coloured outcome (Finished, Failed, Stopped, Working, Unknown) and an excerpt of the reply. Tap a card to read it. The shelf is kept on the host ([`plugin/work.py`](plugin/work.py)), so it survives restarts on both sides, and opening a job never reruns it. A job cut off by a disconnect shows as Unknown, not Finished. See [Recent results](docs/using-gadget.md#recent-results).
+The last eight jobs (seven days at most) sit on a shelf as cards, each with a coloured outcome (Finished, Failed, Stopped, Working, Unknown) and an excerpt of the reply. Each card says how long ago it ran (**12 min**, **Yesterday**), and tapping **Last task: …** on Home opens that job's result in one tap. Tap a card to read it. The shelf is kept on the host ([`plugin/work.py`](plugin/work.py)), so it survives restarts on both sides, and opening a job never reruns it. A job cut off by a disconnect shows as Unknown, not Finished. See [Recent results](docs/using-gadget.md#recent-results).
 
 ### Replies go to the right request
 
@@ -66,6 +67,13 @@ Either way, memory, Recent results and settings stay. See [New chat](docs/using-
 ### Knows the time
 
 Hermes sends its wall clock and timezone when Tiny connects and on every heartbeat, so Tiny needs no NTP. It keeps counting through Wi-Fi drops and stops claiming a time 12 hours after its last sync. Older devices ignore the field, and older hosts just leave it out. See [the protocol](docs/protocol.md).
+
+- **An idle face with the time.** The **Idle face** setting picks **Portrait**, **Portrait + time** (default: the time at 44 px in Home's title slot whenever no status needs it) or **Clock** (72 px digits under a smaller face). Nothing is drawn when Tiny doesn't know the time. Round boards only (`CONFIG_HG_ROUND_UI`). See [Idle face](docs/using-gadget.md#idle-face-round-companion).
+- **A mark when something needs you.** A bright dot above Home's title slot while unread reply text waits. It says nothing about what is waiting, stays until you've opened it, and sits beside the time or status rather than replacing it. See [Needs-you mark](docs/using-gadget.md#needs-you-mark-round-companion).
+
+### A timer that rings without Wi-Fi
+
+Ask Hermes for "a pasta timer for 9 minutes" and it sets one on Tiny through its existing device-action tool (`timer.start`, `timer.cancel`, `timer.list`); there is no protocol or plugin change. The countdown replaces Home's state word at 44 px and keeps running on the device's own clock through Wi-Fi drops and host clock changes. When it ends, Tiny takes over the screen with **Time’s up**, a large **Dismiss** and a local beep. If nobody answers for a minute the beeping stops, and Home keeps the needs-you mark and a **Dismiss** until you clear it. A restart loses timers. Round boards only (`CONFIG_HG_ROUND_UI`). See [Timers](docs/using-gadget.md#timers-round-companion).
 
 ### A faster display
 
@@ -93,17 +101,6 @@ Each board also carries only the art it draws:
 
 - **Workflow tests** drive the real device core and the production device hub over loopback with disposable stores, plus a lane against a real Hermes gateway. They cover navigation, touch ownership, stop outcomes, the shelf, approvals, New chat, idle reset, time and the display path.
 - **Screenshot checks.** [`tools/design_capture.py`](tools/design_capture.py) walks the core through every screen, confirms each one reached its intended state, and produces byte-identical captures from run to run, so before/after comparisons show only real changes.
-
-## In progress
-
-These are being built on the `tiny/improve` branch and are not on `main` yet:
-
-- An idle face with the time (Portrait, Portrait + time or Clock). Until it lands, Tiny receives the time but doesn't draw it.
-- Larger Home text, and a small mark when something needs you.
-- Visible **Retry now** and **Settings** on the offline screens, and **Done** in Settings.
-- Quick controls in four bands, with taller targets and sliders you can drag from anywhere.
-- How long ago each Recent job ran, and a tappable **Last task**.
-- A countdown timer Hermes can set, with a local alarm that works without Wi-Fi.
 
 ## What comes from Hermes Gadget
 

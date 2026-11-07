@@ -37,12 +37,16 @@ enum class Screen : uint8_t {
 
 enum class Link : uint8_t { Offline, Network, Connecting, Online };
 
-enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, Other, Recent, Result };
+// Alarm: a fired local timer (R-13) has the screen until Dismiss; only that target acts.
+enum class TouchView : uint8_t { Home, Response, Controls, Approval, Recording, Other, Recent, Result, Alarm };
 // Stop means "Stop work" (a cancellation request). Silence only quiets local playback.
-// NewChat acts on a one-second hold, never on a tap. Shelf targets (Recent onward) stay last.
+// NewChat acts on a one-second hold, never on a tap. Shelf targets (Recent to Next) follow;
+// Retry (connection screens) and Done (round Settings) are local recovery routes (R-09).
+// Dismiss ends a fired local timer (R-13): on the alarm, and on Home once it stops ringing.
 enum class TouchControl : uint8_t { None, Volume, Brightness, Stop, Yes, No, Reply, Silence, Discard, Finish,
-                                    Talk, Controls, Home, Settings, NewChat, Recent, Work0, Work1, Work2, Next };
-constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::Next) + 1;
+                                    Talk, Controls, Home, Settings, NewChat, Recent, Work0, Work1, Work2, Next,
+                                    Retry, Done, LastTask, Dismiss };
+constexpr unsigned kTouchControls = static_cast<unsigned>(TouchControl::Dismiss) + 1;
 const char* control_name(TouchControl c);
 // The word a host work stage reads as on screen (\"cancelled\" reads \"Stopped\").
 const char* stage_word(const std::string& stage);
@@ -70,6 +74,10 @@ struct UiModel {
   bool prompt_unread = false;  // touch question not yet read to its end: answers are inert
   bool work_available = false, recent = false, result = false;
   std::vector<std::string> work_rows;   // "stage\nglance" for the visible shelf page
+  // R-10: each visible card's age ("12 min", "Yesterday"); empty without a trusted host time.
+  std::vector<std::string> work_ages;
+  // R-10: Home's "Last task" title opens that job's result (its record is on the shelf).
+  bool last_task = false;
   uint8_t work_page = 0, work_pages = 0;  // shelf page index and count (paging shows when > 1);
                                           // round settings reuse them for the row position
   // The target under a finger that has not yet moved or lifted; drawn lit, flushed alone.
@@ -101,6 +109,22 @@ struct UiModel {
   // instead of the header + text layout.
   bool hero = false;
   uint8_t caption_lines = 1;  // hero: lines the detail may wrap to (then "..")
+#ifdef HG_ROUND_UI
+  // Idle Home's host local time ("h:mm"), empty when unknown or not shown; clock_face draws
+  // it large with a small portrait (Clock idle face), otherwise it fills an empty title slot.
+  std::string clock;
+  bool clock_face = false;
+  // Idle Home's needs-you mark (R-07): why something waits for the user ("reply": unread
+  // text; "timer": a timer has fired), or empty. Drawn as one content-free dot.
+  std::string needs_you;
+  // Local timers (R-13). alarm: a fired timer has the screen (headline/detail say which).
+  // timer_done: it stopped ringing unanswered; Home offers Dismiss. timer_slot: where the
+  // countdown timer_text is drawn: 1 Home's state word (44px), 2 a connection screen's
+  // title; each second repaints only that band.
+  bool alarm = false, timer_done = false;
+  uint8_t timer_slot = 0;
+  std::string timer_text;
+#endif
 };
 
 struct UiLayout {
@@ -139,6 +163,11 @@ class Ui {
   int expression_frame() const { return face_index_; }
   std::vector<std::string> body_lines(std::string_view text, const UiModel& m) const;
   bool round_companion() const { return panel_.round && panel_.width == 466 && panel_.height == 466; }
+#ifdef HG_ROUND_UI
+  // What Home's title slot shows, by precedence: connection status, how the last task
+  // ended, then the time. Empty when nothing occupies it.
+  static std::string title_slot(const UiModel& m);
+#endif
   bool title_hit(int x, int y) const {
     if (round_companion()) return x >= 150 && x < 316 && y >= 45 && y < 92;
     return x >= ox_ && x < ox_ + info_.width && y >= oy_ && y < oy_ + layout_.top_h;
@@ -153,10 +182,12 @@ class Ui {
     return !m.quick_controls && (m.screen == Screen::Pairing || m.screen == Screen::Settings || m.screen == Screen::Setup);
   }
   void render_local(Canvas& c, const UiModel& m);
-  // Quick controls' action row: Mute voice, Stop task, New chat; even 8px gaps inside the glass.
-  static constexpr UiRect kQuickSilence{57,318,112,48}, kQuickStop{177,318,112,48}, kQuickNewChat{297,318,112,48},
-                          kQuickSettings{236,386,104,42},
-                          kQuickSettingsAlone{181,386,104,42};
+  // Quick controls in four bands (R-08): sliders, Mute voice | Stop task, New chat | Recent,
+  // then Settings alone. Paired targets are 64px tall; every corner stays in the safe circle.
+  static constexpr UiRect kQuickVolume{111,126,88,114}, kQuickBrightness{267,126,88,114},
+                          kQuickSilence{62,250,166,64}, kQuickStop{238,250,166,64},
+                          kQuickNewChat{72,322,156,64}, kQuickRecent{238,322,156,64},
+                          kQuickSettings{150,394,166,48};
   static UiRect prompt_answer_rect(bool yes) { return yes ? UiRect{238,296,150,96} : UiRect{78,296,150,96}; }
   // The 466px companion's shared bottom action row (Home, recording and reading):
   // at most two targets, in priority order. Drawing and hit testing both use it.
@@ -216,6 +247,10 @@ class Ui {
   bool motion_clock_ = false;  // the slide clock has started (after the destination is cached)
   void flush_bands(const int16_t* lo, const int16_t* hi);
   uint32_t companion_hash_ = 0;
+#ifdef HG_ROUND_UI
+  std::string companion_clock_;  // the time on the glass; a minute change repaints only it
+  std::string companion_timer_;  // the countdown on the glass; a new second repaints only it
+#endif
   TouchControl companion_pressed_ = TouchControl::None;
   int companion_level_ = -1;
   bool valid_ = false;

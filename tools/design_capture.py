@@ -38,6 +38,8 @@ REPO = Path(__file__).resolve().parents[1]
 W = 466
 HOST_TIME = 1_792_000_000  # 2026-10-15 ~05:46 UTC; the host clock every capture shows
 HOST_OFFSET = -7 * 3600   # America/Los_Angeles in October (PDT)
+# The work journal's clock (updated_at, R-10 card ages): fixed per job so ages repeat.
+WORK_NOW = [HOST_TIME - 60]
 PORTRAIT = (137, 96, 192, 192)  # the animated face's box on Home and the connection screens
 
 SHORT = 'Lamp is on.'
@@ -128,6 +130,15 @@ class Capture:
         from hermes_gadget_plugin.hub import DeviceHub
         from hermes_gadget_plugin.store import DeviceStore
         tmp = Path(tempfile.mkdtemp(prefix='cap', dir=os.environ.get('TMPDIR')))
+        import types
+        import hermes_gadget_plugin.work as work_journal
+        # The journal clock is module state: replace it only while this capture has rigs
+        # open, and restore the real one in close(), or every later user of the journal in
+        # the same process (other tests) stamps each job with one frozen time.
+        if not self.open:
+            self._journal = (work_journal, work_journal.time)
+        work_journal.time = types.SimpleNamespace(time=lambda: WORK_NOW[0])
+        WORK_NOW[0] = HOST_TIME - 60
         lt = LoopThread()
         brain = _brain_class()()
         kw = dict(hub_kwargs or {})
@@ -159,6 +170,10 @@ class Capture:
         r.lt.run(r.hub.stop())
         r.lt.stop()
         self.open.remove(r)
+        if not self.open and getattr(self, '_journal', None):
+            module, real = self._journal
+            module.time = real
+            self._journal = None
 
     # shots ---------------------------------------------------------------------------------
     def shot(self, r, name, settle=0.35, same_ok=False, volatile=None, **expect):
@@ -246,7 +261,8 @@ def view(r):
     return ui(r.s)['view']
 
 
-def turn(r, t, text, outcome='success', request=True):
+def turn(r, t, text, outcome='success', request=True, ago=60):
+    WORK_NOW[0] = HOST_TIME - ago  # when the host journal records this job (R-10 ages)
     r.turn_start(t, request=('req-' + t) if request else None)
     if text:
         r.reply(text, turn=t)
@@ -342,7 +358,7 @@ def group_home(c: Capture):
         swipe(r.s, dy=100)
         c.shot(r, 'controls-idle-finished', view='controls', controls=lambda cs: 'settings' in cs)
         swipe(r.s, dx=100); r.s.run_for(0.35)
-        c.shot(r, 'home-last-task', view='home', activity='idle')
+        c.shot(r, 'home-last-task', view='home', activity='idle', controls=lambda cs: 'last_task' in cs)
         r.s.type_text('draft the email to Ana')
         req = [m for m in r.s.sent if m.get('type') == 'text'][-1]['id']
         r.turn_start('t2', request=req)
@@ -412,7 +428,10 @@ def group_connection(c: Capture):
     try:
         r.s.set_network(False)
         r.s.run_for(0.3)
-        c.shot(r, 'offline-plain', screen='offline')
+        c.shot(r, 'offline-plain', screen='offline', controls=lambda cs: {'retry', 'settings'} <= set(cs))
+        tap_ctl(r, 'retry')  # R-09: Retry with Wi-Fi down says so and opens nothing
+        c.shot(r, 'offline-retry-no-wifi', 0.2, screen='offline', detail='Hermes is out of reach')
+        r.s.run_for(2.7)  # the hint flash expires before the next state is captured
         r.s.set_network(True)
         assert r.s.wait_screen('ready', timeout=10)
         r.run(r.session.send_pairing('482913', 'hermes gadget pair 482913'))
@@ -426,7 +445,8 @@ def group_connection(c: Capture):
         assert r.s.wait_screen('ready', timeout=5)
         r.s.run_for(0.3)
         hold_title(r)
-        c.shot(r, 'settings-volume', 0.3, screen='settings', detail='Speaker volume')
+        c.shot(r, 'settings-volume', 0.3, screen='settings', detail='Speaker volume',
+               controls=lambda cs: 'done' in cs)
         swipe(r.s, dy=100)
         c.shot(r, 'settings-brightness', 0.2, screen='settings', detail='Screen brightness')
         swipe(r.s, dy=100)
@@ -479,7 +499,10 @@ def group_recent(c: Capture):
                                     ('six', 'Groceries added: oat milk, lemons, basil.', 'success'),
                                     ('seven', 'Reminder saved for Friday 9 am: compost delivery.', 'success'),
                                     ('eight', '', 'success')]:
-            turn(r, name, text, outcome)
+            # Oldest first, as they happened: three days ago up to just now.
+            ago = {'one': 3 * 86400, 'two': 26 * 3600, 'three': 9 * 3600, 'four': 3 * 3600,
+                   'five': 50 * 60, 'six': 12 * 60, 'seven': 3 * 60, 'eight': 20}[name]
+            turn(r, name, text, outcome, ago=ago)
         r.s.run_for(0.4)
         to_recent(r)
         c.shot(r, 'recent-8-page1', view='recent')
@@ -504,7 +527,71 @@ def group_recent(c: Capture):
         c.close(r)
 
 
-GROUPS = {'home': group_home, 'connection': group_connection, 'recent': group_recent}
+def group_idle(c: Capture):
+    """Idle face modes (R-05) and the glance layer added after the pass-4 baseline."""
+    r = c.make()
+    try:
+        assert r.s.console('set idle_face clock').startswith('@ok')
+        c.shot(r, 'home-clock-face', 0.5, view='home', clock=lambda t: bool(t))
+        assert r.s.console('set idle_face portrait').startswith('@ok')
+        c.shot(r, 'home-portrait-only', 0.5, view='home', title='')
+        assert r.s.console('set idle_face portrait_time').startswith('@ok')
+        # Needs-you (R-07): unread text from a host without lifecycle ends, read later.
+        swipe(r.s, dy=100); r.s.run_for(0.35)
+        swipe(r.s, dx=100); r.s.run_for(0.35)
+        r.send('reply', text=SHORT)
+        r.s.run_for(0.4)
+        to_home(r)
+        c.shot(r, 'home-needs-you', 0.5, view='home', needs_you='reply', title='10:46')
+        tap_ctl(r, 'reply'); r.s.run_for(0.35)
+        to_home(r)
+        c.shot(r, 'home-needs-you-cleared', 0.5, view='home', needs_you='')
+        hold_title(r)
+        to_row(r, 'Idle face')
+        c.shot(r, 'settings-idle-face', 0.2, screen='settings', detail='Idle face')
+    finally:
+        c.close(r)
+
+
+def act(r, name, args=None):
+    """A device action through the production hub, as Hermes's gadget_action calls it."""
+    import asyncio
+    fut = asyncio.run_coroutine_threadsafe(r.session.invoke_action(name, args or {}, timeout=5), r.lt.loop)
+    assert r.s.wait_wall(fut.done, timeout=7), f'{name} did not answer'
+    return fut.result()
+
+
+def group_timer(c: Capture):
+    """Local timers (R-13): countdown on Home and offline, the alarm, and a missed alarm."""
+    r = c.make()
+    try:
+        act(r, 'timer.start', {'seconds': 540, 'label': 'Pasta'})
+        c.shot(r, 'timer-home-countdown', 0.4, view='home', timer=lambda t: t['text'] == '9:00')
+        r.s.run_for(1.0)
+        c.shot(r, 'timer-home-next-second', 0.1, view='home', timer=lambda t: t['text'] == '8:59')
+        act(r, 'timer.start', {'seconds': 300, 'label': 'Eggs'})
+        c.shot(r, 'timer-home-two', 0.4, view='home', timer=lambda t: t['count'] == 2 and t['label'] == 'Eggs')
+        act(r, 'timer.cancel', {'id': act(r, 'timer.list')['timers'][0]['id']})
+        r.s.set_network(False)
+        c.shot(r, 'timer-offline', 0.4, screen='offline', timer=lambda t: t['state'] == 'running')
+        r.s.set_network(True)
+        assert r.s.wait_for(lambda: r.s.status()['phase'] == 'online', timeout=20)
+        act(r, 'timer.cancel')
+        act(r, 'timer.start', {'seconds': 2, 'label': 'Tea'})
+        r.s.run_for(2.2)
+        c.shot(r, 'timer-alarm', 0.2, view='alarm', timer=lambda t: t['state'] == 'ringing')
+        for _ in range(16):   # the alarm rings for a minute; pings keep the session up
+            r.s.run_for(4.0)
+            r.send('ping', ts=1)
+        c.shot(r, 'timer-missed', 0.3, view='home', needs_you='timer', headline='Timer done')
+        tap_ctl(r, 'dismiss')
+        c.shot(r, 'timer-dismissed', 0.4, view='home', needs_you='', timer=lambda t: t['state'] == 'none')
+    finally:
+        c.close(r)
+
+
+GROUPS = {'home': group_home, 'connection': group_connection, 'recent': group_recent, 'idle': group_idle,
+          'timer': group_timer}
 
 
 def transitions(c: Capture):

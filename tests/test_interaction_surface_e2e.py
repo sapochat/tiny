@@ -47,8 +47,13 @@ OUT = Path(os.environ.get('IX_ARTIFACTS', 'artifacts/interaction-v1/local'))
 TEXT, DIM, SURFACE, AMBER = rgb(240, 239, 235), rgb(164, 164, 169), rgb(32, 32, 35), rgb(212, 164, 92)
 SAFE_R = 228                      # the existing safe_target corner radius
 PORTRAIT = (137, 96, 192, 192)    # approved face position, compared with MP4 decodes elsewhere
-HEADLINE = (0, 286, 466, 56)      # 30px headline band (y299, or y289 above an action row)
-DETAIL = (0, 324, 466, 48)        # 18px detail band (y342, or y328 above an action row)
+# R-06 glance sizes: the state word is 44px (y276) where it fits, else 30px (y292, or y278 with
+# an action row and a detail line); the detail line is 24px (y334, or y316). Was 30/18px at
+# y299/289 and y342/328 (pass 4).
+HEADLINE = (0, 276, 466, 62)
+DETAIL = (0, 316, 466, 54)
+ACTION_ROW_Y = 356                # Home's action row: 24px labels (R-06); elsewhere 18px
+QUICK_ROWS = (250, 322, 394)      # R-08: quick controls' three action bands, 24px labels
 REQUESTS = {'text', 'audio.start', 'audio.end', 'audio.cancel', 'cancel', 'session.new', 'prompt.reply'}
 
 
@@ -251,20 +256,26 @@ class Rig:
     def rect(self, name):
         return ui(self.s)['controls'][name]
 
-    def label(self, name, text, size=18, fg=TEXT, bg=SURFACE):
-        return find_text(self.s, text, size, fg, bg, tuple(self.rect(name)))
+    def label(self, name, text, size=None, fg=TEXT, bg=SURFACE):
+        rect = tuple(self.rect(name))
+        if size is None:  # R-06/R-08: Home's action row and quick controls' bands are 24px
+            quick = self.s.status()['ui']['view'] == 'controls' and rect[1] in QUICK_ROWS
+            size = 24 if rect[1] == ACTION_ROW_Y or quick else 18
+        return find_text(self.s, text, size, fg, bg, rect)
 
-    def require_label(self, name, text, size=18, fg=TEXT, bg=SURFACE):
+    def require_label(self, name, text, size=None, fg=TEXT, bg=SURFACE):
         assert self.label(name, text, size, fg, bg), (name, text, 'label not rendered exactly (or truncated)')
 
     def shows(self, text, size, fg, bg=0, box=(0, 0, 466, 466)):
         return find_text(self.s, text, size, fg, bg, box) is not None
 
     def headline(self, text):
-        return self.shows(text, 30, TEXT, 0, HEADLINE)
+        # Exact source-TTF raster at the size the R-06 rule picks (pinned by
+        # test_glance_sizing_e2e); either way the whole word, never a cut one.
+        return self.shows(text, 44, TEXT, 0, HEADLINE) or self.shows(text, 30, TEXT, 0, HEADLINE)
 
     def detail(self, text):
-        return self.shows(text, 18, DIM, 0, DETAIL)
+        return self.shows(text, 24, DIM, 0, DETAIL)
 
     # evidence
     def snap(self, label):
@@ -927,7 +938,7 @@ def test_controls_and_return_have_visible_tap_routes(ix, talk_mode):
     s.console(f'set talk_mode {talk_mode}')
     m = r.mark()
     x, y = r.control('controls')
-    assert r.label('controls', '↓  Controls', 18, DIM, 0)
+    assert r.label('controls', '↓  Controls', 24, DIM, 0)  # R-06: 24px
     tap(s, x, y)
     assert ui(s)['view'] == 'controls'
     hx, hy = r.control('home')
@@ -1140,10 +1151,11 @@ def test_legacy_rectangular_board_cancel_capture_and_chord(ix):
 
 
 LABELS = {
-    'silence': ('Mute voice', 18, TEXT, SURFACE), 'stop': ('Stop task', 18, TEXT, SURFACE),
-    'discard': ('Discard', 18, TEXT, SURFACE), 'finish': ('Finish', 18, TEXT, SURFACE),
-    'talk': ('Hold to talk', 18, TEXT, SURFACE), 'settings': ('Settings', 18, TEXT, SURFACE),
-    'reply': ('Read reply  ↑', 18, TEXT, SURFACE), 'controls': ('↓  Controls', 18, DIM, 0),
+    # size None: Rig.label picks 24px on Home's action row (R-06), 18px elsewhere.
+    'silence': ('Mute voice', None, TEXT, SURFACE), 'stop': ('Stop task', None, TEXT, SURFACE),
+    'discard': ('Discard', None, TEXT, SURFACE), 'finish': ('Finish', None, TEXT, SURFACE),
+    'talk': ('Hold to talk', None, TEXT, SURFACE), 'settings': ('Settings', None, TEXT, SURFACE),
+    'reply': ('Read reply  ↑', None, TEXT, SURFACE), 'controls': ('↓  Controls', 24, DIM, 0),
     'yes': ('Yes', 18, TEXT, SURFACE), 'no': ('No', 18, TEXT, SURFACE),
 }
 
@@ -1179,7 +1191,7 @@ def test_new_controls_fit_safe_circle_and_render_supported_glyphs(ix):
     assert r.wait(lambda: ui(s)['speaking'])
     check('home-speaking-working', {'silence', 'stop'})
     tap(s, *r.control('stop'))
-    check('home-stop-pending', {'stop'}, {'stop': ('Stop task', 18, DIM, 0)})
+    check('home-stop-pending', {'stop'}, {'stop': ('Stop task', None, DIM, 0)})
     r.turn_end('geo', 'cancelled')
     assert r.wait(lambda: ui(s)['activity'] == 'idle')
     s.press('talk')
@@ -1199,10 +1211,10 @@ def test_new_controls_fit_safe_circle_and_render_supported_glyphs(ix):
     # Remediation F5: once work has ended, the inert Stop target names its ending
     # (completed_reading ends with success), still an exact source-TTF raster.
     assert 'stop' not in ui(s)['controls']
-    assert not r.shows('Last task: Finished',18,DIM,0,(0,100,466,366))   # pass 6: status lives on Home
+    assert not r.shows('Last task: Finished',24,DIM,0,(0,100,466,366))   # pass 6: status lives on Home (24px, R-06)
     assert not r.shows('Finished',18,DIM,0,(238,329,160,60))
     check('controls-idle', {'silence', 'settings', 'home'},
-          {'silence': ('Mute voice', 18, DIM, 0),
+          {'silence': ('Mute voice', 24, DIM, 0),
            'home': ('Quick controls', 24, TEXT, 0)}, hero=False)
     r.send('prompt', id='geo-q', title='Permission', text='Allow?')
     s.run_for(0.7)

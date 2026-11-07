@@ -122,7 +122,7 @@ Hermes asks before destructive commands (`/new`, `/undo`), costly model switches
 
 ### Agent tools and Hermes tool search
 
-Hermes keeps the core tool schema narrow. Plugin tools are therefore deferred behind its tool-search bridge (`tool_search` / `tool_describe` / `tool_call`), and their names and descriptions appear in the bridge's manifest. A model invokes `gadget_action` through `tool_call`, and the end-to-end test exercises exactly that. The per-device context names the available actions so the model knows they exist.
+Hermes keeps the core tool schema narrow. Plugin tools are therefore deferred behind its tool-search bridge (`tool_search` / `tool_describe` / `tool_call`), and their names and descriptions appear in the bridge's manifest. A model invokes `gadget_action` through `tool_call`, and the end-to-end test exercises exactly that. The per-device context names the available actions so the model knows they exist. On the round companion these include `timer.start`, `timer.cancel` and `timer.list`, so a spoken "set a pasta timer for 9 minutes" becomes a `gadget_action` call with no plugin change; the timer then runs and rings on the device alone ([Timers](using-gadget.md#timers-round-companion)).
 
 ## Making replies fast
 

@@ -104,6 +104,12 @@ void App::load_settings() {
   brightness_ = static_cast<uint8_t>(std::max(5, std::min(100, std::atoi(setting("brightness", "100").c_str()))));
   if (hal_.display && hal_.display->info().has_backlight) hal_.display->set_backlight(brightness_);
   screen_timeout_ms_ = static_cast<uint32_t>(std::max(0, std::min(3600, std::atoi(setting("screen_timeout", "0").c_str())))) * 1000;
+#ifdef HG_ROUND_UI
+  {
+    const std::string face = setting("idle_face", "portrait_time");
+    idle_face_ = face == "portrait" ? IdleFace::Portrait : face == "clock" ? IdleFace::Clock : IdleFace::PortraitTime;
+  }
+#endif
   activity_at_ = now();
   display_dimmed_ = display_sleeping_ = false;
 }
@@ -184,6 +190,9 @@ void App::begin() {
 
   if (hal_.display) ui_ = std::make_unique<Ui>(*hal_.display);
   add_display_bench();
+#ifdef HG_ROUND_UI
+  add_timer_actions();
+#endif
   phase_ = Phase::Boot;
   phase_since_ = now();
   boot_until_ = now() + kBootScreenMs;
@@ -239,6 +248,31 @@ void App::connect_now() {
   log(LogLevel::Info, std::string("connecting to ") + server_url_);
   hal_.transport->connect(server_url_, proto::kSubprotocol);
   update_model();
+}
+
+void App::retry_connection() {
+  if (!network_up_) {
+    set_hint_flash("Waiting for Wi-Fi");
+    update_model();
+    return;
+  }
+  const bool in_flight = phase_ == Phase::Handshake || (phase_ == Phase::Connecting && transport_active_);
+  if (fatal_.empty() && (in_flight || phase_ == Phase::Online)) {
+    if (in_flight) set_hint_flash("Already connecting");
+    update_model();
+    return;
+  }
+  if (!fatal_.empty()) {
+    // Setup needed (the server refused this device): try once more with the same settings.
+    fatal_.clear();
+    if (phase_ == Phase::Connecting || phase_ == Phase::Handshake || phase_ == Phase::Online) {
+      hal_.transport->close();
+      drop_session("manual retry");
+    }
+  }
+  backoff_ = 0;
+  log(LogLevel::Info, "retry now");
+  connect_now();
 }
 
 void App::schedule_reconnect() {
@@ -441,6 +475,8 @@ void App::h_work(const json::Value& m) {
     item.stage = r["stage"].as_string();
     item.glance = r["result"]["glance"].as_string();
     item.revision = r["result"]["revision"].as_int();
+    item.turn = r["origin"]["turn"].as_string();
+    if (r["updated_at"].is_number()) item.updated = static_cast<int64_t>(r["updated_at"].as_number());
     if (item.id.empty() || item.id.size() > 64 || item.glance.size() > 960) continue;
     for (const auto& old : recent_)
       if (old.id == item.id && old.revision == item.revision) item.scroll = old.scroll;
@@ -697,6 +733,9 @@ void App::h_audio_start(const json::Value& m) {
     return;
   }
   in_stream_ = static_cast<int>(m["stream"].as_int(0));
+#ifdef HG_ROUND_UI
+  tone_out_ = false;  // begin() cut the alarm tone; this stream is speech
+#endif
   out_turn_ = !turn.empty() ? turn : (work_ == Work::Started ? active_turn_ : std::string());
   ++output_epoch_;
   last_turn_rx_ = now();
@@ -736,7 +775,23 @@ void App::stop_playback() {
   in_stream_ = -1;
 }
 
-bool App::speaking() const { return hal_.speaker && (in_stream_ >= 0 || hal_.speaker->busy()); }
+bool App::speaking() const {
+#ifdef HG_ROUND_UI
+  if (tone_out_ && in_stream_ < 0) return false;  // the timer alarm's tone is not speech
+#endif
+  return hal_.speaker && (in_stream_ >= 0 || hal_.speaker->busy());
+}
+
+bool App::play_tone(int16_t amplitude, uint32_t ms) {
+  if (!hal_.speaker || !hal_.speaker->begin(profile_.speaker_rate)) return false;
+  // A square wave at about 500 Hz, generated here: nothing comes from or goes to the host.
+  std::vector<int16_t> tone(static_cast<size_t>(profile_.speaker_rate) * ms / 1000);
+  const uint32_t half_period = std::max<uint32_t>(1, profile_.speaker_rate / 1000);
+  for (size_t i = 0; i < tone.size(); ++i) tone[i] = (i / half_period) % 2 ? amplitude : static_cast<int16_t>(-amplitude);
+  hal_.speaker->write(tone.data(), tone.size());
+  hal_.speaker->end();
+  return true;
+}
 
 void App::on_transport_binary(const uint8_t* data, size_t len) {
   last_rx_ = now();
@@ -920,6 +975,40 @@ void App::sync_wall_clock(const json::Value& time) {
   wall_offset_s_ = static_cast<int32_t>(offset);
   wall_sync_ms_ = now();
   wall_synced_ = true;
+}
+
+#ifdef HG_ROUND_UI
+std::string App::idle_clock() const {
+  int sod = 0;
+  if (idle_face_ == IdleFace::Portrait || !local_time(sod)) return {};
+  const int hour = sod / 3600 % 12;
+  char hm[8];
+  std::snprintf(hm, sizeof hm, "%d:%02d", hour ? hour : 12, sod / 60 % 60);
+  return hm;
+}
+#endif
+
+std::string App::work_age(int64_t updated) const {
+  if (!wall_synced_ || updated <= 0) return {};
+  const uint32_t since = now() - wall_sync_ms_;
+  if (since >= kWallTrustMs) return {};
+  const int64_t now_s = wall_unix_ + since / 1000u;
+  const int64_t age = std::max<int64_t>(0, now_s - updated);
+  if (age < 60) return "Just now";
+  if (age < 3600) return std::to_string(age / 60) + " min";
+  // Beyond an hour, the host's local calendar day decides "Yesterday", not elapsed hours.
+  auto day = [&](int64_t t) { const int64_t l = t + wall_offset_s_; return (l >= 0 ? l : l - 86399) / 86400; };
+  const int64_t days = day(now_s) - day(std::min(updated, now_s));
+  if (days <= 0) return std::to_string(age / 3600) + " hr";
+  if (days == 1) return "Yesterday";
+  return std::to_string(days) + " days";
+}
+
+const App::WorkItem* App::last_task_item() const {
+  if (!work_available_ || active_turn_.empty()) return nullptr;
+  for (const auto& item : recent_)
+    if (item.turn == active_turn_) return &item;
+  return nullptr;
 }
 
 bool App::local_time(int& seconds_of_day) const {
@@ -1591,6 +1680,9 @@ void App::tick() {
   const uint32_t t = now();
   power_tick();
   settings_tick();
+#ifdef HG_ROUND_UI
+  timer_tick();
+#endif
 
   if (phase_ == Phase::Boot && static_cast<int32_t>(t - boot_until_) >= 0) {
     phase_ = network_up_ ? Phase::Connecting : Phase::NoNetwork;
@@ -1742,6 +1834,7 @@ void App::update_model() {
   // Navigation-owned views are rebuilt every time: leaving one must not leave it drawn.
   m.work_available = m.recent = m.result = false;
   m.work_rows.clear();
+  m.work_ages.clear();
   m.work_page = m.work_pages = 0;
   m.pressed = pressed_;
 
@@ -1932,7 +2025,10 @@ void App::update_model() {
       m.screen = Screen::Ready; m.hero = false; m.recent = true;
       m.body.clear(); m.detail.clear();
       for (unsigned i = work_page_; i < recent_.size() && i < work_page_ + 3; ++i)
+      {
         m.work_rows.push_back(recent_[i].stage + "\n" + recent_[i].glance);
+        m.work_ages.push_back(work_age(recent_[i].updated));
+      }
       m.work_page = static_cast<uint8_t>(work_page_ / 3);
       m.work_pages = static_cast<uint8_t>((recent_.size() + 2) / 3);
     } else if (navigation_ == Navigation::Result && work_available_) {
@@ -2055,9 +2151,10 @@ void App::update_model() {
       *power_status_->battery_percent <= 10 && power_status_->external_power == false)
     m.detail = "Low battery: connect USB";
   if (round && (m.screen==Screen::Offline || m.screen==Screen::Connecting || m.screen==Screen::Error)) {
+    // Retry now and Settings are drawn as targets below this line (R-09).
     if(m.screen==Screen::Offline) {
       m.detail = interrupted_ || outcome_==Outcome::Unknown ? "Task status unknown" : "Hermes is out of reach";
-      m.hint = "Hold title for Settings";
+      m.hint = "Reconnects when Wi-Fi returns";
     } else if(m.screen==Screen::Connecting) {
       m.headline = "Connecting";
       m.detail = interrupted_ || outcome_==Outcome::Unknown ? "Task status unknown" : "Waiting for Hermes";
@@ -2068,6 +2165,36 @@ void App::update_model() {
     }
   }
   if (m.result) { m.talk_control = false; m.outcome = stage_word(reading_work_.stage); }
+  m.last_task = m.hero && !m.outcome_word.empty() && touch_view() == TouchView::Home && last_task_item();
+#ifdef HG_ROUND_UI
+  // A fired timer (R-13) has the screen, whatever view or connection state was showing.
+  m.alarm = round && profile_.touch_screen && alarm_showing();
+  if (m.alarm) {
+    m.screen = Screen::Ready;
+    m.hero = m.quick_controls = m.recent = m.result = m.last_task = m.unread_reply = false;
+    m.work_rows.clear();
+    m.work_ages.clear();
+    m.body.clear();
+    m.headline = "Time’s up";
+    m.detail = timer_line(true);
+    m.hint = "Tap Dismiss";
+  }
+  // The time only on idle, connected Home: activity, reading and status keep the glass.
+  m.clock.clear();
+  m.clock_face = false;
+  if (round && m.hero && m.screen == Screen::Ready && touch_view() == TouchView::Home && mode_ == Mode::Idle &&
+      !speaking() && m.link == Link::Online) {
+    m.clock = idle_clock();
+    m.clock_face = !m.clock.empty() && idle_face_ == IdleFace::Clock;
+  }
+  // Needs-you (R-07): idle Home only, from state the device already has. Persistent until
+  // its reason clears (the text is read); an approval takes over the screen instead.
+  if (round) timer_model(m);
+  m.needs_you.clear();
+  if (round && m.hero && m.screen == Screen::Ready && touch_view() == TouchView::Home && mode_ == Mode::Idle &&
+      !speaking() && (m.timer_done || m.unread_reply))
+    m.needs_you = m.timer_done ? "timer" : "reply";  // a missed alarm is the more urgent
+#endif
   if (!hint_flash_.empty()) m.hint = hint_flash_;
   if (ui_ && !display_sleeping_) ui_->render(m);
 }
@@ -2120,13 +2247,24 @@ json::Value App::status_value() const {
       .set("earlier_stop", stops[static_cast<unsigned>(earlier_stop_)]);
   s.set("work", work);
   if (profile_.touch_screen) {
-    const char* views[] = {"home", "response", "controls", "approval", "recording", "other", "recent", "result"};
+    const char* views[] = {"home", "response", "controls", "approval", "recording", "other", "recent", "result",
+                           "alarm"};
     json::Value u = json::Value::object(), controls = json::Value::object();
     u.set("view", views[static_cast<unsigned>(touch_view())])
       .set("activity", mode_ == Mode::Listening ? "recording" : speaking() ? "speaking" :
            mode_ == Mode::Thinking ? "thinking" : mode_ == Mode::Responding && !reply_final_ ? "streaming" : "idle")
       .set("scroll", model_.scroll).set("headline", model_.headline).set("detail", model_.detail)
       .set("hint", model_.hint).set("speaking", speaking());
+    json::Value ages = json::Value::array();
+    for (const auto& a : model_.work_ages) ages.push(a);
+    u.set("work_ages", ages);
+#ifdef HG_ROUND_UI
+    if (ui_ && ui_->round_companion()) {
+      const char* faces[] = {"portrait", "portrait_time", "clock"};
+      u.set("idle_face", faces[static_cast<unsigned>(idle_face_)]).set("clock", model_.clock)
+       .set("title", Ui::title_slot(model_)).set("needs_you", model_.needs_you).set("timer", timer_status());
+    }
+#endif
     const char* captures[] = {"none", "touch", "button", "tap"};
     u.set("capture", captures[model_.capture & 3]).set("pressed", control_name(pressed_));
     if (ui_) for (unsigned i = 1; i < kTouchControls; ++i) {
@@ -2182,6 +2320,9 @@ bool App::known_setting(std::string_view key) const {
   for (const auto& k : profile_.extra_settings) {
     if (key == k) return true;
   }
+#ifdef HG_ROUND_UI
+  if (key == "idle_face") return true;
+#endif
   return false;
 }
 
@@ -2196,6 +2337,9 @@ std::string App::console(std::string_view raw) {
     std::string keys;
     for (const char* k : kSettingKeys) keys += std::string(" ") + k;
     for (const auto& k : profile_.extra_settings) keys += " " + k;
+#ifdef HG_ROUND_UI
+    keys += " idle_face";
+#endif
     return "@help commands: status | diag [log] | get <key> | set <key> <value> | say <text> | talk | release | "
            "cancel | new-session | settings [close] | wifi-setup [close] | yes | no | reconnect | forget-key | factory-reset   keys:" + keys;
   }
@@ -2229,6 +2373,10 @@ std::string App::console(std::string_view raw) {
     if (key == "screen_timeout" && !value.empty() &&
         (value.size() > 4 || value.find_first_not_of("0123456789") != std::string::npos || std::atoi(value.c_str()) > 3600))
       return "@error screen_timeout must be 0..3600 seconds";
+#ifdef HG_ROUND_UI
+    if (key == "idle_face" && !value.empty() && value != "portrait" && value != "portrait_time" && value != "clock")
+      return "@error idle_face must be portrait, portrait_time or clock";
+#endif
     if (!hal_.storage) return "@error no storage";
     if (value.empty()) hal_.storage->erase(key);
     else hal_.storage->set(key, value);

@@ -108,6 +108,10 @@ class App {
   void touch_hold(TouchView owner, TouchControl control);
   // Touch-down feedback only: lights a target under a still finger. Never acts.
   void touch_press(TouchControl control);
+  // Round quick-controls slider drag (R-08): the value follows the finger's position along
+  // the whole track, live; `done` (the lift) saves it once. False: not an absolute slider
+  // here (other boards keep their relative swipe).
+  bool touch_slide(TouchView owner, TouchControl control, int y, bool done);
   // A touch-owned TALK press. Unlike a physical TALK press it never answers a question.
   void on_touch_talk(bool pressed);
   // Returns true when this input only wakes a sleeping display.
@@ -193,6 +197,32 @@ class App {
   // display.bench (app_bench.cpp): on-device slide/redraw timing for the round companion.
   void add_display_bench();
   bool run_display_bench(json::Value& result, std::string& error);
+  // A short square tone at `amplitude`, entirely local (the speaker check; the timer alarm).
+  bool play_tone(int16_t amplitude, uint32_t ms);
+#ifdef HG_ROUND_UI
+  // Local timers (app_timer.cpp, R-13): timer.start/cancel/list actions. They count on the
+  // monotonic now_ms(), so they run through Wi-Fi loss and ignore host clock changes; a
+  // reboot loses them.
+  struct LocalTimer { std::string id, label; uint32_t start = 0, duration = 0; bool expired = false; };
+  enum class TimerState : uint8_t { None, Running, Ringing, Done };
+  void add_timer_actions();
+  void timer_tick();
+  TimerState timer_state() const;
+  bool alarm_showing() const;  // the alarm has the screen (not over a recording or question)
+  void dismiss_timers();       // ends every fired timer: the alarm, or Home's Dismiss
+  void timers_changed();
+  void timer_model(UiModel& m);   // Home's countdown / missed alarm, and the status slot
+  json::Value timer_status() const;
+  uint32_t timer_left_ms(const LocalTimer& t) const;
+  json::Value timer_value(const LocalTimer& t) const;
+  // "Pasta", "Timer", or "Eggs · +1 more": the fired (or running) timers, for one line.
+  std::string timer_line(bool expired) const;
+  const LocalTimer* next_timer() const;  // the running timer that ends first
+  std::vector<LocalTimer> timers_;
+  uint32_t timer_seq_ = 0, alarm_until_ = 0, beep_at_ = 0, timer_epoch_ = 0;
+  TimerState timer_shown_ = TimerState::None;
+  bool tone_out_ = false;  // the alarm tone is playing: not speech, so never "Speaking"
+#endif
 
   void load_settings();
   void settings_input(Button button, bool pressed);
@@ -206,6 +236,9 @@ class App {
   std::string diag_report();
   std::string setting(std::string_view key, std::string_view fallback = {}) const;
   void connect_now();
+  // Retry now (R-09): the reconnect path brought forward. Idempotent while an attempt is in
+  // flight; never resends work (a dropped session is not replayed).
+  void retry_connection();
   void schedule_reconnect();
   void drop_session(std::string_view reason);
   void send(const json::Value& msg);
@@ -279,7 +312,11 @@ class App {
   std::unique_ptr<Ui> ui_;
   UiModel model_;
   enum class Navigation : uint8_t { Auto, Home, Response, Controls, Recent, Result };
-  struct WorkItem { std::string id, stage, glance; int revision = 0, scroll = 0; };
+  struct WorkItem { std::string id, stage, glance, turn; int revision = 0, scroll = 0; int64_t updated = 0; };
+  // R-10: "Just now", "12 min", "3 hr", "Yesterday", "3 days"; empty without trusted host time.
+  std::string work_age(int64_t updated) const;
+  // R-10: the shelf record of the work Home's "Last task" names, or null.
+  const WorkItem* last_task_item() const;
   std::vector<WorkItem> recent_;
   WorkItem reading_work_;
   bool work_available_ = false;
@@ -302,7 +339,11 @@ class App {
   TalkMode talk_mode_ = TalkMode::Hold;
   uint8_t volume_ = 70;
   uint8_t brightness_ = 100;
-  enum class Menu : uint8_t { Closed, Volume, Brightness, TalkMode, Microphone, Speaker, Display, Inputs, Info,
+  enum class Menu : uint8_t { Closed, Volume, Brightness, TalkMode,
+#ifdef HG_ROUND_UI
+                              IdleFace,  // round companion only: what idle Home shows
+#endif
+                              Microphone, Speaker, Display, Inputs, Info,
                               Power, IdleTimer, PowerOff, WifiSetup, Back };
   enum class HardwareCheck : uint8_t { None, Microphone, Speaker, Display, Inputs };
   Menu menu_ = Menu::Closed;
@@ -315,6 +356,14 @@ class App {
   std::optional<PowerStatus> power_status_;
   uint32_t power_read_at_ = 0, activity_at_ = 0;
   uint32_t screen_timeout_ms_ = 0;
+#ifdef HG_ROUND_UI
+  // Idle Home on the round companion (setting idle_face): the face alone, the face with the
+  // time in the title slot (default), or a clock with a small face.
+  enum class IdleFace : uint8_t { Portrait, PortraitTime, Clock };
+  IdleFace idle_face_ = IdleFace::PortraitTime;
+  // The time idle Home shows ("h:mm"), or empty when the face shows none or it is unknown.
+  std::string idle_clock() const;
+#endif
   bool display_dimmed_ = false, display_sleeping_ = false, power_off_armed_ = false;
   uint8_t wake_buttons_ = 0;
 

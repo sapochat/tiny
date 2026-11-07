@@ -193,12 +193,12 @@ def test_quick_controls_status_never_shares_an_action_slot(ix):
     assert r.wait(lambda: not s.status()['work']['active'])
     s.run_for(0.3)
     r.snap('controls-after')
-    assert not r.shows('Last task: Finished', 18, DIM, 0, STATUS_BAND)
+    assert not r.shows('Last task: Finished', 24, DIM, 0, STATUS_BAND)  # R-06: Home's title slot is 24px
     # The action row keeps both actions in their places; an inert Stop is outlined, not a word.
-    assert r.shows('Stop task', 18, DIM, 0, tuple(slots['busy']['stop']))
-    assert r.shows('Mute voice', 18, DIM, 0, tuple(slots['busy']['silence']))
+    assert r.shows('Stop task', 24, DIM, 0, tuple(slots['busy']['stop']))  # R-08: 24px bands
+    assert r.shows('Mute voice', 24, DIM, 0, tuple(slots['busy']['silence']))
     tap(s, *r.control('home'))
     s.run_for(0.3)
     assert ui(s)['view'] == 'home'
-    assert r.shows('Last task: Finished', 18, DIM, 0, HOME_TITLE)
-    assert not r.shows('HERMES', 18, DIM, 0, HOME_TITLE)
+    assert r.shows('Last task: Finished', 24, DIM, 0, HOME_TITLE)  # R-06: Home's title slot is 24px
+    assert not r.shows('HERMES', 18, DIM, 0, HOME_TITLE) and not r.shows('HERMES', 24, DIM, 0, HOME_TITLE)
