@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_psram.h"
+#include "esp_system.h"
 #include "hg/touch.hpp"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
@@ -234,6 +235,12 @@ extern "C" void app_main(void) {
   }
   if (hal.mic == &g_codec_mic) profile.mic_rate = hgp::CodecAudio::kRate;
   if (hal.speaker == &g_codec_speaker) profile.speaker_rate = hgp::CodecAudio::kRate;
+  if (hal.display == &g_amoled) {
+    // An AMOLED rests by default: lit pixels cost battery and age the panel (T2-C8).
+    // Stored settings, including Always on, win.
+    profile.default_screen_timeout_s = 60;
+    profile.default_brightness = 80;
+  }
 
   static hg::App app(hal, profile);
   static hg::TouchGestures gestures(app);
@@ -246,6 +253,11 @@ extern "C" void app_main(void) {
   };
   app.on_wifi_setup = [] { return g_wifi.start_setup(); };
   app.on_wifi_setup_close = [] { g_wifi.stop_setup(); };
+  app.on_restart = [] {
+    ESP_LOGW(TAG, "restart requested from Settings");
+    vTaskDelay(pdMS_TO_TICKS(300));  // let "Restarting…" reach the panel and the log drain
+    esp_restart();
+  };
   app.on_diag = [](hg::json::Value& report) {
     hgp::diag::report(report);
     report.set("ota", g_updater.describe());

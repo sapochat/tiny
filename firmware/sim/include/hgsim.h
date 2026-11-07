@@ -22,7 +22,7 @@ extern "C" {
 #define HGSIM_API __attribute__((visibility("default")))
 #endif
 
-#define HGSIM_ABI_VERSION 6
+#define HGSIM_ABI_VERSION 7
 
 typedef struct hgsim hgsim;
 
@@ -86,6 +86,12 @@ typedef struct hgsim_config {
   int touch; /* the screen is the main input (see hg::TouchGestures) */
   size_t update_capacity; /* bytes the update slot holds; 0 = no over-the-air updates */
   int update_pending;     /* this boot runs an installed update that isn't confirmed yet */
+  /* A battery gauge and PMIC scripted with hgsim_set_power; power-off and Settings → Restart
+   * are counted (hgsim_hal_state), never carried out. */
+  int power;
+  /* Screen defaults while no setting is stored (hg::DeviceProfile); 0 keeps the core's. */
+  int default_screen_timeout_s;
+  int default_brightness;
 } hgsim_config;
 
 /* Action handler: fill `result_json` (a JSON object) and return 1, or write an
@@ -129,6 +135,11 @@ HGSIM_API const uint16_t* hgsim_framebuffer(hgsim* sim, int* width, int* height)
 HGSIM_API const uint16_t* hgsim_panel(hgsim* sim);
 /* Pixels sent to the panel since creation (sum of flushed rectangle areas). */
 HGSIM_API uint64_t hgsim_flushed_px(hgsim* sim);
+/* What the next gauge read returns (config.power). percent < 0 makes reads fail. */
+HGSIM_API void hgsim_set_power(hgsim* sim, int percent, int mv, int usb, int charging);
+/* HAL counters as JSON: panel_asleep, panel_sleeps, panel_wakes, flushes_while_asleep,
+ * power_offs, restarts. */
+HGSIM_API int hgsim_hal_state(hgsim* sim, char* out, size_t cap);
 
 #ifdef __cplusplus
 }

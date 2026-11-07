@@ -20,7 +20,7 @@ from .. import paths
 
 log = logging.getLogger("hermes_gadget.sim")
 
-ABI_VERSION = 6
+ABI_VERSION = 7
 
 BUTTON_TALK, BUTTON_CANCEL, BUTTON_UP, BUTTON_DOWN, BUTTON_SILENCE = 0, 1, 2, 3, 4
 BUTTONS = {"talk": BUTTON_TALK, "cancel": BUTTON_CANCEL, "up": BUTTON_UP, "down": BUTTON_DOWN,
@@ -99,6 +99,9 @@ class _Config(Structure):
         ("touch", c_int),
         ("update_capacity", c_size_t),
         ("update_pending", c_int),
+        ("power", c_int),
+        ("default_screen_timeout_s", c_int),
+        ("default_brightness", c_int),
     ]
 
 
@@ -193,6 +196,9 @@ def load_library(path: Path | None = None) -> ctypes.CDLL:
         lib.hgsim_panel.restype = POINTER(c_uint16)
         lib.hgsim_flushed_px.argtypes = [c_void_p]
         lib.hgsim_flushed_px.restype = ctypes.c_uint64
+    lib.hgsim_set_power.argtypes = [c_void_p, c_int, c_int, c_int, c_int]
+    lib.hgsim_hal_state.argtypes = [c_void_p, c_char_p, c_size_t]
+    lib.hgsim_hal_state.restype = c_int
     return lib
 
 
@@ -212,6 +218,7 @@ class NativeDevice:
                  speaker_rate: int = 16000, library: Path | None = None,
                  button_labels: tuple[str, str] | None = None, round_panel: bool = False,
                  touch_screen: bool = False, update_capacity: int = 0, update_pending: bool = False,
+                 power: bool = False, screen_timeout_s: int = 0, brightness: int = 0,
                  audio_host: AudioHost | None = None):
         self._lib = load_library(library)
         self._host_obj = host
@@ -220,7 +227,7 @@ class NativeDevice:
         self._strings += [s.encode() for s in button_labels] if button_labels else [None, None]
         self._config = _Config(width, height, int(mic), int(speaker), int(backlight), int(scroll_buttons),
                                mic_rate, speaker_rate, *self._strings, int(round_panel), int(touch_screen),
-                               update_capacity, int(update_pending))
+                               update_capacity, int(update_pending), int(power), screen_timeout_s, brightness)
         self._callbacks = self._make_callbacks(host, audio_host or host)
         self._handle = self._lib.hgsim_create(ctypes.byref(self._config), ctypes.byref(self._callbacks))
         if not self._handle:
@@ -406,7 +413,7 @@ class NativeDevice:
         return buf.value.decode("utf-8", "replace")
 
     def status(self) -> dict:
-        buf = ctypes.create_string_buffer(4096)
+        buf = ctypes.create_string_buffer(16384)
         self._lib.hgsim_status(self._handle, buf, len(buf))
         return json.loads(buf.value.decode() or "{}")
 
@@ -421,6 +428,16 @@ class NativeDevice:
         self._lib.hgsim_framebuffer(self._handle, ctypes.byref(w), ctypes.byref(h))
         ptr = self._lib.hgsim_panel(self._handle)
         return ctypes.string_at(ptr, w.value * h.value * 2) if ptr else b""
+
+    def set_power(self, percent: int, mv: int, usb: bool, charging: bool) -> None:
+        """What the scripted gauge reports at its next read (boards with ``power``)."""
+        self._lib.hgsim_set_power(self._handle, percent, mv, int(usb), int(charging))
+
+    def hal_state(self) -> dict:
+        """Panel sleep and power counters kept by the simulator HAL."""
+        buf = ctypes.create_string_buffer(1024)
+        self._lib.hgsim_hal_state(self._handle, buf, len(buf))
+        return json.loads(buf.value.decode() or "{}")
 
     def flushed_px(self) -> int:
         """Pixels sent to the panel so far (0 if the library predates the counter)."""

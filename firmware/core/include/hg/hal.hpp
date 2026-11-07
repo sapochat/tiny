@@ -43,6 +43,10 @@ class Display {
     flush(y0, y1);
   }
   virtual void set_backlight(uint8_t percent) { (void)percent; }
+  // Sleep: the panel stops showing anything and its controller idles (an AMOLED's display
+  // off + sleep in). The core sends no pixels until it wakes the panel again, then repaints
+  // and restores the backlight. Ports without a sleep mode keep the default.
+  virtual void set_sleep(bool asleep) { (void)asleep; }
 };
 
 // Microphone: after start() succeeds, the port delivers mono PCM16 samples at

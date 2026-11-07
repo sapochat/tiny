@@ -101,9 +101,18 @@ void App::load_settings() {
   int vol = std::atoi(setting("volume", "70").c_str());
   volume_ = static_cast<uint8_t>(std::max(0, std::min(100, vol)));
   if (hal_.speaker) hal_.speaker->set_volume(volume_);
-  brightness_ = static_cast<uint8_t>(std::max(5, std::min(100, std::atoi(setting("brightness", "100").c_str()))));
-  if (hal_.display && hal_.display->info().has_backlight) hal_.display->set_backlight(brightness_);
-  screen_timeout_ms_ = static_cast<uint32_t>(std::max(0, std::min(3600, std::atoi(setting("screen_timeout", "0").c_str())))) * 1000;
+  // The board's defaults apply only while nothing is stored (T2-C8).
+  brightness_ = static_cast<uint8_t>(std::max(5, std::min(100, std::atoi(
+      setting("brightness", std::to_string(profile_.default_brightness)).c_str()))));
+  screen_timeout_ms_ = static_cast<uint32_t>(std::max(0, std::min(3600, std::atoi(
+      setting("screen_timeout", std::to_string(profile_.default_screen_timeout_s)).c_str())))) * 1000;
+  if (hal_.display && hal_.display->info().has_backlight) {
+    if (display_sleeping_) {
+      hal_.display->set_sleep(false);
+      if (ui_) ui_->invalidate();
+    }
+    hal_.display->set_backlight(brightness_);
+  }
 #ifdef HG_ROUND_UI
   {
     const std::string face = setting("idle_face", "portrait_time");
@@ -111,7 +120,8 @@ void App::load_settings() {
   }
 #endif
   activity_at_ = now();
-  display_dimmed_ = display_sleeping_ = false;
+  display_dimmed_ = display_sleeping_ = display_rested_ = false;
+  rested_turn_.clear();
 }
 
 void App::add_action(Action action) {
@@ -179,6 +189,7 @@ void App::begin() {
         return false;
       }
       int p = static_cast<int>(std::max<int64_t>(5, std::min<int64_t>(100, args["percent"].as_int())));
+      wake_display();  // a change nobody can see is no change
       hal_.display->set_backlight(static_cast<uint8_t>(p));
       brightness_ = static_cast<uint8_t>(p);
       if (hal_.storage) hal_.storage->set("brightness", std::to_string(p));
@@ -563,7 +574,7 @@ void App::h_turn_start(const json::Value& m) {
   outcome_ = Outcome::None;
   awaiting_reply_ = true;
   reply_completed_ = reply_stopped_ = false;
-  wake_display();
+  if (!(display_rested_ && !turn.empty() && turn == rested_turn_)) wake_display();  // new work wakes
   // A different (or unidentified) turn is new work: earlier silence and outcomes end here.
   if (silenced_ && (turn.empty() || turn != silenced_turn_)) clear_silence();
   clear_note();
@@ -658,7 +669,7 @@ void App::h_reply_delta(const json::Value& m) {
     log(LogLevel::Debug, "ignored text for other work");
     return;
   }
-  wake_display();
+  if (!rest_holds(m["turn"].as_string())) wake_display();
   if (mode_ == Mode::Listening) return;
   if (reply_ != m["text"].as_string() || awaiting_reply_) {
     unread_reply_ = true;
@@ -682,7 +693,7 @@ void App::h_reply(const json::Value& m) {
     log(LogLevel::Debug, "ignored text for other work");
     return;
   }
-  wake_display();
+  if (!rest_holds(m["turn"].as_string())) wake_display();
   last_turn_rx_ = now();
   const std::string& text = m["text"].as_string();
   if (m["interim"].as_bool()) {
@@ -721,7 +732,7 @@ void App::h_audio_start(const json::Value& m) {
     clear_silence();
   }
   close_wifi_setup();
-  wake_display();
+  if (!rest_holds(turn)) wake_display();
   if (settings_open()) close_settings();
   if (!hal_.speaker || mode_ == Mode::Listening) return;
   uint32_t rate = static_cast<uint32_t>(m["rate"].as_int(profile_.speaker_rate));
@@ -1070,14 +1081,15 @@ void App::on_button(Button button, bool pressed) {
     if (button == Button::Cancel && !pressed) close_wifi_setup();
     return;
   }
+  // PWR first: it silences without waking, and on its own turns the screen off or on.
+  if (button == Button::Silence) {
+    if (pressed) pwr_key();
+    return;
+  }
   const auto bit = static_cast<uint8_t>(1u << static_cast<unsigned>(button));
   if (pressed && wake_display(true)) { wake_buttons_ |= bit; return; }
   if (wake_buttons_ & bit) {
     if (!pressed) wake_buttons_ &= static_cast<uint8_t>(~bit);
-    return;
-  }
-  if (button == Button::Silence) {
-    if (pressed) silence_key();
     return;
   }
   if (button == Button::Talk) {
@@ -1819,7 +1831,7 @@ void App::tick() {
 
   flush_sensors();
 
-  if (ui_ && ui_->transitioning()) { model_.time_ms = t; ui_->render(model_); }
+  if (ui_ && ui_->transitioning() && !display_sleeping_) { model_.time_ms = t; ui_->render(model_); }
   if (ui_) if (const int frames = ui_->take_motion_frames()) set_sensor("perf_motion_frames", frames);
   if (t - frame_at_ >= kFrameMs) {
     frame_at_ = t;
@@ -1874,7 +1886,7 @@ void App::update_model() {
     m.body = wifi_setup_text_;
     m.scroll = 0;
     m.hint = profile_.touch_screen ? "Swipe down to close" : profile_.cancel_label + " to close";
-    if (ui_) ui_->render(m);
+    if (ui_ && !display_sleeping_) ui_->render(m);
     return;
   }
   if (settings_open()) {
@@ -2063,6 +2075,13 @@ void App::update_model() {
       m.volume = hal_.speaker ? volume_ : -1;
       m.brightness = hal_.display && hal_.display->info().has_backlight ? brightness_ : -1;
       m.headline = "Quick controls";
+      // With a gauge the title says how much charge is left (T2-C9): there's no room for a row.
+      if (power_status_ && power_status_->battery_percent && power_status_->external_power &&
+          power_status_->battery_present != false) {
+        const bool usb = *power_status_->external_power;
+        m.headline = std::to_string(std::min<int>(100, *power_status_->battery_percent)) + "% · " +
+                     (!usb ? "Battery" : power_status_->charging.value_or(false) ? "Charging" : "Plugged in");
+      }
       m.detail.clear();
       m.body.clear();
       m.hint = "Swipe right: Home";
@@ -2171,6 +2190,7 @@ void App::update_model() {
   if (m.screen == Screen::Ready && m.hero && power_status_ && power_status_->battery_percent &&
       *power_status_->battery_percent <= 10 && power_status_->external_power == false)
     m.detail = "Low battery: connect USB";
+  battery_model(m);
   if (round && (m.screen==Screen::Offline || m.screen==Screen::Connecting || m.screen==Screen::Error)) {
     // Retry now and Settings are drawn as targets below this line (R-09).
     if(m.screen==Screen::Offline) {
@@ -2246,6 +2266,12 @@ json::Value App::status_value() const {
       .set("network", network_up_);
   s.set("display_sleeping", display_sleeping_);
   {
+    json::Value d = json::Value::object();
+    d.set("sleeping", display_sleeping_).set("dimmed", display_dimmed_).set("rested", display_rested_)
+        .set("brightness", static_cast<int>(brightness_)).set("timeout_s", static_cast<int>(screen_timeout_ms_ / 1000));
+    s.set("display", d);
+  }
+  {
     json::Value clock = json::Value::object();
     int sod = 0;
     bool known = local_time(sod);
@@ -2279,6 +2305,12 @@ json::Value App::status_value() const {
     json::Value ages = json::Value::array();
     for (const auto& a : model_.work_ages) ages.push(a);
     u.set("work_ages", ages);
+    if (model_.battery >= 0) {
+      const char* tones[] = {"normal", "low", "critical", "charging"};
+      json::Value b = json::Value::object();
+      b.set("percent", static_cast<int>(model_.battery)).set("tone", tones[model_.battery_tone & 3]);
+      u.set("battery", b);
+    }
 #ifdef HG_ROUND_UI
     if (ui_ && ui_->round_companion()) {
       const char* faces[] = {"portrait", "portrait_time", "clock"};

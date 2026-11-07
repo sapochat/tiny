@@ -206,6 +206,9 @@ class AmoledDisplay final : public hg::Display {
   // The CO5300 takes a column window too, so narrow updates send only their pixels.
   void flush_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) override;
   void set_backlight(uint8_t percent) override;
+  // Display off + sleep in (0x28, 0x10); waking is sleep out + display on (0x11, 0x29).
+  // The panel keeps its RAM; the core repaints before raising the brightness again.
+  void set_sleep(bool asleep) override;
   // Flush timing since the last take_perf() (app task only).
   struct Perf { uint32_t calls = 0, rows = 0, px = 0, us = 0, max_us = 0, full_us = 0, timeouts = 0; };
   Perf take_perf() { Perf p = perf_; perf_ = {}; return p; }
@@ -221,6 +224,8 @@ class AmoledDisplay final : public hg::Display {
   void command(uint8_t cmd, const uint8_t* data, size_t len);
   AmoledConfig cfg_{};
   esp_lcd_panel_io_handle_t io_ = nullptr;
+  bool asleep_ = false;
+  int64_t slept_at_us_ = 0;  // sleep out needs 120 ms after sleep in
   uint16_t* fb_ = nullptr;
   uint16_t* bounce_[2] = {nullptr, nullptr};  // internal-RAM staging rows, double-buffered
   SemaphoreHandle_t done_ = nullptr;

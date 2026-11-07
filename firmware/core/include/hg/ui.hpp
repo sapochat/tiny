@@ -100,6 +100,10 @@ struct UiModel {
   // Authored clip entry, selected from activity BEFORE navigation overrides.
   uint8_t expression = 0;
   int volume = 0, brightness = 0;
+  // T2-C9: the battery mark on Home's rim. battery < 0 hides it (no gauge, or on USB and not
+  // charging). battery_tone: 0 normal, 1 low (≤20%), 2 critical (≤10%), 3 charging.
+  int8_t battery = -1;
+  uint8_t battery_tone = 0;
   uint32_t navigation = 0;  // explicit navigation generation
   uint32_t time_ms = 0;  // app clock; motion never sleeps or owns input
   uint32_t frame = 0;    // animation frame, advanced by the app

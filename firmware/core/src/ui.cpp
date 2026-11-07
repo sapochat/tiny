@@ -531,6 +531,7 @@ void Ui::render_companion(const UiModel& m) {
       .val(!m.clock.empty()).val(m.clock_face).add(m.needs_you)
       .val(m.alarm).val(m.timer_done).val(m.timer_slot).val(timer_band)
 #endif
+      .val(m.battery).val(m.battery_tone)
       .get();
   Canvas c(target_ ? target_ : display_.framebuffer(),panel_.width,panel_.height,panel_.swap_bytes);
   const int level = (m.level/5)*5;
@@ -858,8 +859,22 @@ void Ui::render_companion(const UiModel& m) {
 #else
     if(control_rect(TouchControl::Controls,m).w) center(402,"↓  Controls",18,dim);
 #endif
+    if(m.battery>=0) {
+      // T2-C9: the battery on the bottom rim, under Controls: a cell whose fill is the
+      // charge, then the percentage. Amber at 20%, red at 10%, green while charging.
+      const uint16_t tone = m.battery_tone==1 ? kYellow : m.battery_tone==2 ? kRed : m.battery_tone==3 ? kGreen : dim;
+      const std::string pct = std::to_string(static_cast<int>(m.battery))+"%";
+      constexpr int bw=26, bh=13, gap=8, y=438;
+      const int tw = geist::width(pct,18), x = (466-(bw+3+gap+tw))/2;
+      c.fill_rect(x,y,bw,1,tone); c.fill_rect(x,y+bh-1,bw,1,tone);
+      c.fill_rect(x,y,1,bh,tone); c.fill_rect(x+bw-1,y,1,bh,tone);
+      c.fill_rect(x+bw,y+4,3,bh-8,tone);
+      const int fill = std::max(1,(bw-4)*std::clamp<int>(m.battery,0,100)/100);
+      c.fill_rect(x+2,y+2,fill,bh-4,tone);
+      geist::text(c,x+bw+3+gap,y-4,pct,18,tone);
+    }
   } else {
-    if(m.quick_controls) back("Quick controls");
+    if(m.quick_controls) back(m.headline.empty() ? std::string_view("Quick controls") : std::string_view(m.headline));
     else if(m.touch_prompt) center(55,m.headline,24,text);
     else back(m.result ? "Recent result" : "Latest reply");
     if(!m.quick_controls) {

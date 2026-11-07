@@ -264,10 +264,24 @@ bool App::open_settings() {
   stop_playback();
   dismiss_overlay();
   menu_ = Menu::Volume;
-  power_off_armed_ = false;
+  power_off_armed_ = restart_armed_ = false;
   check_result_.clear();
   update_model();
   return true;
+}
+
+bool App::menu_offered(Menu row) const {
+  switch (row) {
+    case Menu::Closed: return false;
+    case Menu::Power: return hal_.power != nullptr;
+    case Menu::PowerOff: return hal_.power && hal_.power->can_power_off();
+    case Menu::Restart: return static_cast<bool>(on_restart);
+    case Menu::WifiSetup: return static_cast<bool>(on_wifi_setup);
+#ifdef HG_ROUND_UI
+    case Menu::IdleFace: return ui_ && ui_->round_companion();
+#endif
+    default: return true;
+  }
 }
 
 void App::stop_hardware_check() {
@@ -298,23 +312,16 @@ void App::settings_input(Button button, bool pressed) {
       ((button == Button::Up || button == Button::Down) && pressed)) {
     stop_hardware_check();
     check_result_.clear();
-    power_off_armed_ = false;
-    int item = static_cast<int>(menu_) + (button == Button::Up ? -1 : 1);
-    if (item < static_cast<int>(Menu::Volume)) item = static_cast<int>(Menu::Back);
-    if (item > static_cast<int>(Menu::Back)) item = static_cast<int>(Menu::Volume);
+    power_off_armed_ = restart_armed_ = false;
+    // Next (or previous) row this board offers, wrapping; Back is always offered.
+    const int first = static_cast<int>(Menu::Volume), last = static_cast<int>(Menu::Back);
+    int item = static_cast<int>(menu_);
+    do {
+      item += button == Button::Up ? -1 : 1;
+      if (item < first) item = last;
+      if (item > last) item = first;
+    } while (!menu_offered(static_cast<Menu>(item)));
     menu_ = static_cast<Menu>(item);
-    const bool can_power_off = hal_.power && hal_.power->can_power_off();
-    if ((!hal_.power && menu_ == Menu::Power) ||
-        (!can_power_off && menu_ == Menu::PowerOff)) {
-      menu_ = menu_ == Menu::Power ? (button == Button::Up ? Menu::Info : Menu::IdleTimer)
-                                   : (button == Button::Up ? Menu::IdleTimer : Menu::WifiSetup);
-    }
-    if (!on_wifi_setup && menu_ == Menu::WifiSetup)
-      menu_ = button == Button::Up ? (can_power_off ? Menu::PowerOff : Menu::IdleTimer) : Menu::Back;
-#ifdef HG_ROUND_UI
-    if (menu_ == Menu::IdleFace && !(ui_ && ui_->round_companion()))
-      menu_ = button == Button::Up ? Menu::TalkMode : Menu::Microphone;
-#endif
     return;
   }
   if (button != Button::Talk || pressed) return;
@@ -367,10 +374,21 @@ void App::settings_input(Button button, bool pressed) {
       console("set screen_timeout " + std::to_string(next));
       break;
     }
+    case Menu::Restart:
+      if (!restart_armed_) {
+        restart_armed_ = true;
+        check_result_ = profile_.touch_screen ? "Tap again to restart." : "Select again to restart. Cancel goes back.";
+      } else {
+        restart_armed_ = false;
+        check_result_ = "Restarting…";
+        update_model();
+        on_restart();
+      }
+      break;
     case Menu::PowerOff:
       if (!power_off_armed_) {
         power_off_armed_ = true;
-        check_result_ = "Select again to power off. Cancel goes back.";
+        check_result_ = profile_.touch_screen ? "Tap again to power off." : "Select again to power off. Cancel goes back.";
       } else {
         power_off_armed_ = false;
         check_result_ = hal_.power->power_off() ? "Power-off requested" : "Power-off failed. Try the physical PWR key.";
@@ -469,6 +487,10 @@ void App::settings_model() {
       m.body = screen_timeout_ms_ ? std::to_string(screen_timeout_ms_ / 1000) + " seconds\nDims halfway; first input wakes."
                                  : "Always on\nSelect to enable automatic dimming and screen sleep.";
       break;
+    case Menu::Restart:
+      m.detail = "Restart";
+      m.body = "Restart the board. It reconnects to Hermes on its own.";
+      break;
     case Menu::PowerOff:
       m.detail = "Power off";
       m.body = "Shut down the board. Use its PWR key to turn it on again.";
@@ -534,7 +556,8 @@ void App::round_settings_model() {
       m.value = screen_timeout_ms_ ? std::to_string(screen_timeout_ms_ / 1000) + " seconds" : "Always on";
       m.body = screen_timeout_ms_ ? "Dims halfway; first input wakes." : "Tap to enable dimming and screen sleep.";
       break;
-    case Menu::PowerOff: action = "Tap to power off"; break;
+    case Menu::Restart: action = restart_armed_ ? "Tap again to restart" : "Tap to restart"; break;
+    case Menu::PowerOff: action = power_off_armed_ ? "Tap again to power off" : "Tap to power off"; break;
     case Menu::WifiSetup: action = "Tap to start"; break;
     case Menu::Back: action = "Tap to close"; m.body = "Return to Hermes."; break;
     case Menu::Info:
@@ -543,12 +566,10 @@ void App::round_settings_model() {
   }
   m.hint = action.empty() ? "Swipe for next" : action + " · Swipe for next";
   // Row position among the rows this board actually offers.
-  const bool can_power_off = hal_.power && hal_.power->can_power_off();
   unsigned index = 0, count = 0;
   for (int i = static_cast<int>(Menu::Volume); i <= static_cast<int>(Menu::Back); ++i) {
     const auto row = static_cast<Menu>(i);
-    if ((row == Menu::Power && !hal_.power) || (row == Menu::PowerOff && !can_power_off) ||
-        (row == Menu::WifiSetup && !on_wifi_setup)) continue;
+    if (!menu_offered(row)) continue;
     if (row == menu_) index = count;
     ++count;
   }

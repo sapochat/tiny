@@ -42,6 +42,7 @@ class SimHal final : public hg::Display,
       std::memcpy(panel_.data() + static_cast<size_t>(y) * w + x0, fb_.data() + static_cast<size_t>(y) * w + x0,
                   static_cast<size_t>(x1 - x0) * 2);
     if (y1 > y0 && x1 > x0) flushed_px_ += static_cast<uint64_t>(y1 - y0) * (x1 - x0);
+    if (asleep_ && y1 > y0 && x1 > x0) ++flushes_while_asleep_;
     if (host_.display_flush) host_.display_flush(host_.user, y0, y1);
   }
   const uint16_t* panel() const { return panel_.data(); }
@@ -49,6 +50,13 @@ class SimHal final : public hg::Display,
   void set_backlight(uint8_t percent) override {
     if (host_.display_backlight) host_.display_backlight(host_.user, percent);
   }
+  void set_sleep(bool asleep) override {
+    if (asleep == asleep_) return;
+    asleep_ = asleep;
+    ++(asleep ? sleeps_ : wakes_);
+  }
+  bool asleep_ = false;
+  unsigned sleeps_ = 0, wakes_ = 0, flushes_while_asleep_ = 0;
 
   // AudioIn
   bool start(uint32_t rate) override { return host_.mic_start && host_.mic_start(host_.user, rate); }
@@ -161,6 +169,30 @@ class SimUpdater final : public hg::Updater {
   bool pending_;
 };
 
+// The battery gauge and PMIC: reads return what the host scripted; power-off is counted.
+class SimPower final : public hg::Power {
+ public:
+  std::optional<hg::PowerStatus> read() override {
+    if (percent_ < 0) return std::nullopt;
+    hg::PowerStatus s;
+    s.battery_present = true;
+    s.battery_mv = mv_;
+    s.battery_percent = static_cast<uint8_t>(std::min(100, percent_));
+    s.charging = charging_;
+    s.external_power = usb_;
+    return s;
+  }
+  bool power_off() override { ++power_offs; return true; }
+  void set(int percent, int mv, bool usb, bool charging) {
+    percent_ = percent; mv_ = mv; usb_ = usb; charging_ = charging;
+  }
+  unsigned power_offs = 0;
+
+ private:
+  int percent_ = 87, mv_ = 4000;
+  bool usb_ = false, charging_ = false;
+};
+
 int copy_out(const std::string& s, char* out, size_t cap) {
   if (!out || cap == 0) return static_cast<int>(s.size());
   size_t n = s.size() < cap - 1 ? s.size() : cap - 1;
@@ -174,6 +206,8 @@ int copy_out(const std::string& s, char* out, size_t cap) {
 struct hgsim {
   std::unique_ptr<SimHal> hal_impl;
   std::unique_ptr<SimUpdater> updater;
+  std::unique_ptr<SimPower> power;
+  unsigned restarts = 0;
   hg::Hal hal;
   std::unique_ptr<hg::App> app;
   std::unique_ptr<hg::TouchGestures> touch;
@@ -206,6 +240,10 @@ hgsim* hgsim_create(const hgsim_config* cfg, const hgsim_host* host) {
     sim->updater = std::make_unique<SimUpdater>(*cfg, *host);
     sim->hal.updater = sim->updater.get();
   }
+  if (cfg->power) {
+    sim->power = std::make_unique<SimPower>();
+    sim->hal.power = sim->power.get();
+  }
 
   hg::DeviceProfile profile;
   profile.board = cfg->board ? cfg->board : "sim";
@@ -224,7 +262,12 @@ hgsim* hgsim_create(const hgsim_config* cfg, const hgsim_host* host) {
     profile.extra_settings = {"touch_cancel"};
     profile.has_silence_key = cfg->round != 0;  // stands in for the AMOLED 1.75C's PWR key
   }
+  if (cfg->default_screen_timeout_s > 0)
+    profile.default_screen_timeout_s = static_cast<uint16_t>(std::min(3600, cfg->default_screen_timeout_s));
+  if (cfg->default_brightness > 0)
+    profile.default_brightness = static_cast<uint8_t>(std::clamp(cfg->default_brightness, 5, 100));
   sim->app = std::make_unique<hg::App>(sim->hal, profile);
+  if (cfg->power) sim->app->on_restart = [sim] { ++sim->restarts; };
   // Synthetic temporary-network instructions (no radio in the simulator), so the Wi-Fi
   // setup screen and its close gesture can be exercised end to end.
   sim->app->on_wifi_setup = [] {
@@ -317,5 +360,17 @@ const uint16_t* hgsim_framebuffer(hgsim* sim, int* width, int* height) {
 }
 const uint16_t* hgsim_panel(hgsim* sim) { return sim->hal.display ? sim->hal_impl->panel() : nullptr; }
 uint64_t hgsim_flushed_px(hgsim* sim) { return sim->hal_impl->flushed_px(); }
+void hgsim_set_power(hgsim* sim, int percent, int mv, int usb, int charging) {
+  if (sim->power) sim->power->set(percent, mv, usb != 0, charging != 0);
+}
+int hgsim_hal_state(hgsim* sim, char* out, size_t cap) {
+  const SimHal& h = *sim->hal_impl;
+  hg::json::Value v = hg::json::Value::object();
+  v.set("panel_asleep", h.asleep_).set("panel_sleeps", static_cast<int>(h.sleeps_))
+      .set("panel_wakes", static_cast<int>(h.wakes_)).set("flushes_while_asleep", static_cast<int>(h.flushes_while_asleep_))
+      .set("power_offs", static_cast<int>(sim->power ? sim->power->power_offs : 0))
+      .set("restarts", static_cast<int>(sim->restarts));
+  return copy_out(v.dump(), out, cap);
+}
 
 }  // extern "C"

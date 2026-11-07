@@ -94,7 +94,7 @@ These are separate actions with separate targets:
 
 On the 466px display, **Mute voice** appears whenever speech is playing and **Stop task** whenever Hermes is working, on Home, the reading view and quick controls, always with Mute voice on the left and Stop task on the right. Quick controls keep their positions stable. An unavailable Mute voice is outlined; after work ends, its outcome replaces Stop task as plain status text, not a button or hit target. Pending stop requests are also plain status text. Pressing Stop task again, or CANCEL, sends nothing more. Final reply text is not the end of the work: Stop task stays available until Hermes ends the turn.
 
-On the AMOLED-1.75C, a short press of the side **PWR** key is Mute voice without looking: it quiets speech the same way, and it also stops a ringing timer from beeping (the timer stays on Home with **Dismiss** and the needs-you mark). Like Mute voice, it never stops work, answers an approval or discards a recording; with nothing playing it does nothing, and on a dark screen it only wakes the display. Holding PWR is still the board's own power-off.
+On the AMOLED-1.75C, a short press of the side **PWR** key is Mute voice without looking: it quiets speech the same way, and it also stops a ringing timer from beeping (the timer stays on Home with **Dismiss** and the needs-you mark). Like Mute voice, it never stops work, answers an approval or discards a recording, and silencing never changes the screen. With nothing sounding, PWR turns the screen off, like a phone; press it again or touch the screen to turn it back on (that first touch only wakes). A screen PWR turned off stays dark while the work it was pressed over finishes; a new turn, an approval, a card or an alarm turns it back on. Holding PWR is still the board's own power-off.
 
 **Stop requested** stays until Hermes reports how that work ended:
 
@@ -271,12 +271,19 @@ Tap CANCEL to move to the next item, then tap TALK to change it. On a touchscree
 | Device information | Show the board, firmware, device ID, and available audio drivers |
 | Battery and power | Show available power readings on boards with a power driver |
 | Screen timeout | Choose always on, 30, 60, 120, or 300 seconds |
-| Power off | Select twice to shut down a board with a power driver |
+| Restart | Select (or tap) twice to restart the board; it reconnects on its own |
+| Power off | Select (or tap) twice to shut down a board with a power driver |
 | Wi-Fi setup | Start [phone-based setup](setup-board.md#set-up-wi-fi-with-your-phone) on ESP32 boards |
 
 Volume, brightness, talk mode, idle face and screen timeout survive restarts. Unavailable drivers show as unavailable. These checks help you test the hardware; a completed tone does not prove that a physical speaker produced sound.
 
-Screen timeout is off by default. When enabled, a brightness-capable display dims halfway through the idle period, then goes dark. The first button press or touch wakes it without recording or answering a prompt. Incoming replies and prompts wake it too. Recording, playback, settings, pairing and updates keep it awake. The processor and Wi-Fi remain running; this is screen sleep. Use the board's Power off control to shut down the device.
+Screen timeout is off by default, except on the AMOLED boards: with nothing stored they rest after 60 seconds at 80% brightness, because lit pixels cost battery and age the panel. A value you choose, including Always on, replaces the board's default; `set screen_timeout` with no value goes back to it. When enabled, a brightness-capable display dims halfway through the idle period, then goes dark. On the AMOLEDs dark means the panel itself sleeps (display off and sleep in) and no pixels are sent until something wakes it. The first button press or touch wakes it without recording or answering a prompt. Incoming replies and prompts wake it too. Recording, playback, settings, pairing and updates keep it awake. The processor and Wi-Fi remain running; this is screen sleep. Use the board's Power off control to shut down the device.
+
+### Battery
+
+On boards with a fuel gauge (the AMOLED-1.75 and 1.75C), Home shows the charge on its bottom rim, under **Controls**: a small cell and the percentage. It is grey normally, amber at 20% or less, red at 10% or less and green while charging. Plugged in and full, the mark goes away. Quick controls carry the charge in their title instead (**64% · Battery**, **64% · Charging** or **64% · Plugged in**).
+
+At 20% on battery, Tiny wakes the screen once with **Battery 20% · charge soon**. Charging, or a charge above 25%, re-arms the notice. At 10% Home's detail line reads **Low battery: connect USB**. When two gauge readings in a row (five seconds apart) are 5% or less, Tiny shows **Battery empty** for ten seconds and then powers off cleanly through the PMIC. Plugging in USB during those ten seconds cancels it. A recording, open work or speech gets up to ten more seconds to finish first. `status` reports the countdown as `power.shutdown_in_s`.
 
 Incoming confirmation prompts and firmware updates close settings. You cannot open settings during a prompt or update. The USB console also accepts `settings`, `settings close`, and `set brightness 50`.
 

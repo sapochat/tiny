@@ -44,6 +44,10 @@ struct DeviceProfile {
   bool has_cancel_button = true;
   bool has_scroll_buttons = false;
   bool has_silence_key = false;  // the port reports Button::Silence
+  // Screen defaults while the stored settings say nothing (T2-C8). An explicit choice,
+  // including 0 = Always on, always wins.
+  uint16_t default_screen_timeout_s = 0;
+  uint8_t default_brightness = 100;
   std::string talk_label = "TALK";
   std::string cancel_label = "CANCEL";
   // The screen supports hold-to-talk, view-owned navigation and explicit
@@ -125,6 +129,8 @@ class App {
   // These run on the app task. Start returns private, on-screen instructions.
   std::function<std::string()> on_wifi_setup;
   std::function<void()> on_wifi_setup_close;
+  // Restarts the board (Settings → Restart). Unset: the row isn't offered.
+  std::function<void()> on_restart;
 
   // Serial-console command (provisioning, bench automation). Returns the
   // response; machine-readable lines start with '@'.
@@ -235,6 +241,16 @@ class App {
   void stop_hardware_check();
   void power_tick();
   json::Value power_value() const;
+  // T2-C8: turns the screen off now (PWR with nothing to silence). Until an input wakes it,
+  // only new things do: a new turn, a question, a card, an image or an alarm. Text and
+  // speech for the turn running at the press keep it dark.
+  void rest_display();
+  bool rest_holds(const std::string& turn) const;
+  void dark_display();  // backlight 0, then the panel asleep
+  // T2-C9: the battery mark, the 20% notice and the clean shutdown at 5%.
+  void battery_tick();
+  void battery_model(UiModel& m) const;
+  bool on_battery() const;
   json::Value status_value() const;
   std::string diag_report();
   std::string setting(std::string_view key, std::string_view fallback = {}) const;
@@ -258,7 +274,9 @@ class App {
   // a new turn or request. Never sends anything and never cancels work.
   void silence();
   void clear_silence();
-  void silence_key();  // Button::Silence: quiet what is sounding, nothing else
+  void silence_key();  // quiet what is sounding, nothing else
+  // Button::Silence (PWR): silence what is sounding; with nothing sounding, screen off/on.
+  void pwr_key();
   // Remote work: a request or turn that has not ended (final text is not an end) and is
   // still followed. Independent of recording and display modes; a capture never ends it.
   bool work_open() const;
@@ -348,7 +366,8 @@ class App {
                               IdleFace,  // round companion only: what idle Home shows
 #endif
                               Microphone, Speaker, Display, Inputs, Info,
-                              Power, IdleTimer, PowerOff, WifiSetup, Back };
+                              Power, IdleTimer, Restart, PowerOff, WifiSetup, Back };
+  bool menu_offered(Menu row) const;  // this board has the row
   enum class HardwareCheck : uint8_t { None, Microphone, Speaker, Display, Inputs };
   Menu menu_ = Menu::Closed;
   HardwareCheck hardware_check_ = HardwareCheck::None;
@@ -369,7 +388,16 @@ class App {
   std::string idle_clock() const;
 #endif
   bool display_dimmed_ = false, display_sleeping_ = false, power_off_armed_ = false;
+  bool restart_armed_ = false;
+  bool display_rested_ = false;  // PWR turned the screen off (see rest_display)
+  std::string rested_turn_;      // the turn running when it did
   uint8_t wake_buttons_ = 0;
+  // Battery (T2-C9). The notice re-arms when charging or above 25%; the shutdown needs two
+  // readings at 5% or less, then waits 10 s, plus up to 10 s for a turn in flight.
+  bool battery_notice_armed_ = true;
+  uint8_t empty_reads_ = 0;
+  uint32_t shutdown_at_ = 0;
+  bool shutdown_sent_ = false;
 
   // connection
   Phase phase_ = Phase::Boot;

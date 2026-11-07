@@ -175,6 +175,7 @@ hg::DisplayInfo AmoledDisplay::info() const {
 void AmoledDisplay::flush(uint16_t y0, uint16_t y1) { flush_rect(0, y0, cfg_.width, y1); }
 
 void AmoledDisplay::flush_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+  if (asleep_) return;  // the core repaints in full when it wakes the panel
   const int64_t started = esp_timer_get_time();
   const int w = cfg_.width, h = cfg_.height;
   // Even start and even span on both axes: widen the dirty area by at most one each side.
@@ -248,6 +249,23 @@ void AmoledDisplay::flush_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y
 void AmoledDisplay::set_backlight(uint8_t percent) {
   const uint8_t level = static_cast<uint8_t>(255u * std::min<uint8_t>(percent, 100) / 100u);
   command(0x51, &level, 1);
+}
+
+void AmoledDisplay::set_sleep(bool asleep) {
+  if (!io_ || asleep == asleep_) return;
+  if (asleep) {
+    command(0x28, nullptr, 0);  // display off
+    command(0x10, nullptr, 0);  // sleep in
+    slept_at_us_ = esp_timer_get_time();
+    asleep_ = true;
+    return;
+  }
+  const int64_t since = esp_timer_get_time() - slept_at_us_;
+  if (since < 120000) vTaskDelay(pdMS_TO_TICKS((120000 - since) / 1000 + 1));
+  command(0x11, nullptr, 0);  // sleep out
+  vTaskDelay(pdMS_TO_TICKS(120));  // the controller's sleep-out time before it takes commands
+  command(0x29, nullptr, 0);  // display on (brightness stays 0 until the core has repainted)
+  asleep_ = false;
 }
 
 }  // namespace hgp

@@ -39,6 +39,9 @@ class Board:
     scroll_buttons: bool = True
     round: bool = False  # circular panel: pixels outside the circle are not shown
     touch: bool = False  # hold to talk; view-owned navigation and explicit approval controls
+    power: bool = False  # battery gauge + PMIC, scripted with Simulator.set_power
+    screen_timeout_s: int = 0  # screen defaults while nothing is stored (0: the core's)
+    brightness: int = 0
 
 
 BOARDS = {
@@ -50,6 +53,10 @@ BOARDS = {
     "sim-240x240": Board("sim-240x240", 240, 240, scroll_buttons=False),
     # A 1.75" round 466x466 AMOLED touch board (e.g. ESP32-S3-Touch-AMOLED-1.75): no scroll buttons.
     "sim-466x466-round": Board("sim-466x466-round", 466, 466, scroll_buttons=False, round=True, touch=True),
+    # The same panel with the AMOLED 1.75C's AXP2101 and screen defaults (T2-C8/C9): a scripted
+    # battery, screen rest after 60 s, 80% brightness.
+    "sim-466x466-amoled": Board("sim-466x466-amoled", 466, 466, scroll_buttons=False, round=True, touch=True,
+                                power=True, screen_timeout_s=60, brightness=80),
     # A 1.9" 320x170 board with no audio hardware (e.g. LilyGO T-Display-S3).
     "sim-320x170-nospeaker": Board("sim-320x170-nospeaker", 320, 170, mic=False, speaker=False,
                                    scroll_buttons=False),
@@ -162,7 +169,8 @@ class Simulator:
             server_url=url, access_token=token, mic=b.mic, speaker=b.speaker, backlight=b.backlight,
             scroll_buttons=b.scroll_buttons, library=library, button_labels=button_labels,
             round_panel=b.round, touch_screen=b.touch, update_capacity=UPDATE_SLOT_BYTES,
-            update_pending=update_pending)
+            update_pending=update_pending, power=b.power, screen_timeout_s=b.screen_timeout_s,
+            brightness=b.brightness)
         self._round_spans = _circle_spans(b.width, b.height) if b.round else None
         self._register_actions()
 
@@ -416,6 +424,12 @@ class Simulator:
 
     def set_sensor(self, name: str, value: float) -> None:
         self.device.set_sensor(name, value)
+
+    def set_power(self, *, percent: int, mv: int = 3900, usb: bool = False, charging: bool = False) -> None:
+        """What the battery gauge reports from its next read (boards with ``power``)."""
+        if not self.board.power:
+            raise ValueError(f"{self.board.name} has no battery gauge")
+        self.device.set_power(percent, mv, usb, charging)
 
     def console(self, line: str) -> str:
         return self.device.console(line)

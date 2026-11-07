@@ -37,7 +37,7 @@ class Clock:
         return self.unix, self.offset
 
 
-def make(tmp_path, clock, heartbeat_s=5):
+def make(tmp_path, clock, heartbeat_s=5, board='sim-466x466-round'):
     from hermes_gadget.sim import Simulator
     from hermes_gadget_plugin.hub import DeviceHub
     from hermes_gadget_plugin.store import DeviceStore
@@ -47,7 +47,7 @@ def make(tmp_path, clock, heartbeat_s=5):
                     heartbeat_s=heartbeat_s, clock=clock)
     brain.hub = hub
     lt.run(hub.start())
-    sim = Simulator(url=f'ws://127.0.0.1:{hub.bound_port}/gadget', name='Tiny', board='sim-466x466-round',
+    sim = Simulator(url=f'ws://127.0.0.1:{hub.bound_port}/gadget', name='Tiny', board=board,
                     state_dir=tmp_path / 'device')
     # The device's monotonic clock runs in real time plus a jump the test can add, so boot
     # and the handshake proceed normally and the test can still skip hours.

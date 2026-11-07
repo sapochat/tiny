@@ -41,7 +41,8 @@ Swipe down from Home for four bands: volume and brightness sliders, **Mute voice
 
 The SDK had a single Cancel. Tiny splits it into three separate actions. See [Mute voice, Stop task and Discard](docs/using-gadget.md#mute-voice-stop-task-and-discard).
 
-- **Mute voice** quiets the speaker only. On the AMOLED-1.75C a short press of **PWR** does the same without looking, and also quiets a ringing timer.
+- **Mute voice** quiets the speaker only. On the AMOLED-1.75C a short press of **PWR** does the same without looking, and also quiets a ringing timer. With nothing sounding, PWR turns the screen off and on.
+- On battery boards Home shows the charge on its bottom rim, Tiny warns once at 20% and shuts down cleanly at 5%. AMOLED screens rest after 60 seconds by default. See [Battery](docs/using-gadget.md#battery).
 - **Stop task** sends one stop request, shows **Stop requested**, then reports what Hermes says happened: **Stopped**, **Finished**, **Ended with an error**, or **Outcome unknown** if it never heard back. It never claims an undo.
 - **Discard** drops a recording without making a request.
 

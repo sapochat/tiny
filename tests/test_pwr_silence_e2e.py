@@ -2,8 +2,9 @@
 
 On the AMOLED 1.75C the PWR key is wired to the AXP2101, which reports a short press as an
 interrupt flag; the port turns that flag into ``Button::Silence`` (sim button 4). The key
-quiets whatever is sounding and does nothing else. Long presses stay the PMIC's own
-power-off and never reach the app, so they are not modelled here.
+quiets whatever is sounding. With nothing sounding it turns the screen off, or back on
+(T2-C8; screen behaviour itself is in test_screen_rest_e2e.py). Long presses stay the
+PMIC's own power-off and never reach the app, so they are not modelled here.
 
 Failure modes covered:
 - the device does not advertise the key, so Hermes cannot know it exists;
@@ -77,7 +78,8 @@ def test_pwr_quiets_speech_and_keeps_the_work(ix):
     assert r.wait(nxt.done.is_set, 6)
 
 
-def test_pwr_with_nothing_sounding_does_nothing(ix):
+def test_pwr_with_nothing_sounding_turns_the_screen_off(ix):
+    # Santi, 2026-11-07: with nothing to silence, PWR turns the screen off, like a phone.
     r, s = ix, ix.s
     r.turn_start('turn-W')
     r.delta('Working on it', turn='turn-W')
@@ -86,9 +88,28 @@ def test_pwr_with_nothing_sounding_does_nothing(ix):
     m = r.mark()
     pwr(s, 0.5)
     after = ui(s)
+    assert s.status()['display']['sleeping'], 'PWR with nothing sounding must turn the screen off'
     assert after['view'] == before['view'] and after['activity'] == before['activity'] == 'streaming'
     assert not r.sent_since(m), r.sent_since(m)
     assert not r.hal_since(m, 'speaker_abort')
+
+
+def test_pwr_in_the_dark_silences_speech_and_stays_dark(ix):
+    r, s = ix, ix.s
+    r.turn_start('turn-D')
+    r.delta('Thinking about it', turn='turn-D')
+    s.run_for(0.3)
+    pwr(s)
+    assert s.status()['display']['sleeping']
+    out = r.play(tone(3.0), turn='turn-D')
+    assert r.wait(lambda: r.speaker_bytes() >= 3200 and ui(s)['speaking'])
+    assert s.status()['display']['sleeping'], "the same turn's speech woke the screen"
+    m = r.mark()
+    pwr(s)
+    assert r.hal_since(m, 'speaker_abort'), 'PWR in the dark must still silence'
+    assert not ui(s)['speaking']
+    assert s.status()['display']['sleeping'], 'silencing must not wake the screen'
+    assert r.wait(out.done.is_set, 8)
 
 
 def test_pwr_never_discards_a_recording(ix):
