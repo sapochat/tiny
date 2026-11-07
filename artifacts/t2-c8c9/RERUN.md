@@ -54,6 +54,15 @@ cd firmware/esp32   # main's venv has no PlatformIO; the interaction-v1 worktree
 ~/projects/tiny-worktrees/interaction-v1/.venv/bin/pio run -e esp32s3-lcd-154
 ```
 
+## OTA to Tiny 2
+
+`hermes gadget update hg-76ec8103b062e25d artifacts/t2-c8c9/candidate/tiny-t2.2-175c-app.bin
+--timeout 600`, from mini over Wi-Fi: staged 15:56:17, installed 15:56:54 (exit 0), device
+online again 15:57:01 (agent.log), `debug status` 54 s later: `0.2.0-tiny-t2.2`, paired,
+battery 100% / 4183 mV, on USB, not charging. The 7 s reconnect did not repeat t2.1's
+5-minute stall. Before the update the t2.1 build reported `pwr_presses: 4` (physical PWR
+confirmed by the device's own counter); the counter starts empty again after a reboot.
+
 ## Not verified here
 
 Everything above is simulator or build evidence. Not yet measured on Tiny 2: panel current
