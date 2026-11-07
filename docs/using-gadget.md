@@ -94,6 +94,8 @@ These are separate actions with separate targets:
 
 On the 466px display, **Mute voice** appears whenever speech is playing and **Stop task** whenever Hermes is working, on Home, the reading view and quick controls, always with Mute voice on the left and Stop task on the right. Quick controls keep their positions stable. An unavailable Mute voice is outlined; after work ends, its outcome replaces Stop task as plain status text, not a button or hit target. Pending stop requests are also plain status text. Pressing Stop task again, or CANCEL, sends nothing more. Final reply text is not the end of the work: Stop task stays available until Hermes ends the turn.
 
+On the AMOLED-1.75C, a short press of the side **PWR** key is Mute voice without looking: it quiets speech the same way, and it also stops a ringing timer from beeping (the timer stays on Home with **Dismiss** and the needs-you mark). Like Mute voice, it never stops work, answers an approval or discards a recording; with nothing playing it does nothing, and on a dark screen it only wakes the display. Holding PWR is still the board's own power-off.
+
 **Stop requested** stays until Hermes reports how that work ended:
 
 | Hermes reports | Tiny shows |

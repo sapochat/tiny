@@ -22,7 +22,7 @@ extern "C" {
 #define HGSIM_API __attribute__((visibility("default")))
 #endif
 
-#define HGSIM_ABI_VERSION 5
+#define HGSIM_ABI_VERSION 6
 
 typedef struct hgsim hgsim;
 
@@ -92,7 +92,9 @@ typedef struct hgsim_config {
  * error message into it and return 0. */
 typedef int (*hgsim_action_fn)(void* user, const char* args_json, char* result_json, size_t cap);
 
-enum { HGSIM_BUTTON_TALK = 0, HGSIM_BUTTON_CANCEL = 1, HGSIM_BUTTON_UP = 2, HGSIM_BUTTON_DOWN = 3 };
+/* SILENCE is the AMOLED 1.75C's PWR key as its PMIC reports it; round touch boards have it. */
+enum { HGSIM_BUTTON_TALK = 0, HGSIM_BUTTON_CANCEL = 1, HGSIM_BUTTON_UP = 2, HGSIM_BUTTON_DOWN = 3,
+       HGSIM_BUTTON_SILENCE = 4 };
 
 HGSIM_API int hgsim_abi_version(void);
 HGSIM_API hgsim* hgsim_create(const hgsim_config* config, const hgsim_host* host);

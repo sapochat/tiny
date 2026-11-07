@@ -41,7 +41,7 @@ Swipe down from Home for four bands: volume and brightness sliders, **Mute voice
 
 The SDK had a single Cancel. Tiny splits it into three separate actions. See [Mute voice, Stop task and Discard](docs/using-gadget.md#mute-voice-stop-task-and-discard).
 
-- **Mute voice** quiets the speaker only.
+- **Mute voice** quiets the speaker only. On the AMOLED-1.75C a short press of **PWR** does the same without looking, and also quiets a ringing timer.
 - **Stop task** sends one stop request, shows **Stop requested**, then reports what Hermes says happened: **Stopped**, **Finished**, **Ended with an error**, or **Outcome unknown** if it never heard back. It never claims an undo.
 - **Discard** drops a recording without making a request.
 

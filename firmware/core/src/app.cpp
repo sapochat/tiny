@@ -372,6 +372,7 @@ void App::send_hello() {
   if (profile_.touch_screen) inputs.push("touch");
   if (profile_.has_cancel_button) inputs.push("cancel");
   if (profile_.has_scroll_buttons) inputs.push("up").push("down");
+  if (profile_.has_silence_key) inputs.push("silence");
   caps.set("inputs", inputs);
   caps.set("talk_mode", talk_mode_ == TalkMode::Tap ? "tap" : "hold");
   if (hal_.updater) {
@@ -759,6 +760,20 @@ void App::clear_silence() {
   silenced_turn_.clear();
 }
 
+void App::silence_key() {
+  // Whatever is sounding goes quiet; nothing else changes. Speech is silenced exactly as by
+  // Mute voice (the work and the text continue). A ringing alarm stops beeping and waits on
+  // Home with the needs-you mark and Dismiss, as if it had rung out unanswered.
+  if (speaking()) silence();
+#ifdef HG_ROUND_UI
+  if (timer_state() == TimerState::Ringing) {
+    alarm_until_ = now();
+    timers_changed();
+  }
+#endif
+  update_model();
+}
+
 void App::h_audio_end(const json::Value& m) {
   if (in_stream_ < 0 || m["stream"].as_int(-1) != in_stream_) return;
   hal_.speaker->end();
@@ -1061,6 +1076,10 @@ void App::on_button(Button button, bool pressed) {
     if (!pressed) wake_buttons_ &= static_cast<uint8_t>(~bit);
     return;
   }
+  if (button == Button::Silence) {
+    if (pressed) silence_key();
+    return;
+  }
   if (button == Button::Talk) {
     talk_held_ = pressed;
     if (pressed) talk_down_at_ = now();
@@ -1144,6 +1163,8 @@ void App::on_button(Button button, bool pressed) {
         scroll_body(button == Button::Up ? -1 : +1);
         if (mode_ == Mode::Idle) reply_until_ = now() + kReplyLingerMs;
       }
+      break;
+    case Button::Silence:  // handled before settings and the chord; never reaches here
       break;
   }
   update_model();

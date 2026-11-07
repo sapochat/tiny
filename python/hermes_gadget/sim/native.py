@@ -20,10 +20,11 @@ from .. import paths
 
 log = logging.getLogger("hermes_gadget.sim")
 
-ABI_VERSION = 5
+ABI_VERSION = 6
 
-BUTTON_TALK, BUTTON_CANCEL, BUTTON_UP, BUTTON_DOWN = 0, 1, 2, 3
-BUTTONS = {"talk": BUTTON_TALK, "cancel": BUTTON_CANCEL, "up": BUTTON_UP, "down": BUTTON_DOWN}
+BUTTON_TALK, BUTTON_CANCEL, BUTTON_UP, BUTTON_DOWN, BUTTON_SILENCE = 0, 1, 2, 3, 4
+BUTTONS = {"talk": BUTTON_TALK, "cancel": BUTTON_CANCEL, "up": BUTTON_UP, "down": BUTTON_DOWN,
+           "silence": BUTTON_SILENCE}
 
 _TRANSPORT_CONNECT = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 _SEND_TEXT = CFUNCTYPE(c_int, c_void_p, POINTER(c_char), c_size_t)

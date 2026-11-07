@@ -142,7 +142,7 @@ References: [M5Stack hardware and recovery instructions](https://docs.m5stack.co
 
 Use `esp32s3-touch-amoled-175c` for SKUs 33691/33692, the enclosed model with 32 MB flash and 8 MB octal PSRAM. This is an experimental port. Use its exact image; the 1.75 model's image has different pins.
 
-This local Tiny trial sets ES7210 microphone codec gain to 30 dB on the 1.75C only (shared default remains 24 dB). The local PlatformIO build reports `0.2.0-tiny-mic30`; speaker gain and voice processing are unchanged. Physical microphone level, noise, clipping and transcription validation remain pending.
+Tiny sets ES7210 microphone codec gain to 30 dB on the 1.75C only (shared default remains 24 dB); speaker gain and voice processing are unchanged. Physical microphone level, noise, clipping and transcription validation remain pending.
 
 | Part | Connection |
 |---|---|
@@ -150,10 +150,14 @@ This local Tiny trial sets ES7210 microphone codec gain to 30 dB on the 1.75C on
 | CST9217 touch | I2C 0x5A, reset 2; interrupt 11 unused because input is polled |
 | I2C | SDA 15, SCL 14, 400 kHz |
 | ES8311 speaker / ES7210 microphones | MCLK 16, BCLK 9, WS 45, DOUT 8, DIN 10; amplifier enable 46 |
-| AXP2101 | I2C 0x34; ALDO1 at 3.3 V supplies analog audio |
+| AXP2101 | I2C 0x34; ALDO1 at 3.3 V supplies analog audio; PWR key (PWRON) |
+| QMI8658 IMU | I2C 0x6B (answers the bus scan in `diag`); not used yet |
 | BOOT | GPIO 0, TALK |
+| PWR | AXP2101 PWRON: short press is **Silence**; long hold is the PMIC's power-off |
 
-Hold Home or BOOT to talk; while BOOT is held, the screen can tap **Discard**. Tap **Silence** to quiet speech and **Stop work** to request a stop, on Home, a reply or quick controls. Open settings from quick controls (or hold the title for one second) when idle. PWR retains its hardware power function; firmware does not map it to CANCEL on this model. There is no TCA9554 expander. The IMU and RTC are not exposed.
+Hold Home or BOOT to talk; while BOOT is held, the screen can tap **Discard**. Tap **Silence** to quiet speech and **Stop work** to request a stop, on Home, a reply or quick controls. Open settings from quick controls (or hold the title for one second) when idle.
+
+A short press of PWR is **Silence**: it quiets speech exactly like the on-screen Silence control and stops a ringing timer from beeping (the timer then waits on Home with Dismiss). It never cancels, answers an approval, discards a recording or stops work, and on a sleeping screen it only wakes the display. The AXP2101 reports the press as its short-press interrupt flag, which the firmware polls 20 times a second; the `pwr_presses` sensor counts presses since boot. Long holds are untouched: the PMIC's own power-off timing still applies. There is no TCA9554 expander, so PWR is not CANCEL on this model. This model has no RTC and no TF card slot (Waveshare's comparison table), and the QMI8658 IMU is present but unused.
 
 The firmware enables ALDO1 for audio while preserving the other rails and charging settings. Battery readings and local power-off use the existing AXP2101 driver. An unavailable ADC or gauge reading remains absent. Use the settings menu for microphone, speaker, display, touch, volume, brightness and power checks.
 

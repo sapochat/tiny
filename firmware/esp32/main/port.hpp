@@ -301,6 +301,8 @@ class AxpPower final : public hg::Power {
  public:
   bool begin(i2c_master_bus_handle_t bus);
   bool enable_audio_supply() { return chip_ && chip_->enable_aldo1_3v3(); }
+  bool enable_key() { return chip_ && chip_->enable_key_short_press(); }
+  bool take_key_press() { return chip_ && chip_->take_key_short_press(); }
   std::optional<hg::PowerStatus> read() override { return chip_->read(); }
   bool power_off() override { return chip_->power_off(); }
 

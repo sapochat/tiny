@@ -93,6 +93,7 @@ Because the id is derived from the key, nobody can claim another device's id wit
 ```
 
 - Every `caps` member is optional. A device without a speaker omits `speaker`, and the server then never sends it audio.
+- `caps.inputs` lists the physical inputs: `talk`, `touch`, `cancel`, `up`/`down`, and `silence` for a key that only quiets what is sounding (the AMOLED-1.75C's PWR). Input handling stays on the device; the server only reports the list.
 - `caps.ota` (`{"max_size": 2031616}`) means the device installs firmware updates over this connection, up to `max_size` bytes.
 - `actions` is the device's tool manifest. Each action has a JSON-Schema `params` object and a `description` written for the model.
 - `token` is required only when the host sets `GADGET_ACCESS_TOKEN`. A mismatch is rejected with error code `bad_token`.

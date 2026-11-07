@@ -38,4 +38,23 @@ bool Axp2101::enable_aldo1_3v3() {
          write_(0x90, static_cast<uint8_t>(enabled | 0x01));
 }
 
+namespace {
+constexpr uint8_t kIntEn2 = 0x41, kIntSts2 = 0x49;
+constexpr uint8_t kKeyShortPress = 0x08;  // ponsp: PWRON short press
+}  // namespace
+
+bool Axp2101::enable_key_short_press() {
+  uint8_t enabled;
+  if (!read_(kIntEn2, &enabled, 1)) return false;
+  // Status bits clear when written with 1; only the short-press flag is ours.
+  return write_(kIntEn2, static_cast<uint8_t>(enabled | kKeyShortPress)) && write_(kIntSts2, kKeyShortPress);
+}
+
+bool Axp2101::take_key_short_press() {
+  uint8_t status;
+  if (!read_(kIntSts2, &status, 1) || !(status & kKeyShortPress)) return false;
+  write_(kIntSts2, kKeyShortPress);
+  return true;
+}
+
 }  // namespace hg

@@ -121,6 +121,7 @@ struct BoardConfig {
   ExpanderKeyConfig pwr_key;
   bool axp2101 = false;
   bool axp_audio_supply = false;
+  bool axp_pwr_silence = false;  // the PMIC's PWR short-press flag reaches the app as Silence
   bool cores3 = false;
   LatchPowerConfig latch_power;
   int status_led = -1;

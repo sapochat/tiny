@@ -198,6 +198,9 @@ extern "C" void app_main(void) {
   g_buttons.begin(board.buttons);
   const bool touch = peripherals_ready && (board.touch.enabled || board.pwr_key.enabled) &&
                      g_touch.begin(board.touch, board.pwr_key, i2c_bus);
+  // PWR wired to the AXP2101: its short-press flag, polled from the app loop, is Silence.
+  const bool pwr_silence = board.axp_pwr_silence && hal.power == &g_power && g_power.enable_key();
+  if (board.axp_pwr_silence && !pwr_silence) ESP_LOGW(TAG, "PWR key unavailable");
 
   hgp::diag::Parts parts;
   parts.display = hal.display == &g_display ? g_display.controller_name()
@@ -209,7 +212,7 @@ extern "C" void app_main(void) {
       (board.codec.speaker == hgp::SpeakerCodec::Aw88298 ? "aw88298" : "es8311") :
       hal.speaker == &g_speaker ? "i2s" : "none";
   parts.touch = touch && g_touch.has_touch();
-  parts.key = touch && g_touch.has_key();
+  parts.key = (touch && g_touch.has_key()) || pwr_silence;
   parts.i2c = i2c_bus;
   hgp::diag::set_parts(parts);
   hgp::diag::log_boot_summary();
@@ -222,6 +225,7 @@ extern "C" void app_main(void) {
   profile.default_access_token = CONFIG_HG_DEFAULT_ACCESS_TOKEN;
   profile.has_cancel_button = board.buttons.cancel >= 0 || touch;
   profile.has_scroll_buttons = board.buttons.up >= 0 && board.buttons.down >= 0;
+  profile.has_silence_key = pwr_silence;
   profile.talk_label = board.talk_label;
   profile.cancel_label = board.cancel_label;
   if (touch && board.touch.enabled) {
@@ -254,6 +258,7 @@ extern "C" void app_main(void) {
   uint32_t perf_at = g_system.now_ms(), event_max_us = 0, tick_max_us = 0, busy_us = 0, gap_max_us = 0;
   int64_t ticked_at = 0;  // end of the last app.tick() while a slide was in progress; 0 otherwise
   uint32_t te_at = perf_at;  // when the tearing-effect pulse count was last taken
+  uint32_t pwr_at = perf_at;  // when the PMIC's key flag was last read (20 Hz; one I2C byte)
   for (;;) {
     hgp::Event ev;
     // Block briefly for events, then run the core's timers and animations.
@@ -269,6 +274,15 @@ extern "C" void app_main(void) {
       } while (hgp::events::receive(ev, 0));
     }
     g_buttons.poll(app);
+    if (pwr_silence && g_system.now_ms() - pwr_at >= 50) {
+      pwr_at = g_system.now_ms();
+      if (g_power.take_key_press()) {  // the chip reports a finished short press
+        static uint32_t presses = 0;
+        app.set_sensor("pwr_presses", ++presses);  // since boot: read remotely at the desk
+        app.on_button(hg::Button::Silence, true);
+        app.on_button(hg::Button::Silence, false);
+      }
+    }
     g_wifi.tick(app, g_system.now_ms());
     if (g_gestures) g_gestures->tick(g_system.now_ms());
     const int64_t started = esp_timer_get_time();

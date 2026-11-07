@@ -222,6 +222,7 @@ hgsim* hgsim_create(const hgsim_config* cfg, const hgsim_host* host) {
     profile.touch_screen = true;
     if (!cfg->cancel_label) profile.cancel_label = "Swipe down";
     profile.extra_settings = {"touch_cancel"};
+    profile.has_silence_key = cfg->round != 0;  // stands in for the AMOLED 1.75C's PWR key
   }
   sim->app = std::make_unique<hg::App>(sim->hal, profile);
   // Synthetic temporary-network instructions (no radio in the simulator), so the Wi-Fi
@@ -286,7 +287,7 @@ void hgsim_transport_binary(hgsim* sim, const uint8_t* data, size_t len) {
 }
 void hgsim_transport_closed(hgsim* sim, const char* reason) { sim->app->on_transport_closed(reason ? reason : ""); }
 void hgsim_button(hgsim* sim, int button, int pressed) {
-  if (button < HGSIM_BUTTON_TALK || button > HGSIM_BUTTON_DOWN) return;
+  if (button < HGSIM_BUTTON_TALK || button > HGSIM_BUTTON_SILENCE) return;
   sim->app->on_button(static_cast<hg::Button>(button), pressed != 0);
 }
 void hgsim_touch(hgsim* sim, int touching, int x, int y) {

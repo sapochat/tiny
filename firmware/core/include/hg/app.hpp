@@ -22,7 +22,9 @@
 
 namespace hg {
 
-enum class Button : uint8_t { Talk, Cancel, Up, Down };
+// Silence is a key that only quiets what is sounding (the PWR key on the AMOLED 1.75C,
+// reported by its PMIC). It is never Cancel: it answers nothing and stops no work.
+enum class Button : uint8_t { Talk, Cancel, Up, Down, Silence };
 
 // How the talk button behaves.
 enum class TalkMode : uint8_t {
@@ -41,6 +43,7 @@ struct DeviceProfile {
   uint32_t speaker_rate = 16000;
   bool has_cancel_button = true;
   bool has_scroll_buttons = false;
+  bool has_silence_key = false;  // the port reports Button::Silence
   std::string talk_label = "TALK";
   std::string cancel_label = "CANCEL";
   // The screen supports hold-to-talk, view-owned navigation and explicit
@@ -255,6 +258,7 @@ class App {
   // a new turn or request. Never sends anything and never cancels work.
   void silence();
   void clear_silence();
+  void silence_key();  // Button::Silence: quiet what is sounding, nothing else
   // Remote work: a request or turn that has not ended (final text is not an end) and is
   // still followed. Independent of recording and display modes; a capture never ends it.
   bool work_open() const;

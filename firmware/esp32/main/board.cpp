@@ -96,7 +96,8 @@ BoardConfig make() {
   b.touch.rst = 2;
   b.codec.mclk = 16;
   b.codec.mic_gain_db = 30.0f;  // ES7210 input gain; other boards retain 24 dB.
-  b.pwr_key = {};  // This model has no TCA9554. PWR retains its hardware role.
+  b.pwr_key = {};  // This model has no TCA9554: PWR is wired to the AXP2101.
+  b.axp_pwr_silence = true;  // PWR short press = Silence; long press stays the PMIC's power-off.
   b.axp_audio_supply = true;  // ALDO1 supplies the analog audio circuit.
 #endif
   return b;
