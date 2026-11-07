@@ -48,7 +48,7 @@ assets/mascot/          The mascot master image and its attribution
 | Core (C++) | `hermes-gadget build-sim --test`, or `ctest --test-dir build/host -C Release` | CMake + compiler |
 | Plugin units, simulator ↔ hub, desktop controls | `pytest` | Built simulator library; a desktop or Xvfb for window tests |
 | Adapter on real Hermes classes | `HERMES_AGENT_DIR=../hermes-agent ../hermes-agent/.venv/bin/python -m pytest tests/test_adapter_hermes.py` | A Hermes checkout and its virtualenv |
-| Full gateway end to end | `HERMES_GADGET_E2E=1 pytest tests/test_gateway_e2e.py` | The above; spawns `hermes gateway run` with a temporary `HERMES_HOME` |
+| Full gateway end to end | `HERMES_GADGET_E2E=1 pytest tests/test_gateway_e2e.py tests/test_debug_bridge_e2e.py` | The above; spawns `hermes gateway run` with a temporary `HERMES_HOME`. That home must be outside `~/.hermes`: Hermes treats any home inside it as part of your real Hermes, so the test gateway would contend with your gateway's profiles. The harness stops with a message if `TMPDIR` points inside `~/.hermes`; pass `--basetemp` (for example `--basetemp=build/pytest-gateway`) |
 | Browser installer | `npm ci && npm test` in `site/` | Node.js 22 |
 | Home Assistant / MQTT examples | `pytest tests/test_automation_examples.py` | Built native library and the `mqtt` extra; local peers need no external accounts |
 

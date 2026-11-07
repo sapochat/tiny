@@ -38,6 +38,7 @@ platforms:
       # max_utterance_s: 60
       # tls_cert: /path/cert.pem   # serve wss://
       # tls_key: /path/key.pem
+      # local_debug: true        # `hermes gadget debug` socket (Linux); false turns it off
 ```
 
 Secrets go in `~/.hermes/.env`, following Hermes's rule that `.env` is only for secrets:
@@ -73,7 +74,7 @@ Secrets go in `~/.hermes/.env`, following Hermes's rule that `.env` is only for 
 | Agent tools | `ctx.register_tool(toolset="gadget")` | Part of the implicit `hermes-gadget` toolset; also usable from other chats |
 | Tool session context | `gateway.session_context.get_session_env` | `HERMES_SESSION_PLATFORM` / `HERMES_SESSION_CHAT_ID` pick the default device |
 | Durable state | `plugins.plugin_storage.plugin_data_dir("gadget")` | Enrolled device keys, pending pairing codes, and firmware staged for updates (`updates/`) |
-| Host CLI | `ctx.register_cli_command("gadget", ...)` | `hermes gadget devices / forget / info / pair / update`. `pair` waits for a device to show a code and approves it after asking. `update` stages an image in the plugin's data directory (a file, or with `--latest` the newest release's image for the device's board, checked against the release manifest); the gateway's adapter installs it once the device is online and writes progress back for the command |
+| Host CLI | `ctx.register_cli_command("gadget", ...)` | `hermes gadget debug / devices / forget / info / pair / update`. `debug` reads the live gateway's connections ([below](#live-diagnostics-hermes-gadget-debug)). `pair` waits for a device to show a code and approves it after asking. `update` stages an image in the plugin's data directory (a file, or with `--latest` the newest release's image for the device's board, checked against the release manifest); the gateway's adapter installs it once the device is online and writes progress back for the command |
 | Send and cron targets | `parse_target_ref_fn` | `gadget:hg-0123456789abcdef` works with send_message and cron delivery |
 
 ### Voice round trip
@@ -123,6 +124,22 @@ Hermes asks before destructive commands (`/new`, `/undo`), costly model switches
 ### Agent tools and Hermes tool search
 
 Hermes keeps the core tool schema narrow. Plugin tools are therefore deferred behind its tool-search bridge (`tool_search` / `tool_describe` / `tool_call`), and their names and descriptions appear in the bridge's manifest. A model invokes `gadget_action` through `tool_call`, and the end-to-end test exercises exactly that. The per-device context names the available actions so the model knows they exist. On the round companion these include `timer.start`, `timer.cancel` and `timer.list`, so a spoken "set a pasta timer for 9 minutes" becomes a `gadget_action` call with no plugin change; the timer then runs and rings on the device alone ([Timers](using-gadget.md#timers-round-companion)).
+
+### Live diagnostics (`hermes gadget debug`)
+
+The agent tools only work inside the gateway process that owns the connection. A separate shell gets them through `hermes gadget debug`, which talks to the running gateway on Linux. All output is JSON, and a failed operation exits 1.
+
+```sh
+hermes gadget debug status                                     # live connections, inputs, actions, latest sensors
+hermes gadget debug display hg-0123456789abcdef 'Hello' --confirm   # a 10-second card (500 characters at most)
+hermes gadget debug tone hg-0123456789abcdef --confirm              # a quiet 440 Hz, 250 ms tone
+```
+
+- `status` is read-only. `display` and `tone` need `--confirm` and the exact id of a connected, authorized device. They refuse while a turn, a question, an update, a recording, audio output or another diagnostic write is active on that device.
+- A successful write means the gateway sent it (`"delivery": "transport_sent"`). The protocol has no receipt, so check the device to confirm it showed or played.
+- The adapter listens on a Unix socket at `plugin-data/gadget/debug/control.sock` under its own Hermes home. The directory is 0700 and the socket 0600, and it only answers callers running as the same OS user. It adds no network listener. When the home path is too deep for a socket path, the socket is reached through `/proc/self/fd`, in the same place with the same permissions.
+- The command offers no arbitrary actions, files, pairing, updates or answers to questions. For board logs, heap and reset reasons, use USB `hermes-gadget diag`.
+- `local_debug: false` in `platforms.gadget.extra` turns it off at the next gateway start. A newly installed plugin starts the socket only after the gateway restarts; `reload-plugins` does not reconnect an existing adapter.
 
 ## Making replies fast
 

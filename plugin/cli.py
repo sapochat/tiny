@@ -243,7 +243,9 @@ def _cmd_pair(args) -> None:
 
 
 def setup_argparse(parser) -> None:
+    from . import debug
     subs = parser.add_subparsers(dest="gadget_command")
+    debug.setup_argparse(subs.add_parser("debug", help="Local live diagnostics (JSON; Linux same-user IPC)"))
     subs.add_parser("devices", aliases=["ls"], help="List gadgets that have enrolled with this Hermes")
     forget = subs.add_parser("forget", help="Forget a gadget's key so it can re-enroll (after a factory reset)")
     forget.add_argument("device", help="Device id or name")
@@ -270,5 +272,8 @@ _COMMANDS = {"devices": _cmd_devices, "ls": _cmd_devices, "forget": _cmd_forget,
 
 
 def handle(args) -> None:
+    if getattr(args, "gadget_command", None) == "debug":
+        from .debug import handle as debug_handle
+        return debug_handle(args)
     command = _COMMANDS.get(getattr(args, "gadget_command", None) or "info")
     command(args)

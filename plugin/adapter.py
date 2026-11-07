@@ -32,6 +32,7 @@ import json
 import logging
 import re
 import ssl
+import sys
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -171,6 +172,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         self._update_task: Optional[asyncio.Task] = None
         self._installing: Dict[str, asyncio.Task] = {}  # device id -> staged update being installed
         self._registry_key = "default"
+        self._debug_server = None  # local diagnostics socket (Linux, same user)
         self._prompts: Dict[str, List[_Prompt]] = {}  # device id -> questions, oldest (shown) first
         self._new_requested: Dict[str, float] = {}  # device id -> when it asked for a new session
 
@@ -206,6 +208,15 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         self._loop = asyncio.get_running_loop()
         self._registry_key = getattr(self, "_owner_profile", None) or "default"
         runtime.register(self._registry_key, self)
+        # Local diagnostics (`hermes gadget debug`): a same-user Unix socket, never a network listener.
+        if sys.platform == "linux" and _flag(self.config.extra.get("local_debug"), True):
+            from .debug import DebugServer
+            server = DebugServer(self)
+            try:
+                await server.start()
+                self._debug_server = server
+            except Exception as exc:
+                logger.warning("Gadget local diagnostics unavailable: %s", exc)
         self._watch_task = asyncio.create_task(self._watch_pairing())
         self._update_task = asyncio.create_task(self._watch_updates())
         self._mark_connected()
@@ -215,6 +226,9 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         return True
 
     async def disconnect(self) -> None:
+        if self._debug_server:
+            await self._debug_server.stop()
+            self._debug_server = None
         runtime.unregister(self._registry_key, self)
         for task in (self._watch_task, self._update_task):
             if task:

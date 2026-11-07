@@ -88,6 +88,12 @@ def running_gateway(tmp_path, gadget_extra: str = ""):
     api_server, api_port = fake_openai.start(0)
     gadget_port = _free_port()
     home = tmp_path / "hermes-home"
+    real_home = (Path.home() / ".hermes").resolve()
+    if home.resolve().is_relative_to(real_home):
+        # Hermes takes the root of any HERMES_HOME inside ~/.hermes to be ~/.hermes itself, so this
+        # "temporary" gateway would see the real profiles and contend with the real gateway for them.
+        pytest.fail(f"temporary Hermes home {home} is inside {real_home}; "
+                    "rerun with --basetemp outside it (e.g. --basetemp=build/pytest-gateway)")
     (home / "plugins").mkdir(parents=True)
     shutil.copytree(REPO / "plugin", home / "plugins" / "gadget", ignore=shutil.ignore_patterns("__pycache__"))
     config = CONFIG.format(api=api_port, gadget=gadget_port)
