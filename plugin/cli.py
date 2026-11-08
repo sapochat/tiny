@@ -337,11 +337,21 @@ def setup_argparse(parser) -> None:
     tile_clear.add_argument("name", nargs="?", help="The tile to remove")
     tile_clear.add_argument("--all", action="store_true", help="Remove every tile")
     tile_subs.add_parser("list", help="Show the tiles")
+    from . import debug  # Tiny: live diagnostics over a same-user Unix socket
+    debug.setup_argparse(subs.add_parser("debug", help="Local live diagnostics (JSON; Linux same-user IPC)"))
     parser.set_defaults(func=handle)
 
 
 _COMMANDS = {"devices": _cmd_devices, "ls": _cmd_devices, "forget": _cmd_forget, "info": _cmd_info,
              "pair": _cmd_pair, "update": _cmd_update, "tile": _cmd_tile}
+
+
+def _cmd_debug(args) -> None:
+    from .debug import handle as debug_handle
+    debug_handle(args)
+
+
+_COMMANDS["debug"] = _cmd_debug
 
 
 def handle(args) -> None:

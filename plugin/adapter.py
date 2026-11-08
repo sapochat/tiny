@@ -39,6 +39,7 @@ import logging
 import os
 import re
 import ssl
+import sys
 import time
 import uuid
 import weakref
@@ -263,6 +264,7 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         self._watch_task: Optional[asyncio.Task] = None
         self._update_task: Optional[asyncio.Task] = None
         self._status_task: Optional[asyncio.Task] = None
+        self._debug_server = None  # Tiny: local diagnostics socket (Linux, same user)
         self._desk_task: Optional[asyncio.Task] = None
         self._status_dir: Optional[Path] = None
         self._status_failing = False  # warned once; again only after a write succeeds
@@ -307,6 +309,15 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         self._loop = asyncio.get_running_loop()
         self._registry_key = getattr(self, "_owner_profile", None) or "default"
         runtime.register(self._registry_key, self)
+        # Tiny: local diagnostics (`hermes gadget debug`), a same-user Unix socket, never a network listener.
+        if sys.platform == "linux" and _flag(self.config.extra.get("local_debug"), True):
+            from .debug import DebugServer
+            server = DebugServer(self)
+            try:
+                await server.start()
+                self._debug_server = server
+            except Exception as exc:
+                logger.warning("Gadget local diagnostics unavailable: %s", exc)
         self._watch_task = asyncio.create_task(self._watch_pairing())
         self._update_task = asyncio.create_task(self._watch_updates())
         self._status_dir = plugin_data_dir(PLATFORM_NAME)
@@ -324,6 +335,9 @@ class GadgetAdapter(BasePlatformAdapter, HubDelegate):
         return True
 
     async def disconnect(self) -> None:
+        if self._debug_server:
+            await self._debug_server.stop()
+            self._debug_server = None
         runtime.unregister(self._registry_key, self)
         for unsubscribe in self._boards.values():
             unsubscribe()
