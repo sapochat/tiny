@@ -1,3 +1,7 @@
+> **This is Tiny**: upstream Hermes Gadget on a Waveshare AMOLED 1.75C, with a few board patches
+> (32 MB flash layout, PWR as Silence, screen rest, battery-empty shutdown, Restart, `hermes gadget debug`).
+> See [docs/tiny.md](docs/tiny.md). Everything else below is upstream's README.
+
 <p align="center">
   <img src="docs/images/logo.png" width="64" alt="Hermes Gadget logo">
 </p>
