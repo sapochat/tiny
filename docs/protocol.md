@@ -1,34 +1,5 @@
 # Hermes Gadget Protocol, version 1
 
-## Recent work (optional v1)
-
-The protocol remains version 1. A round touch client advertises `caps.work: {"v":1}`
-in hello. Only a host that recognizes it includes `work: {"v":1}` in welcome.
-Without that mutual negotiation no work messages are sent and the shelf is hidden.
-
-- Device → host: `{"type":"work.list"}` requests the bounded snapshot.
-- Host → device: `{"type":"work","items":[...]}` after connection and changes.
-- Each item has `work_id` (independent host UUID), `device_id`,
-  `origin: {request, turn}`, `stage`, `result: {revision, glance}`, and Unix-second
-  `created_at`, `updated_at`, `expires_at`. A glance is at most 240 characters.
-  A round client may show each card's age from `updated_at` and the welcome/ping
-  `time` field; without a trusted host time it shows none. No new field or message.
-- Stages are `running`, `finished`, `failed`, `cancelled`, `unknown`. Only matched
-  turn lifecycle evidence establishes an outcome; final reply text is not completion.
-  Disconnect/startup makes running records unknown. A duplicate start cannot revive
-  unknown work; a matching terminal outcome can resolve it.
-- Snapshots contain only the authenticated, enrolled, currently paired device's
-  records, at most eight, newest update first, retained for seven days from creation.
-  An unpaired or forgotten device receives no records. A new enrollment generation
-  cannot inherit the previous enrollment's records.
-- Result revisions increment on changed final (not interim) text. Opening a result
-  pins that text/revision locally; a later snapshot cannot move the active reader.
-- This is a journal, not a queue: reconnect never replays reply/audio/turn traffic
-  or dispatches requests. This v1 does not implement work.get, work.result,
-  work.update, work-targeted cancellation or artifact references.
-
-
-
 This is the contract between a device and the gadget plugin running inside the Hermes gateway. The device side lives in `firmware/core` (C++) and the server side in `plugin/hub.py` (Python). Both test suites pin the same vectors, so the two sides cannot drift apart without a test failing.
 
 ## Transport
@@ -41,7 +12,7 @@ This is the contract between a device and the gadget plugin running inside the H
 
   | Offset | Size | Field                                 |
   |--------|------|---------------------------------------|
-  | 0      | u8   | channel: `0x01` audio, `0x02` image, `0x03` firmware |
+  | 0      | u8   | channel: `0x01` audio, `0x02` image, `0x03` firmware, `0x04` face |
   | 1      | u8   | stream id (from the matching `*.start` or `ota.offer`) |
   | 2      | u16 LE | sequence number (wraps)             |
   | 4      | ...  | payload                               |
@@ -49,6 +20,7 @@ This is the contract between a device and the gadget plugin running inside the H
   - Audio payload: mono PCM16, little-endian, at the rate announced by `audio.start`.
   - Image payload: RGB565, little-endian, row-major. Each chunk continues where the previous one stopped.
   - Firmware payload: the next bytes of the image; see [Firmware updates](#firmware-updates).
+  - Face payload: a colour face's RGB565, as for images; see [Faces](#faces).
 
 ## Handshake
 
@@ -79,13 +51,15 @@ Because the id is derived from the key, nobody can claim another device's id wit
  "name": "Kitchen Gadget", "board": "esp32s3-breadboard", "firmware": "0.1.0",
  "token": "<optional access token>",
  "caps": {
-   "display": {"width": 320, "height": 240, "color": true, "charset": "ascii",
+   "display": {"width": 320, "height": 240, "color": true, "charset": "latin1",
                "text_cols": 25, "text_rows": 8,
                "image": {"width": 320, "height": 196, "format": "rgb565"}},
    "mic": {"rate": 16000, "format": "pcm16"},
    "speaker": {"rate": 16000, "format": "pcm16"},
    "inputs": ["talk", "cancel", "up", "down"],
-   "talk_mode": "hold"},
+   "talk_mode": "hold",
+   "profiles": true, "faces": 1},
+ "profile": "ops",
  "actions": [{"name": "led.set", "description": "Set the status LED colour.",
               "params": {"type": "object", "properties": {"color": {"type": "string"}},
                          "required": ["color"]}}],
@@ -93,10 +67,15 @@ Because the id is derived from the key, nobody can claim another device's id wit
 ```
 
 - Every `caps` member is optional. A device without a speaker omits `speaker`, and the server then never sends it audio.
-- `caps.inputs` lists the physical inputs: `talk`, `touch`, `cancel`, `up`/`down`, and `silence` for a key that only quiets what is sounding (the AMOLED-1.75C's PWR). Input handling stays on the device; the server only reports the list.
+- `caps.speaker.formats` (`["pcm16", "opus"]`) lists the speaker audio formats the device decodes. `format` stays `"pcm16"` for servers that predate the list, and PCM16 is always accepted. See [Audio to the device](#audio-to-the-device).
+- `caps.speaker.buffer_ms` (`4096`) is how much reply audio, in milliseconds, the device can hold before it plays it. The server then sends audio further ahead of real time, which keeps playback smooth on a link whose delay varies, such as a phone hotspot. It is optional: without it the server keeps its default lead. See [Audio to the device](#audio-to-the-device).
 - `caps.ota` (`{"max_size": 2031616}`) means the device installs firmware updates over this connection, up to `max_size` bytes.
+- `caps.dashboard` (`{"v": 1, "rows": 6}`) means the device draws the [dashboard](#dashboard). `v` is the newest layout it draws, and `rows` is how many lines fit on its screen at once.
 - `actions` is the device's tool manifest. Each action has a JSON-Schema `params` object and a `description` written for the model.
+- `caps.profiles: true` means the device can switch Hermes profiles (see [Profiles](#profiles)). `profile` is the profile it used last; it is omitted for `default`.
+- `caps.faces: 1` means the device draws a face that the server sends for the profile answering it (see [Faces](#faces)). `caps.faces: {"v": 2, "px": 192}` means it also draws colour faces, at `px` pixels square (at most 256): the largest size its Ready screen draws the face at. Where Ready has less room, for example with a second caption line while the device offers profiles, the device scales the face down. `"frames": true` in that object means its colour faces also blink and talk. `"thumbs": 96` in that object means the device's profile grid also takes a thumbnail of each offered profile, 96 pixels square (16 to 128); see [Profile thumbnails](#profile-thumbnails). `face` is the `hash` of the face it holds from an earlier connection; it is omitted when it shows the mascot. `thumbs` (`{"ops": "9c1d0e2f3a4b5c6d"}`) names the thumbnails it holds from an earlier connection, profile id to `hash`; it is `{}` when it holds none, and omitted by a device without `caps.faces.thumbs`.
 - `token` is required only when the host sets `GADGET_ACCESS_TOKEN`. A mismatch is rejected with error code `bad_token`.
+- `display_sleeping: true` means the screen is dark as the device connects; it is omitted while the screen is lit. See [Screen sleep](#screen-sleep).
 
 ### `challenge` (server → device)
 
@@ -118,19 +97,22 @@ If authentication fails, the server sends `{"type": "error", "code": "auth_faile
 ### `welcome` (server → device)
 
 ```json
-{"type": "welcome", "session": "3f2a9c1b7d4e", "paired": false, "heartbeat_s": 20, "server": "hermes", "proto": 1}
+{"type": "welcome", "session": "3f2a9c1b7d4e", "paired": false, "heartbeat_s": 20, "server": "hermes", "proto": 1,
+ "language": "es"}
 ```
+
+`language` is optional: the language id Hermes uses (`"es"`, `"pt-br"`, `"zh-hant"`), from the plugin's `language` setting or else Hermes's own (`HERMES_LANGUAGE`, then `display.language`). A device whose `language` setting is `auto` shows its own text in it: the id itself if the firmware has it, else its primary subtag (`es-mx` as `es`), else English. Other devices ignore it, as does older firmware.
 
 `paired` reports whether Hermes will accept messages from this device. Authorization is enforced by Hermes itself on every message; the flag only drives the device UI.
 
-Optional `time: {"unix": 1792000000, "utc_offset_s": -25200}` is the host's wall clock in
-Unix seconds and its current UTC offset (DST included), taken from Hermes's configured
-timezone or the system's. The host repeats it on every heartbeat `ping`. A device that
-knows it keeps the time as an offset from its own monotonic clock, so it keeps counting
-through Wi-Fi loss, and it stops presenting a time 12 hours after the last sync. A device
-that never received a valid `time` shows no time. Older devices ignore the field, and an
-older host simply omits it; it's additive, so `proto` stays 1. A device ignores a `time`
-whose `unix` is outside 2020–2100 or whose offset is beyond ±14 h.
+```json
+{"type": "welcome", "session": "3f2a9c1b7d4e", "paired": true, "heartbeat_s": 20, "server": "hermes", "proto": 1,
+ "profile": "ops", "profiles": [{"id": "default", "name": "Hermes"}, {"id": "ops", "name": "Ops"}]}
+```
+
+`profile` and `profiles` are present only when the device sent `caps.profiles` and the server offers profiles. The Hermes plugin offers the profiles a multiplexed gateway serves that `platforms.gadget.extra.profiles` lists (all of them for `all`), with `default` first; without that setting it offers none. The device keeps the first 32 entries of `profiles` and ignores the rest.
+
+`face` is present only when the device named a face in `hello.face` and may keep it; see [Faces](#faces).
 
 ### Pairing
 
@@ -139,6 +121,78 @@ whose `unix` is outside 2020–2100 or whose offset is beyond ±14 h.
 | `{"type": "pairing", "code": "ABCD2345", "command": "hermes pairing approve gadget ABCD2345"}` | server → device | Show this code; the owner approves it on the Hermes host |
 | `{"type": "paired"}` | server → device | Approved (no reconnect needed) |
 | `{"type": "unpaired"}` | server → device | Approval was revoked |
+| `{"type": "unpaired", "reason": "routed"}` | server → device | Refused, and no pairing code can let it in: a gateway route sends this device, which answers to the default profile, to another profile. The server sends it when the refusal starts, also to a device that is already unpaired, and after `welcome`, in place of a pairing code. The device drops any pairing code it showed and shows why until `paired`, `pairing`, a plain `unpaired` or the next `welcome`; for a reason it doesn't know, it shows the normal pairing screen, but `status` still reports it as `unpaired_reason` |
+
+### Profiles
+
+A Hermes gateway can serve several profiles (each with its own memory, personality, skills and model). A device that sends `caps.profiles: true` gets the profiles it may use in `welcome.profiles` and the one answering it in `welcome.profile`, and can switch:
+
+| Message | Direction | Meaning |
+|---|---|---|
+| `{"type": "profile.select", "profile": "ops"}` | device → server | Ask to talk to another profile |
+| `{"type": "profile", "profile": "ops"}` | server → device | The profile now answering this device; the device stores it and sends it as `hello.profile` next time |
+| `{"type": "profile", "profile": "default", "error": "busy"}` | server → device | The request was refused; `profile` is unchanged. `error` is `unknown`, `busy` (a turn or question is pending), `unpaired` or `routed` |
+
+A refusal changes nothing on the device. `error` is `routed` when the server's configuration routes this device to a profile; such a device gets no `profiles` in `welcome`. The server may also send `profile` on its own, for example `default` after the device's approval is revoked. A device that does not send `caps.profiles` keeps the gateway's existing routing (normally the default profile).
+
+### Faces
+
+A device that sends `caps.faces` can show each profile with its own face instead of the built-in mascot. A one-colour face is one message:
+
+```json
+{"type": "face", "profile": "ops", "hash": "3f2a91c0d4e5b6a7", "bits": "<base64 26612 bytes>"}
+```
+
+| Field | Meaning |
+|---|---|
+| `profile` | The device's own profile: the last `profile` or `welcome.profile` it got, else the `hello.profile` it sent (`default` without one). The face is that of the profile answering the device, which a gadget route can make another one |
+| `hash` | Names this face. The device sends it back as `hello.face` |
+| `bits` | The face. Without `bits` (and `hash`), the device shows the mascot again |
+
+`bits` holds the three frames (idle, blink, talk) at each of the four sizes (64, 96, 144 and 192 px), smallest size first and idle first within a size: 26,592 bytes in the [layout of the built-in mascot](faces.md#how-it-works). Ten little-endian int16 effect anchors follow, in thousandths of the drawn size: the listening waves' x and y, the speaking waves' x and y, the thinking dots' x and y, the first and last row a blink changes, and the first and last row talking changes. Each anchor is 0 to 1000, and each pair of rows has the first at or above the last. A device ignores a face of any other length, or with an anchor out of range, and shows the mascot.
+
+- The server sends `face` after `welcome`, after each `profile` that is not a refusal, and after `paired` and `unpaired`. An unpaired device gets the mascot: on `unpaired`, or a `welcome` with `paired: false`, the device drops its face, and it ignores `face` until it is paired again.
+- The device keeps its face in memory, through reconnects, while `welcome.face` names it. Before the welcome, the server looks up the `hash` of the face it would send for the profile answering the device, and names the held face only when it has that hash, so an unchanged face stays through reconnects and server restarts and is not sent again. The Hermes plugin names a face file by its bytes and an avatar by its picture's bytes, so the lookup reads one file and converts nothing; one that takes longer than 1.5 s counts as no match. The face itself is made and sent after the welcome. A welcome that does not name the held face, after a new gadget route, a changed face or from a server without faces, makes the device drop it, as does a welcome with `paired: false`.
+- The device also drops its face after a `profile` that names another profile. Either way it shows the mascot until the next `face` arrives, never the previous profile's face. It ignores a `face`, with or without `bits`, whose `profile` is not its own, as the table defines it.
+- The server sends nothing when the device already has the right face: when the welcome named it, or when the device shows the mascot and the profile has no face.
+- A device without `caps.faces` gets no `face` messages. The reference firmware sends `caps.faces` only on boards with PSRAM: a face takes about 27 KB, and its message about 36 KB more while it arrives.
+
+A device that sends `caps.faces: {"v": 2, "px": N}` also takes a still colour face, `N` pixels square, sent like an image:
+
+| Message | Meaning |
+|---|---|
+| `{"type": "face.start", "stream": 9, "profile": "ops", "hash": "11f58ca2bca107e6", "width": 192, "height": 192, "format": "rgb565", "anchors": [620, 300, 500, 620, 820, 110, 370, 430, 521, 719]}` | A colour face begins; its pixels follow on binary channel 4, on `stream`, then `face.end` |
+| `{"type": "face.end", "stream": 9}` | End of the face's pixels |
+
+`profile` and `hash` mean what they mean in `face`. `width` and `height` are the device's `px`. The pixels are `px * px` RGB565 values, little-endian and row-major, in chunks of up to 4096 bytes whose sequence numbers count up from 0. `0x0000` is transparent: the device leaves its background there. `anchors` are the ten effect anchors of a one-colour face, in the same order and range.
+
+A device with `"frames": true` also takes a colour face that blinks and talks. Its `face.start` adds `"blink": [y, rows]`, `"talk": [y, rows]`, or both: the first row and the number of rows that the blink or talk frame changes. After the `px * px` pixels of the idle picture come `rows * px` pixels of the blink band, then those of the talk band, in the same format. A frame draws the idle picture with its band laid over rows `y` to `y + rows - 1`. Each band is two whole numbers with `rows` at least 1 and `y + rows` at most `px`, and the two together have at most `px / 2` rows (rounded down). A frame without a band stays still. The device blinks for 2 of every 45 frames (100 ms each) and, while it speaks, switches between idle and talk every 200 ms, as it does with the mascot.
+
+- A `face.start` makes the device drop the face it holds, as `face` does, and show the mascot until `face.end` brings the whole new face. The device ignores a `face.start` for another profile or while unpaired, as it ignores `face`.
+- The device ignores a `face.start` with another size, another `format`, a `hash` that is empty or longer than 64 characters, anchors that are not ten integers in range, or a band it has no room for or that breaks the rules above, and shows the mascot. It drops a face whose chunks skip a sequence number or bring more than `(px + rows of both bands) * px * 2` bytes, or whose `face.end` comes before them all, or that a reconnect, a profile switch, `unpaired` or another face interrupts.
+- Everything else is as for `face`: the hash, `hello.face` and `welcome.face` keep an unchanged colour face through reconnects, and `face` without `bits` brings the mascot back. A v2 device takes one-colour faces too: a profile's face file is sent as `face`.
+- The reference firmware sets the face's memory aside at start-up, after the framebuffer, on boards with PSRAM, and sends `"v": 2` only when that worked. It asks for room for `px / 2` band rows as well (36 KB at 192 px) and sends `"frames": true` only when it got it; otherwise it sets aside the picture alone. A server that predates colour faces compares `caps.faces` with 1, so it sends such a device no faces at all.
+
+The Hermes plugin sends a profile's `gadget-face.bin`, or else the profile's Hermes avatar made into a still face: in colour where the device draws colour faces, with the avatar's blink and talk pictures where it takes frames. See [Faces](faces.md#a-face-for-each-hermes-profile).
+
+### Profile thumbnails
+
+A device that sends `caps.faces.thumbs: N` shows each profile in its [profile grid](#profiles) with a picture, `N` pixels square, instead of the profile's initial. The server sends one for each profile in `welcome.profiles` that has a face, like a colour face but for any offered profile:
+
+| Message | Meaning |
+|---|---|
+| `{"type": "face.thumb.start", "stream": 12, "profile": "ops", "hash": "9c1d0e2f3a4b5c6d", "width": 96, "height": 96, "format": "rgb565"}` | A thumbnail begins; its pixels follow on binary channel 4, on `stream`, then `face.thumb.end` |
+| `{"type": "face.thumb.end", "stream": 12}` | End of the thumbnail's pixels |
+| `{"type": "face.thumb", "profile": "ops"}` | `ops` has no picture any more: the device shows its initial again |
+
+- The pixels are `N * N` RGB565 values, as for a colour face: little-endian, row-major, `0x0000` transparent, in chunks of up to 4096 bytes whose sequence numbers count up from 0. They share channel 4 with colour faces; `stream` tells them apart, so a thumbnail and a face may arrive at the same time.
+- `hash` names the thumbnail. The device keeps its thumbnails in memory through reconnects and names them in `hello.thumbs`; the server sends a profile's thumbnail only when its hash differs from the one the device named, or from the one it sent on this connection, so a reconnect sends nothing that did not change. A new thumbnail replaces only that profile's; the device shows the initial while its pixels arrive.
+- The device keeps a thumbnail only while it is paired and the profile is offered: a `welcome` that does not list the profile, a `welcome` with `paired: false` and `unpaired` drop it, and the server then forgets the hash too.
+- The device ignores a `face.thumb.start` for a profile the welcome did not offer, with another size or `format`, or a `hash` that is empty or longer than 64 characters, while unpaired, and a thumbnail whose chunks skip a sequence number or bring more than `N * N * 2` bytes; one whose `face.thumb.end` comes early is dropped.
+- The current profile's own colour or one-colour face, when the device holds one, shows in its cell instead of its thumbnail.
+- The reference firmware sends `caps.faces.thumbs` only on touchscreens with colour faces (so PSRAM). At start-up it sets aside room for 32 thumbnails at the size of the largest icon its grid draws, at most 128 px (1 MB); without room it tries smaller sizes down to 32 px, and without room for those sends no `thumbs`. A server that predates thumbnails ignores `caps.faces.thumbs` and `hello.thumbs`, and the grid shows initials.
+
+The Hermes plugin makes a profile's thumbnail from its `gadget-face.bin` (the idle picture, in the colour the device draws one-colour faces in) or else its Hermes avatar in colour. It looks again at each pairing check, every 2 seconds: see [Faces](faces.md#thumbnails-in-the-profile-grid).
 
 ## Conversation
 
@@ -150,30 +204,30 @@ whose `unix` is outside 2020–2100 or whose offset is beyond ±14 h.
 | `{"type": "audio.start", "id": "a4", "stream": 4, "rate": 16000, "format": "pcm16", "mode": "hold"}` | An utterance begins; binary audio frames follow on `stream` |
 | `{"type": "audio.end", "id": "a4", "stream": 4, "duration_ms": 2100}` | Utterance complete; the server turns it into a WAV voice message |
 | `{"type": "audio.cancel", "id": "a4", "stream": 4, "reason": "too short"}` | Discard the utterance |
-| `{"type": "cancel", "turn": "..."}` | Request a stop of the current work (Hermes `/stop`). `turn` or `request` is optional; see [Stopping work](#stopping-work) |
-| `{"type": "session.new"}` | Start a fresh conversation (Hermes `/new`). The reference firmware sends it when CANCEL is held for 2 s, or when **New chat** in quick controls is held for 1 s |
+| `{"type": "cancel"}` | Stop the current turn (Hermes `/stop`). With no turn running it only stops the reply audio the server is still sending, and no `/stop` is sent |
+| `{"type": "session.new"}` | Start a fresh conversation (Hermes `/new`). The reference firmware sends it when CANCEL is held for 2 s |
 | `{"type": "prompt.reply", "id": "q1", "answer": "yes"}` | The answer (`yes` or `no`) to a `prompt` |
 
-- Utterances shorter than 0.25 s are dropped with a `notice`.
+- Utterances shorter than 0.25 s are dropped with a `notice`, and the server then sends a `turn.end` with an empty `turn` and outcome `cancelled`, so the device stops waiting.
+- A device may send a recording again after a lost connection, on the new connection and on a new `stream`, with the same `id`. Its `audio.start` then carries `"resent": 1` (how many times it was sent again) and `"age_ms"` (how long ago the recording began). Its frames arrive faster than real time. A server assembles an utterance by stream whatever the pace, so these fields are informational: the reference hub logs them, and older hubs ignore them.
 - The server caps an utterance at `max_utterance_s` (60 s by default).
-- Audio frames stream while the device records. `audio.end` asks the server to turn the utterance into a request; `audio.cancel` asks it to drop the upload and make no request. Neither recalls frames already sent, and the reference hub keeps the partial upload only in memory until it is dropped.
 
 ### Server → device
 
 | Message | Meaning |
 |---|---|
-| `{"type": "turn.start", "turn": "...", "request": "t3"}` | Hermes started working on a message. `request`, when present, is the `id` of the device's own `text` or `audio.start` this turn serves; it is absent for work the device did not ask for |
+| `{"type": "turn.start", "turn": "..."}` | Hermes started working on a message |
 | `{"type": "transcript", "text": "..."}` | What speech-to-text heard |
 | `{"type": "status", "text": "Searching the web"}` | Live working-state phrase (empty clears it) |
 | `{"type": "reply.delta", "turn": "...", "text": "partial..."}` | Streaming preview; `text` is cumulative |
 | `{"type": "reply", "turn": "...", "text": "...", "interim": true}` | A reply. With `interim`, it is progress commentary rather than the answer |
-| `{"type": "turn.end", "turn": "...", "outcome": "success\|failure\|cancelled"}` | The turn is over |
+| `{"type": "turn.end", "turn": "...", "outcome": "success\|failure\|cancelled"}` | The turn is over. An empty `turn` ends whatever the device is waiting for; the server sends one, as `cancelled`, after dropping a too-short utterance |
 | `{"type": "notice", "text": "...", "ttl_s": 8}` | Transient one-line message |
 | `{"type": "prompt", "id": "q1", "title": "Confirm /new", "text": "...", "ttl_s": 300}` | A yes/no question; see [Questions](#questions) |
 | `{"type": "prompt.close", "id": "q1"}` | The question was withdrawn (timed out or answered elsewhere) |
 | `{"type": "error", "code": "...", "message": "..."}` | Protocol or auth error; the server usually closes the connection next |
 
-Reply text is already shaped for the device: Markdown is stripped and the text is folded to ASCII when `charset` is `"ascii"`. Devices render it as-is.
+Reply text is already shaped for the device: Markdown is stripped and the text is folded to what its `charset` draws. `"ascii"` gets printable ASCII only. `"latin1"` gets ASCII and Latin-1 (U+00A1 to U+00FF, so accented letters, ¿ ¡ and the like), with no-break spaces as plain spaces; anything else is folded to the nearest letter or dropped. Text is UTF-8 either way, and devices render it as-is. The reference firmware reports `"latin1-cyrillic"`: its font also has the Russian alphabet (U+0410 to U+044F, Ё and ё), which that charset keeps on top of `"latin1"`; other Cyrillic letters are folded or dropped as other scripts are. Firmware from before that reports `"latin1"`, and older firmware still `"ascii"`. A plugin older than `latin1-cyrillic` does not know it and leaves the text unfolded: Russian then shows, but typographic quotes, dashes and emoji that it would have folded draw as `?`. Update the plugin before the firmware. Firmware built with the Chinese font (`HG_CJK_FONT`, [cjk.md](cjk.md)) reports `"cjk"`: Latin-1 plus Chinese, Japanese kana, Korean and fullwidth characters are kept, and the rest folds as for `"latin1"`.
 
 ### Audio to the device
 
@@ -185,45 +239,64 @@ Reply text is already shaped for the device: Markdown is stripped and the text i
 2. Binary channel-1 frames follow, about 40 ms each.
 3. `{"type": "audio.end", "stream": 7}` marks normal completion; `{"type": "audio.abort", "stream": 7}` means stop now.
 
-The server resamples to the device's declared speaker rate. It also paces frames to real time, at most 0.5 s ahead, so a jitter buffer of about 1 s is enough. A new `audio.start` replaces the stream that is playing. There is no device-to-server flow control: the server's pacing never waits for the device.
+`format` is `"pcm16"` (little-endian mono samples) unless the device lists `"opus"` in `caps.speaker.formats`: then the server may send `"opus"`, and each binary frame carries one Opus packet (mono, at `rate`, one 40 ms frame; the last frame of a reply is padded with silence). The plugin sends Opus at 24 kbps when the host has libopus, about a tenth of PCM16 at 16 kHz, and falls back to PCM16 without it.
 
-Silence is local to the device and has no message. A device that silences a reply aborts its speaker and ignores later frames and later `audio.start` messages for the same `turn`, or without a `turn`, until a `turn.start` names a different (or unnamed) turn or the user makes a new request. The server keeps streaming until its own `audio.end`; silencing never cancels the turn.
-
-### Stopping work
-
-`cancel` is a request, not a confirmation. Devices from this release add the work they selected: `"turn"` when a `turn.start` has named it, otherwise `"request"` with the `id` of the device's own `text` or `audio.start`. Current servers, including the reference hub and the Hermes adapter, ignore both fields and stop whatever the session is running (`/stop`); a server that implements per-turn cancellation should ignore a `cancel` whose `turn` is no longer current. The hub also aborts its outbound audio when it receives `cancel`.
-
-Only a `turn.end` that names the same turn establishes what happened:
-
-- `cancelled` means the remaining work was stopped. Steps that already ran are not undone.
-- `success` or `failure` after a stop request means the turn ended without a confirmed stop. Hermes can report an interrupted turn either way, so devices do not show these as stopped.
-- A dropped connection before that `turn.end` leaves the outcome unknown. Nothing is resent after reconnecting; a later `turn.end` for the same turn still resolves it.
-- A stop sent before any `turn.start` named the work is matched through `request`: a `turn.start` naming the same request binds the stop to that turn, and its `turn.end` settles it like any other. A `turn.start` naming an earlier request is that earlier work, never the new request's, and its `turn.end` settles only the stop retired with it. From a server that omits `request`, devices keep the stop pending only for the next turn that starts, then report its outcome as unknown. Sending a new request retires a pending stop; it is never pending for the new request, which can be stopped on its own.
-- Once a device knows the current turn's id, a `turn.end` without a `turn` (or with a non-string one) cannot be attributed: it neither confirms a stop nor ends that work. A server that never names turns still ends its current unnamed turn this way.
-- A missing identity is never a wildcard: a `turn.end` that names any turn never ends a turn whose `turn.start` had no name. An end naming an earlier stopped turn settles only that earlier stop.
-- Final `reply` text is not an end. Work stays open until its `turn.end`; a device that receives nothing about the turn for three minutes reports the outcome as unknown, never as finished. A recording that is discarded, or too short to send, makes no request and leaves open work open.
-- `reply` and `reply.delta` text that names a turn other than the current one, or an earlier turn the device knows, is not shown as the current work's text. The Hermes adapter tags each send with the turn of the run that produced it, so late output from a stopped run keeps that run's turn rather than the newer one's. Text without a `turn` is shown as the latest work's. A device describes an ending only under text from that same work.
-
-Messages arrive in order on the one connection, so a `turn.end` that a device receives after sending a new `text` or `audio.end`, but before the next `turn.start`, belongs to earlier work and never ends the new request.
+The server resamples to the device's declared speaker rate. It also paces frames to real time, at most half of `caps.speaker.buffer_ms` ahead, and never less than 0.5 s or more than 3 s. A device that doesn't announce its buffer gets the 0.5 s lead, so a jitter buffer of about 1 s is enough for it. A new `audio.start` replaces the stream that is playing.
 
 ### Display
 
 | Message | Meaning |
 |---|---|
-| `{"type": "display", "title": "Timer", "body": "Pasta: 9 min", "ttl_s": 15}` | Show a card; `ttl_s: 0` keeps it until dismissed |
+| `{"type": "display", "title": "Shopping", "body": "Milk, eggs, bread", "ttl_s": 15}` | Show a card; `ttl_s: 0` keeps it until dismissed |
 | `{"type": "image.start", "stream": 9, "width": 196, "height": 196, "format": "rgb565", "ttl_s": 30}` | Image rows follow on binary channel 2, then `image.end` |
 | `{"type": "image.end", "stream": 9}` | End of image data |
 
-The server fits images inside `caps.display.image` before sending them, so devices never decode JPEG or PNG.
+The server fits images inside `caps.display.image` before sending them, so devices never decode JPEG or PNG. A device that can't show images (such as a board whose framebuffer holds only a band of rows) leaves `image` out of `caps.display`.
+
+### Screen sleep
+
+A device whose screen goes dark (a timeout, the power key, or lying face down) tells the server, and the server holds back screen updates until the screen lights up again. This saves the radio time and the screen wake-ups that cards and images would otherwise cost while nobody is looking.
+
+- The device sends `{"type": "state", "display_sleeping": true}` when the screen goes dark and `{"type": "state", "display_sleeping": false}` when it lights up. Only changes are sent, as they happen, without the rate limit sensor readings have. A device that connects in the dark says so in `hello` instead.
+- While the screen is dark the server keeps the latest `display` card or image (a newer one replaces an older one, as it would on screen), the latest `status` phrase and the latest `dashboard`, and sends none of them.
+- When the screen lights up, the server sends the held `status` phrase, then the held `dashboard`, then the held card or image. A card or image with a `ttl_s` keeps only the time it has left, counted from when it was sent, and one whose time ran out is dropped. A held status phrase is dropped when its turn ends. A held dashboard is dropped when a newer one goes out first, and is not sent to a device that is unpaired or that reconnects without `caps.dashboard`.
+- What is held survives a reconnect: it goes out once the device connects with its screen lit.
+- Everything else is sent at once: `prompt` and `prompt.close`, `pairing`, turns, transcripts, replies, audio, `notice`, actions and firmware updates. A question or a reply still lights the screen, except while the device lies face down: then it waits for the device to be turned over.
+- A device that never sends `display_sleeping` counts as lit, so nothing is held back for it.
+
+### Dashboard
+
+A device that advertises `caps.dashboard` gets a live summary of Hermes: the agent's sessions, and status tiles the owner sets on the host (`hermes gadget tile`). Each message is a complete snapshot that replaces the last one:
+
+```json
+{"type": "dashboard", "v": 1,
+ "sessions": [{"id": "3f2a", "label": "telegram 3f2a", "state": "busy"},
+              {"id": "91c0", "label": "cli 91c0", "state": "waiting"}],
+ "tiles": [{"id": "nas", "label": "NAS", "value": "up", "state": "ok"}]}
+```
+
+| Field | Meaning |
+|---|---|
+| `v` | Layout version. A device ignores a dashboard whose `v` it doesn't draw. The server sends only to devices whose `caps.dashboard.v` is at least the version it sends |
+| `sessions[].state` | `idle`, `busy` (a turn is running) or `waiting` (the turn waits for the user to approve a command) |
+| `sessions[].label` | Text to show: the platform and the end of the session id |
+| `tiles[].label`, `tiles[].value` | Text to show for a tile |
+| `tiles[].state` | `ok`, `warn` or `bad`; omitted for a neutral tile |
+| `id` | Stable within the snapshot; devices may ignore it |
+
+- Text is shaped like replies: folded to the device's `charset` and cut to its `text_cols`. Waiting sessions come first, then busy ones, then idle ones; at most 8 sessions and 8 tiles.
+- The server sends a dashboard when a paired device connects, and again only when something in it changes. An unpaired device gets none.
+- A dashboard is data, not a screen takeover: the device keeps showing what it showed. The reference firmware opens it with CANCEL (a swipe down on touch boards) on the idle screen and closes it with CANCEL again. Talking, a question, a card or an image take the screen over. It forgets the dashboard when the connection drops, and the next connection sends it again.
+- While the screen is dark, only the latest dashboard is kept; see [Screen sleep](#screen-sleep).
 
 ### Questions
 
 Hermes asks before some actions: destructive commands such as `/new`, a costly model switch, or a dangerous shell command the agent wants to run. The server turns each one into a `prompt`:
 
-- The device shows the title and text with two answers. The reference firmware maps the physical TALK button to yes and CANCEL to no, and ignores presses in the first 0.6 s so a press meant for something else doesn't answer it. On touch boards only the rendered Yes and No targets answer; touch Talk targets never do. A `prompt` carries no action identity, revision or target, so devices keep its generic Yes/No wording rather than inferring them from its text.
-- The device answers with `prompt.reply` exactly once, or not at all if the question expires (`ttl_s`, when present) or is withdrawn with `prompt.close`.
+- The device shows the title and text with two answers. The reference firmware maps TALK to yes and CANCEL to no, and ignores presses in the first 0.6 s so a press meant for something else doesn't answer it.
+- The device answers with `prompt.reply` exactly once, or not at all if the question expires (`ttl_s`, when present) or is withdrawn with `prompt.close`. A command approval carries Hermes's approval timeout (`approvals.timeout`, 300 s by default) as its `ttl_s`.
 - The server sends one question at a time. A question asked while a device was offline is sent again when it reconnects.
-- Text is shaped like replies: short, plain and already folded to the device's charset.
+- Text is shaped like replies: short, plain and already folded to the device's charset. A dangerous-command approval is the exception: its text is the command as it will run, unchanged, or a notice to approve on the host when the command doesn't fit one line of `text_cols`, less two columns, as-is. The server ignores a yes to that notice.
 
 ### Device actions
 
@@ -235,14 +308,24 @@ Hermes asks before some actions: destructive commands such as `/new`, a costly m
 
 Devices must answer every `action` exactly once. The server times out after about 18 s.
 
-Actions are how devices add features without protocol changes. For example, the round 466px companion offers `timer.start {seconds, label?}`, `timer.cancel {id?}` and `timer.list`: local timers that run and ring on the device, including without a connection, and report nothing when they end ([Timers](using-gadget.md#timers-round-companion)).
+#### Optional `camera.capture` action
+
+A device with a camera may advertise `camera.capture` in `hello.actions`; it takes an empty parameter object. A successful `action.result` carries:
+
+```json
+{"format":"rgb565le","width":640,"height":512,"image_b64":"<base64>"}
+```
+
+`image_b64` is Base64-encoded, tightly packed, row-major RGB565 pixels in little-endian byte order, with no row padding. For the 7B port, the maximum dimensions are 640×512 (655,360 decoded bytes; 873,816 Base64 characters). The full result stays below the gateway's current 1 MiB action-frame limit. Other camera ports must keep the serialized result within their transport's frame limit. On capture failure, the device uses the existing `action.result` error form; no new message type is introduced. The plugin saves a successful result as a PNG under `~/.hermes/gadgetpix/` and gives the agent the file's path, width, height and size, never `image_b64`.
 
 ### Telemetry and events (device → server)
 
 | Message | Meaning |
 |---|---|
 | `{"type": "state", "sensors": {"battery_pct": 80, "temperature_c": 21.5}}` | Latest readings (rate limited by the device) |
+| `{"type": "state", "display_sleeping": true}` | The screen went dark (`false`: it lit up); see [Screen sleep](#screen-sleep) |
 | `{"type": "event", "name": "button.long_press", "data": {...}, "notify": false}` | With `notify: true`, the event is delivered to the agent as a message |
+| `{"type": "event", "name": "timer.done", "data": {"label": "Pasta"}, "notify": false}` | The device's timer ran out (the label is empty when none was set). It always has `notify: false`: the alarm is the device's own, and Hermes is not interrupted. Dropped while the device is offline |
 
 ### Firmware updates
 
@@ -268,7 +351,7 @@ server                                   device
 | `{"type": "ota.ack", "offset": 16384}` | device → server | Bytes written so far: every 16 KB and at the end |
 | `{"type": "ota.end"}` | server → device | All bytes sent; the device checks the size and SHA-256, then the image itself |
 | `{"type": "ota.done", "version": "0.2.0"}` | device → server | Installed; the device restarts about a second later |
-| `{"type": "ota.error", "code": "checksum", "message": "..."}` | device → server | The update is abandoned. Codes: `unsupported`, `bad_offer`, `too_large`, `no_offer`, `unauthorized`, `flash`, `sequence`, `size`, `checksum`, `invalid`, `timeout`, `no_update` |
+| `{"type": "ota.error", "code": "checksum", "message": "..."}` | device → server | The update is abandoned. Codes: `unsupported`, `bad_offer`, `too_large`, `no_offer`, `unauthorized`, `flash` (also an image whose `HGBOARD=` tag names another board), `sequence`, `size`, `checksum`, `invalid` (also an image with no board tag), `timeout`, `no_update` |
 | `{"type": "ota.abort"}` | server → device | Abandon the update in progress |
 
 ```
@@ -282,9 +365,25 @@ mac = HMAC-SHA256(key, "hermes-gadget/v1|ota|" + device_id + "|" + nonce + "|" +
 
 ### Heartbeat
 
-- The server sends `{"type": "ping", "ts": 1727950000000, "time": {"unix": ..., "utc_offset_s": ...}}` every `heartbeat_s`, and the device answers `{"type": "pong", "ts": ...}`. `time` is optional, as in `welcome`; it corrects the device after a host clock change (NTP step, DST) within one heartbeat.
+- The server sends `{"type": "ping", "ts": 1727950000000}` every `heartbeat_s`, and the device answers `{"type": "pong", "ts": ...}`.
 - Either side may also send `ping`.
 - Either side treats 3 × `heartbeat_s` without any inbound frame as a dead connection.
+
+## Phone app over Bluetooth
+
+Boards whose firmware enables Bluetooth (none yet; see [hardware validation](hardware-validation.md#bluetooth)) also accept a phone app over Bluetooth LE. It is a local channel to the device's console, not part of the Hermes protocol: the phone sends the same commands as the [USB console](hardware.md#serial-console) and gets the same `@` replies, so an app can set up Wi-Fi (`set wifi_ssid`, `set wifi_pass`), change settings and read `status`.
+
+| | UUID | Properties |
+|---|---|---|
+| Service | `dc530001-7a2a-400f-b8f6-e87185576192` | Primary, advertised |
+| Command | `dc530002-7a2a-400f-b8f6-e87185576192` | Write with response; needs an encrypted, authenticated link |
+| Reply | `dc530003-7a2a-400f-b8f6-e87185576192` | Notify |
+
+- **Pairing:** the phone must pair before writing. The device accepts pairing only while **Phone app** pairing is open (device settings, or `phone pair`; two minutes). It shows a six-digit passkey, which the phone's user types: LE Secure Connections with passkey entry. The device refuses pairing outside the window, refuses Just Works pairing, and keeps up to three phones, forgetting the oldest. `phone forget` removes them all and drops a connected phone.
+- **Advertising:** the device advertises its name and the service while pairing is open, about once a second while a phone is paired, and not at all otherwise. One phone connects at a time.
+- **Commands:** subscribe to Reply, then write one console line (UTF-8, up to 256 bytes) to Command. Wait for its reply before writing the next; a third pending line is refused with "insufficient resources".
+- **Replies:** the reply text arrives in notifications sized to the link's MTU, ending with a single `0x00` byte. `@error device busy` means the device didn't answer within 3 s.
+- **State:** `status` includes `"phone": {"paired": 1, "connected": true, "pairing": false}` on these boards; `phone` alone returns the same object as `@phone {...}`.
 
 ## Versioning
 

@@ -9,11 +9,26 @@ The dependencies below keep their own licenses and are downloaded when you build
 | Third-party code | Used for | License |
 |---|---|---|
 | [ESP-IDF](https://github.com/espressif/esp-idf) | The ESP32 framework and drivers | Apache 2.0 |
-| [esp_codec_dev](https://components.espressif.com/components/espressif/esp_codec_dev) | ES8311 / ES7210 audio codecs | Apache 2.0 |
+| [esp_codec_dev](https://components.espressif.com/components/espressif/esp_codec_dev) | ES8311 / ES7210 / ES8388 audio codecs | Apache 2.0 |
+| [esp-opus](https://components.espressif.com/components/78/esp-opus) (Xiph's [libopus](https://opus-codec.org/) built for ESP-IDF) | Decoding Opus reply audio on the device | BSD 3-Clause (libopus `COPYING`); the registry lists the package as MIT |
 | [esp_websocket_client](https://components.espressif.com/components/espressif/esp_websocket_client) | The device's WebSocket connection | Apache 2.0 |
-| Espressif [ILI9341 display](https://components.espressif.com/components/espressif/esp_lcd_ili9341), [GT911](https://components.espressif.com/components/espressif/esp_lcd_touch_gt911) and [TT21100](https://components.espressif.com/components/espressif/esp_lcd_touch_tt21100) touch drivers | BOX-3 display revisions and touch | Apache 2.0 |
+| [esp_video 2.5.0](https://components.espressif.com/components/espressif/esp_video/versions/2.5.0) | ESP32-P4 MIPI-CSI video capture and ISP pipeline | ESPRESSIF MIT; [license](https://components.espressif.com/components/espressif/esp_video/versions/2.5.0/license?language=en), copied to `LICENSES/Espressif-MIT.txt` |
+| [esp_cam_sensor 2.6.0](https://components.espressif.com/components/espressif/esp_cam_sensor/versions/2.6.0) | OV5647 MIPI camera sensor driver | Apache 2.0; [license](https://components.espressif.com/components/espressif/esp_cam_sensor/versions/2.6.0/license?language=en) |
+| [esp_ipa 2.4.0](https://components.espressif.com/components/espressif/esp_ipa/versions/2.4.0) | ISP algorithms for the OV5647 camera pipeline | ESPRESSIF MIT; [license](https://components.espressif.com/components/espressif/esp_ipa/versions/2.4.0/license?language=en), copied to `LICENSES/Espressif-MIT.txt` |
+| [esp_hosted 2.12.6](https://components.espressif.com/components/espressif/esp_hosted/versions/2.12.6) | ESP32-C6 Wi-Fi co-processor transport over SDIO (CrowPanel P4, Waveshare P4 Touch-LCD-3.4C) | Apache 2.0; [license](https://components.espressif.com/components/espressif/esp_hosted/versions/2.12.6/license?language=en) |
+| [esp_wifi_remote 1.6.5](https://components.espressif.com/components/espressif/esp_wifi_remote/versions/1.6.5) | ESP-IDF Wi-Fi API over the P4 SDIO co-processor link | Apache 2.0; [license](https://components.espressif.com/components/espressif/esp_wifi_remote/versions/1.6.5/license?language=en) |
+| [esp_lcd_ek79007 2.0.2](https://components.espressif.com/components/espressif/esp_lcd_ek79007/versions/2.0.2) | EK79007 MIPI-DSI panel driver (CrowPanel P4) | Apache 2.0; [license](https://components.espressif.com/components/espressif/esp_lcd_ek79007/versions/2.0.2/license?language=en) |
+| [esp_lcd_jd9365 2.0.2](https://components.espressif.com/components/espressif/esp_lcd_jd9365/versions/2.0.2) | JD9365 MIPI-DSI panel driver (Waveshare P4 Touch-LCD-3.4C) | Apache 2.0; [license](https://components.espressif.com/components/espressif/esp_lcd_jd9365/versions/2.0.2/license?language=en) |
+| [esp_lcd_st7123 1.0.2](https://components.espressif.com/components/espressif/esp_lcd_st7123/versions/1.0.2) | ST7123 MIPI-DSI panel driver. No board selects it yet | Apache 2.0; [license](https://components.espressif.com/components/espressif/esp_lcd_st7123/versions/1.0.2/license?language=en) |
+| Espressif [GC9A01 display](https://components.espressif.com/components/espressif/esp_lcd_gc9a01) driver | Spotpear 1.28-BOX round panel | Apache 2.0 |
+| Espressif [SH8601 display](https://components.espressif.com/components/espressif/esp_lcd_sh8601) driver | Knob-Touch-LCD-1.8 round panel | Apache 2.0 |
+| Espressif [SPD2010 display](https://components.espressif.com/components/espressif/esp_lcd_spd2010/versions/2.0.0~1) driver 2.0.0~1 | QSPI SPD2010 panels | Apache 2.0 |
+| Espressif [SPD2010 touch](https://components.espressif.com/components/espressif/esp_lcd_touch_spd2010/versions/2.1.0) driver 2.1.0 | SPD2010 touch on I2C | Apache 2.0 |
+| Espressif [ILI9341 display](https://components.espressif.com/components/espressif/esp_lcd_ili9341), [GT911](https://components.espressif.com/components/espressif/esp_lcd_touch_gt911) and [TT21100](https://components.espressif.com/components/espressif/esp_lcd_touch_tt21100) touch drivers | BOX-3 display revisions and touch; original ESP32-S3-BOX touch; Korvo-2 LCD sub-board and touch | Apache 2.0 |
+| Espressif ST7701 [2.0.2](https://components.espressif.com/components/espressif/esp_lcd_st7701/versions/2.0.2) on IDF >=5.4, [1.1.0](https://components.espressif.com/components/espressif/esp_lcd_st7701/versions/1.1.0) earlier, and [panel IO additions](https://components.espressif.com/components/espressif/esp_lcd_panel_io_additions) (3-wire SPI) | CrowPanel 2.1 RGB panel | Apache 2.0 |
 | Espressif [FT5x06 touch](https://components.espressif.com/components/espressif/esp_lcd_touch_ft5x06) driver | CoreS3 touch; ILI9341 and esp_codec_dev also provide its display and AW88298 audio drivers | Apache 2.0 |
 | [esptool-js](https://github.com/espressif/esptool-js) | Flashing from the browser installer, added to the site when it's built | Apache 2.0 |
+| [libopus](https://opus-codec.org/) on the Hermes host, loaded at run time and not distributed | Optional Opus encoding of reply audio in the plugin | BSD 3-Clause |
 | Python packages (`websockets`, and optionally `Pillow`, `sounddevice`, `pyserial`) | Plugin, simulator and tools | Their own licenses; see each project |
 | [GPIO Zero](https://github.com/gpiozero/gpiozero/blob/master/LICENSE.rst) | Optional Raspberry Pi buttons and digital outputs | BSD 3-Clause |
 | [pygame](https://github.com/pygame/pygame/blob/main/docs/LGPL.txt), [SDL2](https://github.com/libsdl-org/SDL/blob/SDL2/LICENSE.txt) | Optional Linux device display | LGPL 2.1; zlib for SDL2 |
@@ -21,24 +36,56 @@ The dependencies below keep their own licenses and are downloaded when you build
 | [python-sounddevice](https://github.com/spatialaudio/python-sounddevice/blob/master/LICENSE), [PortAudio](https://www.portaudio.com/license.html) | Optional live microphone and speaker on Linux | MIT licenses |
 | [Paho MQTT](https://github.com/eclipse-paho/paho.mqtt.python/blob/v2.1.0/LICENSE.txt) | Optional MQTT sensor/action example | EPL 2.0 / EDL 1.0 dual license; installed package includes both texts |
 
-## Embedded typography
-
-Geist Regular Version 1.800, Copyright 2024 The Geist Project Authors, is embedded
-as a bounded antialiased atlas. It retains the [SIL OFL 1.1](LICENSES/Geist-OFL.txt),
-including in binary distributions. [Source provenance](assets/fonts/README.md)
-and the committed font/manifest make offline regeneration reproducible.
-
 ## Artwork
 
 The mascot artwork, and the logo and device bitmaps drawn from it, come from [Hermes Agent](https://github.com/NousResearch/hermes-agent) (MIT, © 2025 Nous Research); see [assets/mascot](assets/mascot) and [NOTICE](NOTICE).
 
+## Vendored code
+
+The QR code encoder in `firmware/core/third_party/qrcode/` is vendored from [ricmoo/QRCode](https://github.com/ricmoo/QRCode) (MIT, © 2017 Richard Moore and © 2017 Project Nayuki), which in turn derives from [Project Nayuki's QR Code generator](https://www.nayuki.io/page/qr-code-generator-library). It is adapted for this project: the C99 variable-length arrays become fixed, bounded buffers so MSVC accepts the file, and two bounds checks are added so an oversized payload cannot corrupt memory or produce an unscannable code. The modification notice is in [NOTICE](NOTICE) and the upstream license in [LICENSES/QRCode-MIT.txt](LICENSES/QRCode-MIT.txt).
+
+The CJK bitmap font in `firmware/core/src/font_cjk_data.cpp` is generated by `firmware/tools/gen_cjk_font.py` from [Fusion Pixel Font](https://github.com/TakWolf/fusion-pixel-font/releases/tag/2026.10.25) 12px monospaced, release 2026.10.25 (SIL OFL 1.1, © 2022 TakWolf; no Reserved Font Name), using its `zh_tw` and `zh_hans` variants rasterized at 12 px. The font merges [Ark Pixel Font](https://github.com/TakWolf/ark-pixel-font) (OFL 1.1), [Cubic 11](https://github.com/ACh-K/Cubic-11) and [Galmuri](https://github.com/quiple/galmuri) (OFL 1.1). The licenses are in [LICENSES/Fusion-Pixel-OFL.txt](LICENSES/Fusion-Pixel-OFL.txt), [LICENSES/Ark-Pixel-OFL.txt](LICENSES/Ark-Pixel-OFL.txt), [LICENSES/Cubic-11-License.txt](LICENSES/Cubic-11-License.txt) and [LICENSES/Galmuri-OFL.txt](LICENSES/Galmuri-OFL.txt), and the notice in [NOTICE](NOTICE).
+
+The BMI270 configuration image in `firmware/drivers/third_party/bmi270/bmi270_config.hpp` is `bmi270_config_file[]` from Bosch Sensortec's [BMI270_SensorAPI](https://github.com/boschsensortec/BMI270_SensorAPI/tree/41129fcfe39c583ee5462d79195741945d51c1fe) v2.86.1 (BSD-3-Clause, © 2023 Bosch Sensortec GmbH), unmodified and re-wrapped as a C++ array. The chip runs it after each reset; the StickS3 profile loads it for face-down sleep. The upstream license is in [LICENSES/BMI270_SensorAPI-BSD-3-Clause.txt](LICENSES/BMI270_SensorAPI-BSD-3-Clause.txt).
+
+The Tailscale client in `firmware/esp32/components/tailtiny/` is vendored from [TailTiny](https://github.com/Asimmimx/tailtiny) 3.1.0 at commit `d1ec2ae45e252e8dc737452be0f6afe1ac2e3edb` (MIT, © 2025-2026 Cameron Malone), a fork of [MicroLink](https://github.com/CamM2325/microlink). TailTiny bundles [wireguard-lwip](https://github.com/smartalock/wireguard-lwip), vendored alongside it in `firmware/esp32/components/wireguard_lwip/` (BSD 3-Clause, © 2021 Daniel Hope), whose X25519 code comes from the STROBE project (MIT, © 2015-2016 Cryptography Research, Inc.), BLAKE2s from RFC 7693 and Poly1305 from [poly1305-donna](https://github.com/floodyberry/poly1305-donna) (public domain or MIT). Both are compiled only when `CONFIG_HG_TAILNET` is set, and are adapted for this firmware: [firmware/esp32/components/TAILTINY.md](firmware/esp32/components/TAILTINY.md) lists every change. The licenses are in [LICENSES/TailTiny-MIT.txt](LICENSES/TailTiny-MIT.txt), [LICENSES/wireguard-lwip-BSD-3-Clause.txt](LICENSES/wireguard-lwip-BSD-3-Clause.txt) and [LICENSES/STROBE-x25519-MIT.txt](LICENSES/STROBE-x25519-MIT.txt), and the modification notice in [NOTICE](NOTICE).
+
 ## Adapted display initialization tables
+
+The ESP32-S3-Korvo-2 pin numbers, ILI9341 mirror, BGR color order, touch X mirror and TCA9554 levels follow Espressif's [Korvo-2 BSP](https://github.com/espressif/esp-bsp/tree/67f41a169401d1f23e827188dd08fb351cb0febe/bsp/esp32_s3_korvo_2) at commit `67f41a169401d1f23e827188dd08fb351cb0febe` (Apache 2.0, Copyright 2022-2026 Espressif Systems (Shanghai) CO LTD). The panel uses the stock ILI9341 driver, with no vendor initialization table copied. See [NOTICE](NOTICE).
+
+The original ESP32-S3-BOX pin numbers, ST7789 mirror, BGR color order and TT21100 X mirror follow Espressif's [ESP-BOX BSP](https://github.com/espressif/esp-bsp/tree/67f41a169401d1f23e827188dd08fb351cb0febe/bsp/esp-box) at commit `67f41a169401d1f23e827188dd08fb351cb0febe` (Apache 2.0, Copyright 2022-2026 Espressif Systems (Shanghai) CO LTD). Only hardware facts are used; no vendor source is copied. See [NOTICE](NOTICE).
 
 The BOX-3 panel register values follow [Espressif's BSP](https://github.com/espressif/esp-bsp/tree/master/bsp/esp-box-3), Apache 2.0. The adapter uses zero-length sleep/display commands with explicit delays.
 
 CoreS3's ILI9342E initialization table follows [Espressif's CoreS3 BSP](https://github.com/espressif/esp-bsp/tree/master/bsp/m5stack_core_s3), Apache 2.0. Its copyright and modification notice are retained in the source and [NOTICE](NOTICE). The power and reset adapter is original code based on the board's documented wiring and chip registers.
 
-The AMOLED panel's start-up register values in `firmware/esp32/main/port_amoled.cpp` follow Waveshare's [board support package](https://components.espressif.com/components/waveshare/esp32_s3_touch_amoled_1_75) for the ESP32-S3-Touch-AMOLED-1.75 (Apache 2.0, text in [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt)); see [NOTICE](NOTICE). The 1.75C profile reuses that driver and its license notice. Its pin map and audio supply configuration follow the [manufacturer's schematic](https://files.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75C/ESP32-S3-Touch-AMOLED-1.75C-schematic.pdf).
+The AMOLED panel's start-up register values in `firmware/esp32/main/port_amoled.cpp` follow Waveshare's [board support package](https://components.espressif.com/components/waveshare/esp32_s3_touch_amoled_1_75) for the ESP32-S3-Touch-AMOLED-1.75 (Apache 2.0, text in [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt)); see [NOTICE](NOTICE). The 1.75C profile reuses that driver and its license notice. The rectangular AMOLED-1.8's start-up table (`kInit368`) follows Waveshare's [AMOLED-1.8 board support package](https://github.com/waveshareteam/Waveshare-ESP32-components/tree/9f4030c6e5cb888ad4cc268bfa7584c93ad53e30/bsp/esp32_s3_touch_amoled_1_8) at commit `9f4030c6e5cb888ad4cc268bfa7584c93ad53e30` (Apache 2.0). Its pin map and audio supply configuration follow the [manufacturer's schematic](https://files.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75C/ESP32-S3-Touch-AMOLED-1.75C-schematic.pdf). The AMOLED-2.06 watch's start-up table (`kInit410`) and pin map follow Waveshare's [AMOLED-2.06 board support package](https://github.com/waveshareteam/Waveshare-ESP32-components/tree/9daffb7168b3c093a330da700988a22092294eef/bsp/esp32_s3_touch_amoled_2_06) 2.0.0 at commit `9daffb7168b3c093a330da700988a22092294eef` (Apache 2.0), checked against the [manufacturer's schematic](https://files.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-2.06/ESP32-S3-Touch-AMOLED-2.06.pdf). The AMOLED-2.16's start-up table (`kInit480`), pin map and touch orientation follow Waveshare's [AMOLED-2.16 board support package](https://github.com/waveshareteam/Waveshare-ESP32-components/tree/63ac675334db62509082e182ff900bf60f21f009/bsp/esp32_s3_touch_amoled_2_16) 2.0.1 at commit `63ac675334db62509082e182ff900bf60f21f009` (Apache 2.0). The Waveshare P4 Touch-LCD-3.4C's JD9365 start-up table (`kJd9365InitCmds` in `firmware/esp32/main/port_dsi.cpp`) follows Waveshare's [ESP32-P4-WIFI6-Touch-LCD-XC board support package](https://components.espressif.com/components/waveshare/esp32_p4_wifi6_touch_lcd_xc/versions/2.0.0) 2.0.0, its 800x800 table, unchanged (Apache 2.0).
+
+The Waveshare 1.85C V2 port uses Espressif's managed
+[ST77916 driver](https://components.espressif.com/components/espressif/esp_lcd_st77916)
+2.0.2 (Apache 2.0). `firmware/esp32/main/panel_ws185.hpp` adapts the two active
+initialization tables from Waveshare's factory demo at commit
+`8ead4a96bf3a278fc4ebd8ef4768657e17fa2880` in
+[ESP32-S3-Touch-LCD-1.85C](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.85C),
+`ESP-IDF/ESP32-S3-Touch-LCD-1.85C-Test/main/LCD_Driver/ST77916.c` and
+`esp_lcd_st77916/esp_lcd_st77916.c` (Apache 2.0). Changes: C++ byte-string
+payloads, removal of commented-out entries, named tables selected by panel ID.
+The upstream driver copyright is Espressif Systems (Shanghai) CO LTD, 2023;
+see the source header and [NOTICE](NOTICE). The reset, CST816 register reader
+and PCM conversion adapters are original code using documented hardware facts.
+The existing `LICENSES/Apache-2.0.txt` supplies the license text; packaging
+includes it, this attribution, and the managed driver licenses.
+
+The ESP-VoCat port uses the same managed ST77916 driver.
+`firmware/esp32/main/panel_vocat.hpp` adapts the initialization table from
+Espressif's [ESP-VoCat BSP](https://github.com/espressif/esp-bsp/tree/f259a6abd5808019b1903a422092a4234ca95a51/bsp/esp_vocat)
+at commit `f259a6abd5808019b1903a422092a4234ca95a51`,
+`bsp/esp_vocat/priv_include/disp_init_data.h` (Apache 2.0, Copyright 2026
+Espressif Systems (Shanghai) CO LTD). Changes: C++ byte-string payloads; the
+values, order and delays are unchanged. The board's pin map follows the same BSP
+and Espressif's [ESP-VoCat v1.2 schematic](https://dl.espressif.com/AE/esp-dev-kits/ESP-VoCat_SCH_V1_2.pdf);
+see [NOTICE](NOTICE).
 
 The T-Display-S3 ST7789 initialization values and AW9364 backlight control follow
 [LilyGO's factory example](https://github.com/Xinyuan-LilyGO/T-Display-S3/blob/ec889e789b3cf093412689a143f7f37b42b56af7/examples/factory/factory.ino),
@@ -46,8 +93,49 @@ revision `ec889e789b3cf093412689a143f7f37b42b56af7`, MIT, Copyright (c) 2022 Xin
 The ESP-IDF adaptation and timing changes are recorded in [NOTICE](NOTICE), with
 the upstream license in [LICENSES/LilyGO-MIT.txt](LICENSES/LilyGO-MIT.txt).
 
+The AIPI Lite pin map, panel settings and power wiring follow [xiaozhi-esp32's `xorigin/aipi-lite` board](https://github.com/78/xiaozhi-esp32/tree/0d576d3d4c049c6f55eaf879725dc23e516511b4/main/boards/xorigin/aipi-lite) at commit `0d576d3d4c049c6f55eaf879725dc23e516511b4` (MIT). Only hardware facts are used; see [NOTICE](NOTICE).
+
+The Spotpear ESP32-S3-1.28-BOX pin map, panel settings, power wiring and GC9A01 register changes (`panel_spotpear128.hpp`) follow [xiaozhi-esp32's `spotpear/sp-esp32-s3-1.28-box` board](https://github.com/78/xiaozhi-esp32/tree/d91d6824309d12df5fc3db5edf8145ee829135d7/main/boards/spotpear/sp-esp32-s3-1.28-box) at commit `d91d6824309d12df5fc3db5edf8145ee829135d7` (MIT). Only hardware facts are used; see [NOTICE](NOTICE).
+
+The Spotpear ESP32-S3-1.54 muma pin map, panel settings and power wiring follow [xiaozhi-esp32's `spotpear/sp-esp32-s3-1.54-muma` board](https://github.com/78/xiaozhi-esp32/tree/d91d6824309d12df5fc3db5edf8145ee829135d7/main/boards/spotpear/sp-esp32-s3-1.54-muma) at commit `d91d6824309d12df5fc3db5edf8145ee829135d7` (MIT). Only hardware facts are used; see [NOTICE](NOTICE).
+
+The Waveshare ESP32-S3-Touch-LCD-1.46 pin numbers follow the [manufacturer wiki](https://docs.waveshare.com/ESP32-S3-Touch-LCD-1.46). The TCA9554 address 0x20, the EXIO bit map and backlight on-level 1 follow the [factory demo](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.46/tree/fda89ff2ff32eb1bce561901225c6a36fa684237) at commit `fda89ff2ff32eb1bce561901225c6a36fa684237`. That repository publishes no license. Only these hardware facts are used. No vendor source is copied. The microphone part MSM261S4030H0R and the L/R tie to 3V3 follow the [schematic](https://files.waveshare.com/wiki/ESP32-S3-Touch-LCD-1.46/ESP32-S3-Touch-LCD-1.46.pdf). The display and touch drivers are Espressif's `esp_lcd_spd2010` 2.0.0~1 and `esp_lcd_touch_spd2010` 2.1.0. See [NOTICE](NOTICE).
+
+The Waveshare ESP32-S3-Touch-LCD-1.83 pin numbers follow Waveshare's [`esp32_s3_touch_lcd_1_83` board support package](https://github.com/waveshareteam/Waveshare-ESP32-components/tree/7945883d5d930caba5af6101af6007905748bc77/bsp/esp32_s3_touch_lcd_1_83) at commit `7945883d5d930caba5af6101af6007905748bc77` (Apache 2.0). The panel size, color inversion, SPI clock, touch reset and the AXP2101 microphone rail follow [xiaozhi-esp32's `waveshare/esp32-s3-touch-lcd-1.83` board](https://github.com/78/xiaozhi-esp32/tree/49b4380b3faa0ceadd28a3e78aaf0f311c46c57e/main/boards/waveshare/esp32-s3-touch-lcd-1.83) at commit `49b4380b3faa0ceadd28a3e78aaf0f311c46c57e` (MIT, tag v2.5.2). Only hardware facts are used; no vendor source is copied. See [NOTICE](NOTICE).
+
+The Waveshare ESP32-S3-Touch-AMOLED-1.32 pin numbers, CO5300 command bytes and 6-pixel column gap follow Waveshare's [`esp32_s3_touch_amoled_1_32` board support package](https://github.com/waveshareteam/Waveshare-ESP32-components/tree/b9a7308173d196925d6853daaa754f414e21eab8/bsp/esp32_s3_touch_amoled_1_32) at commit `b9a7308173d196925d6853daaa754f414e21eab8` (Apache 2.0). The battery-latch pin and the PWR pin follow [xiaozhi-esp32's `waveshare/esp32-s3-touch-amoled-1.32` board](https://github.com/78/xiaozhi-esp32/tree/49b4380b3faa0ceadd28a3e78aaf0f311c46c57e/main/boards/waveshare/esp32-s3-touch-amoled-1.32) at commit `49b4380b3faa0ceadd28a3e78aaf0f311c46c57e` (MIT, tag v2.5.2). Only hardware facts are used; no vendor source is copied. See [NOTICE](NOTICE).
+
+The Waveshare ESP32-S3-Touch-AMOLED-1.43C pin numbers, CO5300 command bytes, 8-pixel column gap, codec-supply pin and battery divider follow Waveshare's [ESP32-S3-Touch-AMOLED-1.43C repository](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.43C/tree/8cea11ddae6167dd591d1f5465fd7b615080360f) at commit `8cea11ddae6167dd591d1f5465fd7b615080360f` (Apache 2.0, Copyright 2026 Waveshare). The facts come from the factory component `esp32_s3_touch_amoled_1_43c` and the Arduino `01_ADC_Test` example. Only hardware facts are used; no vendor source is copied. See [NOTICE](NOTICE).
+
+The Knob-Touch-LCD-1.8 SH8601 initialization values in `firmware/esp32/main/panel_sh8601.hpp` and the pin map in `board.cpp` follow Waveshare's [ESP32-S3-Knob-Touch-LCD-1.8 demo](https://files.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8/ESP32-S3-Knob-Touch-LCD-1.8-Demo.zip) (last modified 2025-06-20, downloaded 2026-10-19; SHA-256 in [NOTICE](NOTICE)): `lcd_init_cmds` in `ESP-IDF/08_LVGL_Test/main/main.c` and the demos' `user_config.h` pins. The archive has no license, so only these hardware facts are used, re-expressed as C++ byte strings for Espressif's `esp_lcd_sh8601` driver; the values, order and delays are unchanged.
+
+The CrowPanel 2.1 ST7701 initialization values in `firmware/esp32/main/crowpanel_st7701_init.hpp`, and the RGB timings, PCF8574 power and reset sequence and pin map in `port_rgb.cpp` and `board.cpp`, follow Elecrow's [RotaryScreen_2_1 example](https://github.com/Elecrow-RD/CrowPanel-2.1inch-HMI-ESP32-Rotary-Display-480-480-IPS-Round-Touch-Knob-Screen/tree/faf8ecf27ec1504b51de7dc4e15b2e7d7e87c79c/example/Arduino/RotaryScreen_2_1) at commit `faf8ecf27ec1504b51de7dc4e15b2e7d7e87c79c`. That repository has no license, so only these hardware facts are used, re-expressed for Espressif's `esp_lcd_st7701` driver; see [NOTICE](NOTICE).
+
+The CrowPanel 5.0 ILI6122 RGB pin map, scanout timings (15 MHz PCLK, porches, `pclk_active_neg`), GPIO 2 backlight, and the GT911 I2C touch wiring in `port_rgb.cpp`, `board.cpp` and `port_touch.cpp` follow Elecrow's [crowpanel-esp32-5.0-3.0 example](https://github.com/Elecrow-RD/CrowPanel-5.0-HMI-ESP32-Display-800x480/tree/fd959ac9ac900bb536ad72eebb9d2c14c7ffc7b7/example/V1.0_and_V2.0/Arduino/Arduino-Hardware-Version-3.0/crowpanel-esp32-5.0-3.0) at commit `fd959ac9ac900bb536ad72eebb9d2c14c7ffc7b7`. That repository has no license, so only these hardware facts are used, re-expressed for Espressif's built-in `esp_lcd_rgb` and managed `esp_lcd_touch_gt911` drivers; see [NOTICE](NOTICE).
+
+## Hardware references used as facts
+
+The CrowPanel Advanced 10.1-inch P4 pin map, DSI timings, backlight polarity, and STC8 register layout are hardware facts referenced from Elecrow V1.1 commit `6c7c851f3105349dc24b12ad058655ba6afa98ee`: [pinned repository](https://github.com/Elecrow-RD/CrowPanel-Advanced-10.1inch-ESP32-P4-HMI-AI-Display-1024x600-IPS-Touch-Screen/tree/6c7c851f3105349dc24b12ad058655ba6afa98ee), [board config.h](https://github.com/Elecrow-RD/CrowPanel-Advanced-10.1inch-ESP32-P4-HMI-AI-Display-1024x600-IPS-Touch-Screen/blob/6c7c851f3105349dc24b12ad058655ba6afa98ee/example/V1.1/idf-code/7_9_10.1_P4_HMI_AI/7inch_9inch_10inch_P4_HMI_AI/main/boards/elecrow-p4-board/config.h), and [V1.1 schematic files](https://github.com/Elecrow-RD/CrowPanel-Advanced-10.1inch-ESP32-P4-HMI-AI-Display-1024x600-IPS-Touch-Screen/tree/6c7c851f3105349dc24b12ad058655ba6afa98ee/Eagle_SCH%26PCB). The vendor repository has no license file; only factual hardware information is used, and no Elecrow source code is copied.
+
+The ESP32-2432S028 (CYD, two-USB revision) pin map and panel settings in `firmware/esp32/main/board.cpp` follow Brian Lough's [ESP32-Cheap-Yellow-Display](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/tree/0564a140c76de76ef34a8b7115044e7c6c852695) reference at commit `0564a140c76de76ef34a8b7115044e7c6c852695`: [`PINS.md`](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/blob/0564a140c76de76ef34a8b7115044e7c6c852695/PINS.md) and [`DisplayConfig/CYD2USB/User_Setup.h`](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/blob/0564a140c76de76ef34a8b7115044e7c6c852695/DisplayConfig/CYD2USB/User_Setup.h). The repository is under the MIT License (Copyright (c) 2023 Brian Lough); only these hardware facts are used and no code is copied. The panel uses ESP-IDF's built-in ST7789 driver and the speaker beeps use ESP-IDF's DAC driver, so the board adds no managed component.
+
+The QMI8658 driver's register values follow the [QST QMI8658A datasheet Rev A](https://qstcorp.com/upload/pdf/202301/13-52-25%20QMI8658A%20Datasheet%20Rev%20A.pdf) (© 2022 QST Corporation), and the PCF85063 driver's follow the [NXP PCF85063A datasheet](https://www.nxp.com/docs/en/data-sheet/PCF85063A.pdf). Only hardware facts (register addresses, values and data layouts) were taken; no vendor code is copied. See [NOTICE](NOTICE).
+
 ## Release packages
 
 Firmware packages include `hermes-gadget-<version>-licenses.zip` with this document, the project's notices, license texts, and notices found in the installed ESP-IDF and managed component sources. The browser installer links that archive when the release supplies it.
 
 Python distributions and Linux device packages also include this document and the project's license texts and notices. The Linux installer copies them to `/opt/hermes-gadget/current/licenses/`.
+
+The Waveshare ESP32-P4-WIFI6-Touch-LCD-7B's optional OV5647/MIPI-CSI camera and SCCB pin facts follow Waveshare's [camera preview example](https://github.com/waveshareteam/ESP32-P4-WIFI6-Touch-LCD-7B/tree/9fcd49a8c927a00f5583c22d568b3448addbe51c/examples/arduino/examples/06_Camera_Preview) at commit `9fcd49a8c927a00f5583c22d568b3448addbe51c` (Apache 2.0). Only hardware facts are used; no vendor source code is copied. See [NOTICE](NOTICE).
+
+## Cardputer ADV hardware references
+
+`cardputer_keys.hpp`, `board.cpp` and `port_cardputer.cpp` use hardware facts
+from M5Stack's [K132-Adv documentation](https://docs.m5stack.com/en/core/Cardputer-Adv),
+[M5Cardputer bf64d3178ab43928fa02365fbe3937cec99716ad](https://github.com/m5stack/M5Cardputer/tree/bf64d3178ab43928fa02365fbe3937cec99716ad),
+[M5Unified 96576a14247ddc935149145aa6b51943464120f1](https://github.com/m5stack/M5Unified/tree/96576a14247ddc935149145aa6b51943464120f1)
+and [M5GFX 28d47949bdc84f30881623476f555398e2194313](https://github.com/m5stack/M5GFX/tree/28d47949bdc84f30881623476f555398e2194313).
+These specify pin numbers, printed key legends, matrix wiring, the BCLK-derived
+ES8311 clock and the battery divider. No vendor driver or register table is
+included; the existing managed Espressif codec driver initializes the ES8311.

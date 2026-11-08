@@ -1,30 +1,5 @@
 # Developing the SDK
 
-## Recent work E2E
-
-`tests/test_work_shelf_e2e.py` uses the existing interaction rig: real native core,
-production loopback DeviceHub, synthetic text and disposable state directories.
-`tests/test_adapter_hermes.py::test_recent_outcome_after_disconnect_is_durable`
-exercises real Hermes base classes without a provider.
-
-```sh
-export TMPDIR=$TMPDIR/workshelf
-mkdir -p "$TMPDIR"
-export HERMES_HOME="$TMPDIR/test-home"
-PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=python .venv/bin/python -m hermes_gadget build-sim --test
-export HGSIM_LIBRARY="$PWD/build/host/libhgsim.so"
-IX_ARTIFACTS=artifacts/work-shelf/fresh .venv/bin/python -m pytest tests/test_work_shelf_e2e.py -v --junitxml=artifacts/work-shelf/fresh.xml
-```
-
-Compatibility lanes require a frozen pre-M3 native library (`WORK_LEGACY_NATIVE=1`
-with `HGSIM_LIBRARY` pointing to it, run only `-k legacy_native_gets`) and a frozen
-pre-M3 `plugin/hub.py` (`WORK_LEGACY_HUB=/absolute/path/hub.py`, current native library).
-The compatibility tests skip without these explicit fixtures. Do not substitute a
-new library for the frozen one. The evidence directory contains the baseline hash,
-red logs, later fixture corrections, native receipts/captures, and final JUnit.
-
-
-
 ## Layout
 
 ```
@@ -47,16 +22,22 @@ assets/mascot/          The mascot master image and its attribution
 |---|---|---|
 | Core (C++) | `hermes-gadget build-sim --test`, or `ctest --test-dir build/host -C Release` | CMake + compiler |
 | Plugin units, simulator ↔ hub, desktop controls | `pytest` | Built simulator library; a desktop or Xvfb for window tests |
-| Adapter on real Hermes classes | `HERMES_AGENT_DIR=../hermes-agent ../hermes-agent/.venv/bin/python -m pytest tests/test_adapter_hermes.py` | A Hermes checkout and its virtualenv |
-| Full gateway end to end | `HERMES_GADGET_E2E=1 pytest tests/test_gateway_e2e.py tests/test_debug_bridge_e2e.py` | The above; spawns `hermes gateway run` with a temporary `HERMES_HOME`. That home must be outside `~/.hermes`: Hermes treats any home inside it as part of your real Hermes, so the test gateway would contend with your gateway's profiles. The harness stops with a message if `TMPDIR` points inside `~/.hermes`; pass `--basetemp` (for example `--basetemp=build/pytest-gateway`) |
+| Adapter on real Hermes classes | `HERMES_AGENT_DIR=../hermes-agent ../hermes-agent/.venv/bin/python -m pytest tests/test_adapter_hermes.py tests/test_profile_select_hermes.py tests/test_profile_gateway_hermes.py` | A Hermes checkout and its virtualenv |
+| Full gateway end to end | `HERMES_GADGET_E2E=1 pytest tests/test_gateway_e2e.py` | The above; spawns `hermes gateway run` with a temporary `HERMES_HOME` |
 | Browser installer | `npm ci && npm test` in `site/` | Node.js 22 |
 | Home Assistant / MQTT examples | `pytest tests/test_automation_examples.py` | Built native library and the `mqtt` extra; local peers need no external accounts |
 
+For the gateway end to end, fetch only the pinned commit, as CI does: `git init hermes-agent && cd hermes-agent && git fetch --depth 1 https://github.com/NousResearch/hermes-agent <HERMES_REF> && git checkout FETCH_HEAD`. In a full clone, `hermes --version` reports the last release tag before that commit, such as 0.21.5, and the gateway skips the plugin because of its `requires_hermes`.
+
 The Python jobs in `.github/workflows/ci.yml` run under `xvfb-run` so the desktop controls run against the simulator core and development hub. On a headless Linux machine, use `xvfb-run -a pytest`. Without a display, the window tests skip; set `HERMES_GADGET_UI_TESTS=1` to require them.
 
-CI runs the adapter and gateway suites in `.github/workflows/hermes.yml`: against the Hermes commit pinned there (`HERMES_REF`) on every push and pull request, and against Hermes `main` once a day. To move the pin, run that workflow by hand with `hermes_ref: main`. When it passes, put the commit it printed into `HERMES_REF` and the README's status line.
+CI runs the adapter and gateway suites in `.github/workflows/hermes.yml`: against the Hermes commit pinned there (`HERMES_REF`) on every push and pull request, and against Hermes `main` once a day. To move the pin, run that workflow by hand with `hermes_ref: main`. When it passes, put the commit it printed into `HERMES_REF` and into `TESTED_HERMES_COMMIT` in `plugin/compat.py`; a test checks that the two agree.
 
-The Linux jobs run on `ubuntu-24.04` rather than `ubuntu-latest`, so a new runner image arrives as a deliberate change instead of a surprise. Dependabot proposes the workflows' actions, the installer's npm packages and the Python dependencies weekly, a week after each release.
+The Raspberry Pi package installs its runtime dependencies from `linux/requirements.txt`, a lock with hashes compiled from `linux/requirements.in` (the `[audio,gpio]` extras). Change the extras in `pyproject.toml` and `requirements.in` together, then regenerate the lock as the file's header says; Dependabot proposes updates to it weekly.
+
+The Linux jobs run on `ubuntu-24.04` rather than `ubuntu-latest`, so a new runner image arrives as a deliberate change instead of a surprise. Every action is pinned to a commit, with the release tag in a comment, and PlatformIO to a version, so a job runs the same code until a change says otherwise. Every job has a timeout. Dependabot proposes the workflows' actions (updating the pinned commits), the installer's npm packages and the Python dependencies weekly, a week after each release.
+
+A pull request also needs a line in `CHANGELOG.md` under `## Unreleased`, checked by the `Changelog entry` job. Label the PR `no-changelog` when nothing user-facing changed (internal refactors, test-only fixes, dependency bumps).
 
 The end-to-end test runs a real gateway with the plugin installed and a fake OpenAI-compatible server (`tests/fakes/fake_openai.py`) standing in for the model, STT and TTS. It then:
 
@@ -103,6 +84,10 @@ hermes gateway run
 
 `--link` falls back to copying where symlinks need extra privileges (Windows without Developer Mode). Re-run the install after editing in that case.
 
+The plugin's tab in the Hermes web dashboard is `plugin/dashboard/`. Its bundle, `dist/index.js`, is built from `src/index.jsx`: after editing the source, run `npm ci` once and then `npm run build:dashboard-tab` in `site/`, and commit both files. `npm test` there fails when they differ. Restart `hermes dashboard` after changing `plugin_api.py`; it mounts plugin routes only at startup. A changed bundle needs only a page reload.
+
+The Gadgets page in Hermes Desktop is `plugin/desktop/plugin.js`, built from `plugin/desktop-src/`: run `npm ci` once there, then `npm run build` after editing, and commit both. `npm test` there checks the protocol client. To see a change without reinstalling the plugin, copy the bundle to `~/.hermes/desktop-plugins/gadget/plugin.js` and reload the page.
+
 If your Hermes is a source checkout whose virtualenv Python differs from the Python Hermes's package manager prepares for plugins, `hermes plugins enable` can create an environment the gateway cannot import from. Adding `plugins: {enabled: [gadget]}` to `config.yaml` directly avoids that; the plugin has no Python dependencies of its own.
 
 ## Working on the firmware
@@ -114,262 +99,61 @@ Almost everything in `firmware/core` can be developed with the simulator and the
 3. Run `hermes-gadget sim`.
 4. Flash hardware only for driver work in `firmware/esp32/main/port_*.cpp`.
 
+### Measure frame timing
+
+Before and after a renderer change, measure the same workload. The core times each screen update (`Ui::render`) with `System::now_us`. That is `esp_timer` on the ESP32 and the host's steady clock in the simulator. It records:
+
+| Measurement | What it covers |
+|---|---|
+| `render_us` | Drawing into the framebuffer: the whole update minus the flushes |
+| `flush_us` | Time inside `Display::flush`. On SPI panels this includes waiting for each band's DMA to finish |
+| `frame_us` | The whole update, drawing and flushing |
+| `bands` | Regions sent to the panel in one update |
+| `input_us` | From `App::on_button` to the end of the first update after it that sent anything. A touch gesture enters when it becomes a button (a hold after 120 ms). Controller polling and the event queue come before that and are not included |
+
+Each measurement keeps the last 256 updates (64 for `input_us`) and reports `min`, `avg`, `p50`, `p95` and `max`. `frames` counts updates that sent something since the last reset. `missed` counts the ones longer than the budget, 16667 µs (one 60 Hz refresh) by default. `idle` counts updates that had nothing to send; their timings are not recorded.
+
+Timing is off by default. While it is off, the renderer never reads the clock: one check per update is the only cost.
+
+Run the bench in the simulator. It needs no Hermes:
+
+```bash
+hermes-gadget build-sim
+hermes-gadget sim --headless --script examples/scripts/perf.txt
+```
+
+On a board, open `hermes-gadget console --port <port>` and run the same commands:
+
+| Command | Effect |
+|---|---|
+| `perf bench [scroll \| mascot \| redraw \| all \| settings]` | Draws a fixed workload, 120 updates each, one per app tick, with the device's own bars. `scroll` moves a 60-paragraph reply one line per update, `mascot` animates the talking mascot, and `redraw` repaints the whole screen every update. `all` runs the three in turn. `settings` scrolls the settings list 3 pixels per text scale each update, down to the end and back, without opening the menu; `all` leaves it out. The normal screen returns afterwards |
+| `perf` | `@perf` JSON: the live statistics while timing is on, and the last bench under `bench` |
+| `perf on` / `perf off` | Time the device's own screen updates |
+| `perf reset` | Clear the live statistics |
+| `perf budget <us>` | The budget for `missed`, until restart |
+
+The bench draws the same frames on every run, so compare its numbers between builds on the same board or computer. While timing is on, the log gets a summary line every 10 seconds when something was drawn, for example `perf: frames 120 (missed 0 > 16.7 ms, idle 4), ms p50/p95/max: render ...`. The `diag` report includes the live statistics under `frames`. On the ESP32, `CONFIG_HG_FRAME_STATS` turns timing on from boot, and `CONFIG_HG_FRAME_BUDGET_US` and `CONFIG_HG_FRAME_LOG_S` set the budget and the log interval (menuconfig: Hermes Gadget).
+
+Simulator numbers measure the core on your computer, not the board's CPU or panel. Label each result as simulator or hardware, and name the board and build when you report it.
+
+### Translate the device text
+
+The text the device shows by itself is listed once, with its English, in `firmware/core/include/hg/i18n.hpp` (`HG_I18N_MESSAGES`). Each other language is a table in `firmware/core/src/i18n_<code>.cpp` that maps message ids to text; `i18n_es.cpp` is the example to copy. To add a language:
+
+1. Copy `i18n_es.cpp` to `i18n_<code>.cpp`, rename its table, and translate each line. Keep `{0}`, `{1}` and the rest: the device fills them with a button name, a number or a code, in the order the sentence needs. Write the text in UTF-8 with its accents. The font draws ASCII and Latin-1 (U+00A0 to U+00FF); a letter outside them shows as `?`, so a language that needs one waits for the font to grow.
+2. Add the language to `Lang` in `i18n.hpp`, and its code, its name in that language and its table to `kLangs` and `table_for()` in `i18n.cpp`.
+3. Add the file to `HG_CORE_SOURCES` in `firmware/core/CMakeLists.txt`.
+4. Run `hermes-gadget build-sim --test`. The tests fail when a message has no translation, when a translation drops or adds a placeholder, and when a hint or headline no longer fits on a screen where the English fits. Shorten it until it does: a hint cut with `..` on a small screen is worse than a terser phrase.
+5. Look at the screens in the simulator with `set language <code>` on its console, on a small board profile such as `sim-240x240-round`.
+
+A message a language leaves out shows in English, so a new message in `i18n.hpp` doesn't break the other languages; the completeness test says which are missing. Messages from Hermes are not in the catalogue.
+
 ### Build checks
 
 Two checks stop a firmware build that would run with settings nobody asked for. Both run in every PlatformIO build, locally and in CI:
 
 - **`tools/check_config.py`**, from `CMakeLists.txt` after the configuration is generated (so `idf.py` builds run it too). It fails when a line of `sdkconfig.defaults` or the board's defaults didn't reach the generated sdkconfig. That happens when a symbol is misspelled, belongs to another chip, or has an unmet dependency, and when an sdkconfig from an older checkout outlives a change to the defaults. In the last case, delete `sdkconfig.<board>` (PlatformIO) or the build directory, then build again. A board file that picks another option of a choice the base file sets says so with `# CONFIG_<base option> is not set`.
 - **`tools/check_size.py`**, after linking (`tools/pio_checks.py`). It fails when the app leaves less than 10% of its smallest app partition free. For `idf.py` builds, run it by hand: `python tools/check_size.py --app build/hermes_gadget.bin --partitions build/partition_table/partition-table.bin`.
-
-### Design captures of the round companion
-
-`tools/design_capture.py capture OUTDIR [--transitions]` drives the production native core
-against a loopback `DeviceHub` (disposable store, synthetic content) through Home, quick
-controls, Recent, results, approvals, connection and Settings states, and writes raw and
-circle-masked PNGs, `shots.json` and a contact sheet. Each shot names the state it must be
-in and fails when the device is elsewhere, and a shot that repeats its neighbour's
-framebuffer fails unless marked as an intended return. The device runs on a virtual clock
-with seeded randomness, so two runs of one library are byte-identical
-(`design_capture.py identical A B`); `compare` builds before/after sheets and `gaps` lists
-tight vertical gaps. `tests/test_design_capture.py` keeps those guards honest.
-
-### Flash budget on the round companion
-
-The 466px round boards never draw the legacy 1-bit mascot, so `CONFIG_HG_LEGACY_MASCOT`
-defaults to `n` for `HG_BOARD_AMOLED_175`/`HG_BOARD_AMOLED_175C` and their build links
-`firmware/core/src/mascot_stub.cpp` (sizes and anchors only) instead of
-`mascot_data.cpp`. That saves 26,592 bytes of the 1.75C app image. Every other board keeps
-the mascot; the host simulator keeps it too unless configured with
-`-DHG_LEGACY_MASCOT=OFF`. `tests/test_mascot_reclaim.py` keeps the stub in step with the
-generated data. To prove the stub renders nothing differently, capture both libraries with
-`tools/design_capture.py` and compare them with its `identical` command (all round
-states and transition frames must match byte for byte).
-
-The mirror image applies to the expression video. Only the 466px round companion
-(`Ui::round_companion()`) decodes and draws it, so `CONFIG_HG_EXPRESSION_PACK` defaults to
-`y` for `HG_BOARD_AMOLED_175`/`HG_BOARD_AMOLED_175C` and `n` everywhere else. Those boards
-compile `ui.cpp` against `firmware/core/include/hg/expression_stub.hpp` (the same clip
-table, names and frame geometry, no frames) instead of the generated
-`expression_assets.hpp`, which is left untouched. That saves 443,008 bytes of the
-`esp32s3-lcd-154` app image; the round 1.75C image is unchanged. The host simulator keeps
-the pack unless configured with `-DHG_EXPRESSION_PACK=OFF`; non-round simulator boards
-render byte-identically either way, and `tests/test_expression_reclaim.py` keeps the stub
-in step with the pack. After pulling a Kconfig change,
-delete the generated `firmware/esp32/sdkconfig.<env>` so the new default applies.
-
-ESP-WIFI-MESH objects (`libmesh.a`, about 220 KB) are linked into every Wi-Fi build:
-`libnet80211.a(ieee80211_ioctl.o)` references `mesh_set_ie_crypto_config`, and ESP-IDF
-6.1's `esp_wifi` links the mesh blob unconditionally, with no Kconfig option to drop it.
-This is not changed here.
-
-### Tiny v2 local animation candidate
-
-The round 466px renderer uses the existing approved sources in the sibling
-`../tiny-animations/picks/states-v2/` directory. The exact 14 numbered MP4s
-and `../tiny-animations/picks/chain/chain-v2.json` are required for regeneration;
-firmware builds only need the checked-in generated header. No paid generation,
-network asset lookup, runtime video codec or smoothing is involved.
-
-```sh
-.venv/bin/python tools/build_expressions.py
-.venv/bin/python -m cmake -S firmware -B build/video-v2 -DCMAKE_BUILD_TYPE=Release
-.venv/bin/python -m cmake --build build/video-v2 -j 4
-HGSIM_LIBRARY=$PWD/build/video-v2/libhgsim.so .venv/bin/python -m pytest tests/test_video_v2.py tests/test_expressions.py tests/test_touch_navigation.py tests/test_round_amoled.py tests/test_round_amoled_safety.py tests/test_reply_indicator.py -v --junitxml=artifacts/video-v2/results.xml
-PLATFORMIO_BUILD_DIR=$PWD/build/video-v2-esp32 .venv/bin/python -m platformio run --project-dir firmware/esp32 -e esp32s3-touch-amoled-175c
-```
-
-Conversion uses FFmpeg and NumPy, samples each five-second clip to 25 frames,
-retains the exact first/last source frame, Lanczos-resizes to 96px and quantizes
-to four gray levels. Independent packed-gray2 LZ frames bound working storage to
-2,304 bytes, with no per-frame allocation. The converter enforces its asset
-budget; the actual firmware must also pass the unchanged 10%-free partition
-size gate. Do not enlarge partitions to fit the pack.
-
-`artifacts/video-v2/manifest.json` records input hashes, source frame indices,
-anchor names, conversion versions and generated-header hash. The E2E fixtures
-use a real local DeviceHub and native App, save protocol receipts and playback
-GIFs, and compare rendered listening pixels against an independent MP4 decode.
-The app's local `status` JSON includes `ui.animation.clip` and `frame`; these are
-diagnostics, not a new host-controlled animation protocol. Evidence and build
-outputs are ignored artifacts, not a release or a physical validation report.
-The old static-outline/channel-step assertions are explicitly superseded; touch,
-reading, success-only readiness and approval semantics remain enforced.
-
-### Tiny face-first circular UI candidate
-
-The 466px face-first renderer uses the original video motion with offline
-proportional antialiased Geist. Source TTF, OFL, exact version/hash, glyph list
-and regeneration notes live in `assets/fonts/`. `tools/build_geist.py` produces
-the bounded static RLE gray4 atlas; firmware needs no runtime font library.
-The browser reference uses subpixel typography; this embedded implementation
-uses integer advances and a visible fallback for unsupported Unicode scalars.
-
-The glyph table must be sorted and duplicate-free for `std::lower_bound`.
-The generator canonicalizes codepoints and validates the explicit replacement
-index; insertion order is not lookup order. `test_face_first_font.py` drives real
-reading/controls/readiness/speaking workflows and compares RGB565 pixels with an
-independent source-TTF raster, including every intended codepoint in replies.
-The known return chevron must never be confused with the deliberately unsupported
-owl replacement in the long-approval fixture. Preserve the approved pixel-art
-portrait and original motion; neither is part of a typography correction.
-
-`Ui::body_lines` and `body_rows` are the shared drawing/scroll contracts.
-Response and approval must use them in both `app.cpp` and `app_settings.cpp`;
-legacy cards keep fixed-cell wrapping. Do not replace only the drawn font while
-leaving scroll/page counts based on the previous 18px cells.
-
-```sh
-.venv/bin/python tools/build_geist.py
-.venv/bin/python -m cmake -S firmware -B build/face-first -DCMAKE_BUILD_TYPE=Release
-.venv/bin/python -m cmake --build build/face-first -j 4
-# Run the ctest binary from the installed CMake package; relocated venv script
-# shebangs may still refer to an old checkout. Do not alter host configuration.
-.venv/lib/python3.14/site-packages/cmake/data/bin/ctest --test-dir build/face-first --output-on-failure
-HGSIM_LIBRARY=$PWD/build/face-first/libhgsim.so FACE_ARTIFACTS=artifacts/face-first/green AMOLED_ARTIFACTS=artifacts/face-first/green SWIPE_ARTIFACTS=artifacts/face-first/workflows VIDEO_ARTIFACTS=artifacts/face-first/video .venv/bin/python -m pytest tests/test_face_first.py tests/test_face_first_font.py tests/test_touch_navigation.py tests/test_reply_indicator.py tests/test_round_amoled.py tests/test_round_amoled_safety.py tests/test_video_v2.py tests/test_expressions.py tests/test_sim_hub.py tests/test_firmware_tools.py tests/test_protocol.py tests/test_installer_console.py tests/test_stale_title_hold.py -v --basetemp=$TMPDIR/tstitle --junitxml=artifacts/face-first/results.xml
-PLATFORMIO_BUILD_DIR=$PWD/build/face-first-esp32 .venv/bin/python -m platformio run --project-dir firmware/esp32 -e esp32s3-touch-amoled-175c
-.venv/bin/python tools/report_face_first.py
-```
-
-`artifacts/face-first/REPORT.md` records the initial dirty-tree snapshot, failing
-native baseline, fixture corrections, exact final runs, framebuffer contact sheet,
-image inspection and limitations. `source.tar.gz` freezes the final source and
-`implementation.patch` separates this work from preexisting video-v2 changes.
-The report tool expects that baseline snapshot and successful test/build outputs;
-it never starts a gateway, flashes, stages OTA or touches a physical device.
-Existing visual tests change only their crop/target dimensions to the approved
-layout: headline instead of old reply footer, meter y78, portrait y96, 55px read
-pill and 48px Stop. Approval, stale contacts, scroll-follow, wake, live preemption
-and independent MP4 pixel comparisons remain intact.
-
-### Interaction surface E2E
-
-`tests/test_interaction_surface_e2e.py` covers Silence, Stop work, capture
-ownership/Discard, visible tap routes, idle-only settings, equal-emphasis review
-and persistent outcomes. `tests/test_interaction_remediation_e2e.py` adds the
-review regressions: stop ownership across requests, unattributable `turn.end`,
-final text without `turn.end` (including the three-minute expiry, so that file
-takes about four minutes), offline/connecting/pairing Settings on round and
-rectangular touch profiles, outcome lines in reading and quick controls, and
-Silence/Stop order. `tests/test_interaction_ownership_e2e.py` covers remote-work
-ownership: a tagged end of earlier work never ends newer unnamed work, a
-discarded capture or final text without `turn.start` never ends open work (Stop
-once, busy Settings, offline uncertainty, no replay), and text tagged for older
-work never replaces the current work's text or carries its outcome. Each workflow runs the native core (App, Ui and
-TouchGestures) against the production `DeviceHub` on 127.0.0.1 with a
-disposable store; its delegate is the development `EchoBrain`, recording what the
-host was asked to do and replying only when the test drives it. Assertions use
-device→host wire receipts, the simulator's speaker/microphone HAL calls, hub
-delegate calls and RGB565 pixels compared with an independent raster of the
-source Geist TTF. No Hermes checkout, provider, gateway or hardware is used.
-
-```sh
-uv venv .venv --python 3.14
-uv pip install --python .venv/bin/python -e '.[dev,images]' cmake
-PATH="$PWD/.venv/bin:$PATH" PYTHONPATH=python .venv/bin/python -m hermes_gadget build-sim --test
-mkdir -p /tmp/ti/home && export HGSIM_LIBRARY=$PWD/build/host/libhgsim.so \
-  HERMES_HOME=/tmp/ti/home HERMES_AGENT_DIR=/nonexistent IX_ARTIFACTS=$PWD/artifacts/interaction-v1/local
-PATH="$PWD/.venv/bin:$PATH" .venv/bin/python -m pytest tests/test_interaction_surface_e2e.py \
-  tests/test_interaction_remediation_e2e.py tests/test_interaction_ownership_e2e.py tests/test_touch_navigation.py tests/test_reply_indicator.py tests/test_face_first.py \
-  tests/test_face_first_font.py tests/test_round_amoled.py tests/test_round_amoled_safety.py \
-  tests/test_stale_title_hold.py tests/test_sim_hub.py tests/test_protocol.py -v \
-  --basetemp=/tmp/ti/bt --junitxml=artifacts/interaction-v1/local/results.xml
-```
-
-Keep `--basetemp` short; Unix socket paths have a length limit. `IX_ARTIFACTS`
-receives `run.json` (environment, library and source hashes, exact command
-line), a copy of the fixture file, and per-test snapshots, receipts, HAL logs and
-framebuffer hashes. `tests/test_video_v2.py` resolves its MP4 sources at
-`../tiny-animations/picks/states-v2/` relative to the checkout's parent; run it
-from a copy whose parent contains that directory rather than editing the test.
-
-This work supersedes some face-first geometry, each with its behavioral check
-kept: approval Yes/No are equal-emphasis 150×96 targets (no amber Yes); quick
-controls show 160×56 Stop work and Silence plus Settings; the reading view has
-seven rows above a shared 55px action row; and the swipe-only footers became
-visible tap routes. `test_face_first.py` and `test_face_first_font.py` assert the
-new rectangles and labels against the same source-TTF oracle, and the glyph
-coverage test pages by the advertised `text_rows`.
-
-### Round companion navigation motion
-
-The 466px renderer uses a 220ms integer cubic ease-out arrival translation,
-32 pixels vertically for Home/Controls/Reader and horizontally for the Recent
-stack. Only explicit user navigation starts motion. The destination is the sole
-input model from the first frame; input or a priority activity snaps immediately.
-The app tick supplies milliseconds independently of the 100ms expression tick.
-
-A slide renders the destination once into a cache (one extra 466×466 RGB565
-buffer, about 434 KB, allocated in PSRAM on first use; the slide snaps if the
-allocation fails). The destination is drawn straight into the cache, so the
-glass keeps the old view until it is ready; the slide clock starts after that,
-so preparing the destination never skips motion. Each frame is the cache shifted
-and masked to the round glass. Only the columns lit in this or the previous
-frame are rewritten and sent, grouped into row bands of similar width
-(`Ui::flush_bands`). The last frame is the cache at offset 0, followed by a
-static render that applies anything that changed during the slide (face,
-press, new model), so it is pixel-identical to the static view. While a slide
-runs, the ESP32 main loop polls events without its 10 ms idle wait. No animation
-sleep or input lock is introduced. `tests/test_slide_columns_e2e.py` checks the
-panel copy after every slide frame in both directions and that slides send less
-than whole rows.
-
-The AMOLED port stages each flush through two 16-row internal-RAM DMA buffers:
-the CPU copies the next chunk out of PSRAM while the previous one is on the
-wire, so SPI DMA never reads PSRAM. Direct PSRAM DMA (`psram_dma_direct`) is
-kept only as a fallback when internal RAM for the staging rows is unavailable.
-Direct PSRAM reads are suspected of stalling the app task during OTA flash
-writes. That is unconfirmed on hardware.
-
-Partial updates use `Display::flush_rect(x0, y0, x1, y1)`. The idle face
-(192×192 portrait), the recording meter and press highlights send only their
-own columns instead of whole 466-pixel rows. The CO5300 takes a column window
-(even start and width), so the AMOLED port packs the narrow span into its
-staging buffers. Ports without a column window fall back to whole rows. The
-simulator keeps a panel copy that receives only flushed rectangles
-(`hgsim_panel`, `NativeDevice.panel_rows()`), and
-`tests/test_flush_window_e2e.py` checks that every changed pixel reached it.
-
-The ESP32 port reports display timing as `perf_*` sensors every 2 s while the
-screen is drawing: `perf_full_flush_ms` (slowest full-screen flush),
-`perf_flush_timeouts` (flushes whose DMA did not finish within 200 ms),
-`perf_flush_max_ms`, `perf_flush_ms`/`perf_flush_calls`/`perf_flush_rows`/
-`perf_flush_px` (totals for the window; `perf_flush_px` counts pixels sent), `perf_tick_max_ms`, `perf_event_max_ms`,
-`perf_busy_ms`, `perf_motion_frames` (frames drawn by the last slide),
-`perf_slide_gap_max_ms` (longest time between two slide frames spent outside
-`App::tick`: events, polling, or other tasks preempting the app loop) and
-`perf_app_core` (the CPU the app loop runs on). On the 1.75C the app loop
-(main task) is pinned to CPU1 (`boards/esp32s3-touch-amoled-175c/sdkconfig.defaults`),
-away from the Wi-Fi and esp_timer tasks on CPU0; other boards keep the ESP-IDF default.
-Boards that wire the panel's tearing-effect line (`AmoledConfig::te`; GPIO 13 on the
-1.75C) also report `perf_te_hz`, the panel refresh rate counted from TE pulses. It is a
-measurement only: flushes are not yet paced to TE, so a slide frame can still tear.
-Read them with `hermes gadget debug status`. Measured on the 1.75C at 40 MHz
-QSPI: a full-screen flush took 180 ms before the flush-completion interrupt
-woke the waiting task, 37 ms after that fix, and 41 ms with direct PSRAM DMA.
-Slide frame rates on hardware have not been measured yet.
-
-Round-companion touch boards also offer a `display.bench` device action. When
-the device is idle and its screen is awake, it runs Home → Quick controls →
-Home slides (plus Recent → Home when the host offers work) and five full
-redraws through the normal render path, then returns per-slide frame counts,
-`prep_ms` (rendering the destination before the first frame) and per-frame
-milliseconds, the redraw times, and `min_frames`,
-`max_frame_ms`, `redraw_max_ms`. The same three values are also reported as
-`perf_bench_*` sensors. The device returns to the view it started on. It
-refuses while recording, speaking, answering a question, in settings or during
-an update. Invoke it like any device action (the `gadget_action` tool, or
-`DeviceSession.invoke_action("display.bench")`). The screen moves for about two
-seconds. `tests/test_display_bench_e2e.py` runs it through the loopback DeviceHub.
-
-`tests/test_smooth_motion_e2e.py` checks that every slide frame is a masked
-shift of the destination and that every changed row is flushed.
-
-`tests/test_design_pass2_e2e.py` exercises motion, static convergence, row flushes,
-mid-motion input, stale approval contact, speech/recording preemption, offline
-recovery, outcome hit targets, time-token wrapping and result headers against
-the native core plus production loopback DeviceHub. Older navigation helpers
-wait on observable transition completion before pixel assertions; raw-contact
-workflows test interruption without waiting.
 
 ### Releases
 
@@ -382,9 +166,9 @@ It also writes `SHA256SUMS` and `manifest.json`, which tells the browser install
 
 To publish a release:
 
-1. Set the new version in all four files that carry it: `PROJECT_VER` in `firmware/esp32/CMakeLists.txt`, `pyproject.toml`, `python/hermes_gadget/__init__.py` and `plugin/plugin.yaml`. `python tools/check_versions.py` says whether they agree, and CI fails when they don't.
-2. Merge, then push a tag: `git tag v0.2.0 && git push origin v0.2.0`.
-3. The **Release** workflow checks the four files against the tag, builds every board in `platformio.ini`, and publishes the files as a GitHub release. Its notes include the command that installs the plugin from the same commit (`hermes plugins install … --ref <commit>`).
+1. Set the new version in all four files that carry it: `PROJECT_VER` in `firmware/esp32/CMakeLists.txt`, `pyproject.toml`, `python/hermes_gadget/__init__.py` and `plugin/plugin.yaml`, and move the `## Unreleased` entries in `CHANGELOG.md` under a `## <version>` heading. `python tools/check_versions.py --tag v<version>` says whether they agree and the section exists.
+2. Merge, wait for CI and the Hermes run to pass on `main`, then tag that commit: `git tag v0.2.0 && git push origin v0.2.0`.
+3. The **Release** workflow refuses a commit without successful CI and Hermes runs, checks the four files and the changelog against the tag, builds every board in `platformio.ini`, and publishes the files as a GitHub release. Its notes open with the changelog section and include the command that installs the plugin from the same commit (`hermes plugins install … --ref <commit>`).
 
 To package local builds: `pio run && python tools/package_release.py --all --out dist`.
 

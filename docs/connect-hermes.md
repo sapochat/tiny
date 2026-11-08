@@ -9,11 +9,15 @@ hermes plugins install https://github.com/Adolanium/hermes-gadget-sdk/tree/main/
 hermes gateway setup
 ```
 
-Choose **Hermes Gadget**. Restart the gateway when setup asks. Setup prints a device address and an installer link with that address filled in.
+The plugin needs Hermes Agent 0.21.6 or newer. Choose **Hermes Gadget**. Restart the gateway when setup asks. Setup prints a device address and an installer link with that address filled in.
 
 **You know it worked when:** `hermes gadget info` shows the gadget configuration and device URL. Keep the gateway running so devices can connect.
 
 The command installs from `main`. To match a firmware release, use the command in the [release notes](https://github.com/Adolanium/hermes-gadget-sdk/releases), which pins the plugin with `--ref`.
+
+Install from the `plugin` directory, as these commands do, not from the repository root. Hermes scans everything under the address you give it before it installs. The root is not a plugin, and it also holds the Raspberry Pi system installer (`linux/install.sh`), which must run as root and writes under `/etc`. Hermes rates the root "dangerous" and refuses to install it, even with `--force`.
+
+To see the scan result before you install, clone the repository and run `hermes plugins validate hermes-gadget-sdk/plugin`. Its **security scan** line shows the verdict that `hermes plugins install` acts on. When an install needs confirmation or is blocked, Hermes lists each finding with its file and line.
 
 ## 2. Connect a device
 
@@ -27,6 +31,8 @@ hermes-gadget sim --url ws://127.0.0.1:8765/gadget --name "Desk Gadget"
 
 If Hermes runs on another computer, replace the URL with the address from `hermes gadget info`. That computer's firewall must allow the gadget port, 8765 by default.
 
+If that port is already in use, [change the gadget port](hermes-integration.md#change-the-gadget-port), restart the gateway, and update the device's server address. Configuration edits and plugin toggles do not change the running listener's port.
+
 ## 3. Approve the device
 
 When the device shows a pairing code, run:
@@ -36,6 +42,8 @@ hermes gadget pair
 ```
 
 Check the device name and code before approving it. You can also run `hermes pairing approve gadget <CODE>` with the code shown on the device.
+
+Approve devices in the default profile. If you turn on profile switching, an approved device can then switch to your other Hermes profiles from its settings; see [Hermes integration](hermes-integration.md#running-against-a-profile-or-a-multiplexed-gateway).
 
 **You know it worked when:** the device reaches Ready. Type a message in the simulator or use TALK on a board. Replies now come from your Hermes.
 

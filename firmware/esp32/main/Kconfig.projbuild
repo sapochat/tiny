@@ -21,6 +21,55 @@ menu "Hermes Gadget"
             default ""
     endmenu
 
+    config HG_WIFI_REUSE_IP
+        bool "Reuse the last DHCP address on a fast Wi-Fi rejoin"
+        default n
+        help
+            When the device rejoins the access point that last worked, take the
+            address, gateway and DNS server it last got from DHCP as a static
+            address instead of asking DHCP again. Only for a router that reserves
+            that address for the device: nothing renews the lease, and an address
+            given to someone else in the meantime conflicts. Every other join uses
+            DHCP. Without this option the device still asks DHCP for its last
+            address first (CONFIG_LWIP_DHCP_RESTORE_LAST_IP), which skips the
+            discovery round. docs/hardware.md#wi-fi-reconnect
+
+    config HG_TAILNET
+        bool "Join a Tailscale tailnet (experimental)"
+        default n
+        depends on SPIRAM
+        help
+            Builds in TailTiny, a third-party Tailscale client
+            (components/TAILTINY.md), so the device can reach a Hermes
+            gateway that only listens on its tailnet address, from any
+            network. The board also needs BoardConfig::tailnet, and the user
+            turns it on with `set tailnet on` and an auth key (`set ts_key`).
+            Adds about 108 KB of flash on the AMOLED-1.75C. Off on every
+            board and in release images. docs/tailnet.md
+
+    config HG_FRAME_STATS
+        bool "Time every frame from boot"
+        default n
+        help
+            Measure how long each screen update takes to draw and to send to
+            the panel, and how long a button or touch waits for it, from boot.
+            Without this option the timing stays off until the console's
+            `perf on`, and costs one check per screen update.
+            docs/development.md#measure-frame-timing
+
+    config HG_FRAME_BUDGET_US
+        int "Frame budget (microseconds)"
+        default 16667
+        range 1 10000000
+        help
+            Frames that take longer count as missed. 16667 is one 60 Hz refresh.
+            The console's `perf budget` changes it until the next restart.
+
+    config HG_FRAME_LOG_S
+        int "Seconds between frame timing summaries in the log (0: none)"
+        default 10
+        range 0 3600
+
     choice HG_BOARD
         prompt "Board"
         default HG_BOARD_ESP32S3_BREADBOARD
@@ -33,44 +82,68 @@ menu "Hermes Gadget"
             bool "Waveshare ESP32-S3-Touch-AMOLED-1.75 (round AMOLED, touch, codecs)"
         config HG_BOARD_AMOLED_175C
             bool "Waveshare ESP32-S3-Touch-AMOLED-1.75C (32 MB flash, enclosed AMOLED)"
+        config HG_BOARD_WS_ESP32S3_TOUCH_AMOLED_132
+            bool "Waveshare ESP32-S3-Touch-AMOLED-1.32 (experimental, round CO5300 466x466, CST820, ES8311)"
+        config HG_BOARD_WS_ESP32S3_TOUCH_AMOLED_143C
+            bool "Waveshare ESP32-S3-Touch-AMOLED-1.43C (experimental, round CO5300 466x466, CST820, ES8311 + ES7210)"
+        config HG_BOARD_AMOLED_18
+            bool "Waveshare ESP32-S3-Touch-AMOLED-1.8 (rectangular AMOLED, CST820 touch, ES8311)"
+        config HG_BOARD_AMOLED_206
+            bool "Waveshare ESP32-S3-Touch-AMOLED-2.06 (watch, 410x502 AMOLED, FT3168 touch)"
+        config HG_BOARD_AMOLED_216
+            bool "Waveshare ESP32-S3-Touch-AMOLED-2.16 (480x480 AMOLED, CST9220 touch, ES8311 + ES7210)"
         config HG_BOARD_BOX3
             bool "Espressif ESP32-S3-BOX-3 (LCD, touch, ES8311 + ES7210)"
+        config HG_BOARD_ESP32S3_BOX
+            bool "Espressif ESP32-S3-BOX (experimental, ST7789 320x240, TT21100, ES8311 + ES7210)"
+        config HG_BOARD_ESP32S3_KORVO_2
+            bool "Espressif ESP32-S3-Korvo-2 (experimental, ILI9341 320x240, GT911 or TT21100, ES8311 + ES7210)"
         config HG_BOARD_CORES3
             bool "M5Stack CoreS3 (LCD, touch, AW88298 + ES7210)"
+        config HG_BOARD_STICKS3
+            bool "M5Stack StickS3 (experimental, ST7789 240x135, ES8311, M5PM1)"
+        config HG_BOARD_CARDPUTER_ADV
+            bool "M5Stack Cardputer ADV (Stamp-S3A, ST7789 240x135, ES8311, TCA8418)"
+            depends on IDF_TARGET_ESP32S3
         config HG_BOARD_WS_ESP32S3_LCD_154
             bool "Waveshare ESP32-S3-LCD-1.54 (ST7789 240x240, ES8311 + ES7210 codecs)"
+        config HG_BOARD_WS_ESP32S3_TOUCH_LCD_183
+            bool "Waveshare ESP32-S3-Touch-LCD-1.83 (experimental, ST7789 240x284, CST816D, ES8311 + ES7210)"
+        config HG_BOARD_WS_ESP32S3_TOUCH_LCD_185C_V2
+            bool "Waveshare ESP32-S3-Touch-LCD-1.85C V2 (experimental, ST77916, CST816, codecs)"
+        config HG_BOARD_WS_ESP32S3_TOUCH_LCD_146
+            bool "Waveshare ESP32-S3-Touch-LCD-1.46 (experimental, SPD2010 412x412, I2S mic, PCM5101)"
+        config HG_BOARD_WS_KNOB_LCD_18
+            bool "Waveshare ESP32-S3-Knob-Touch-LCD-1.8 (SH8601 360x360 round, encoder, text-only audio)"
+        config HG_BOARD_ESP_VOCAT
+            bool "Espressif ESP-VoCat v1.2 (experimental, ST77916 360x360, CST816S, ES8311 + ES7210)"
         config HG_BOARD_T_DISPLAY_S3
             bool "LilyGO T-Display-S3 (ST7789 320x170 on an i80 parallel bus, no audio)"
+        config HG_BOARD_AIPI_LITE
+            bool "AIPI Lite (128x128 ST7789, ES8311 codec, battery)"
+        config HG_BOARD_SPOTPEAR_MUMA
+            bool "Spotpear ESP32-S3-1.54 muma (experimental, ST7789 240x240, CST816D, ES8311)"
+        config HG_BOARD_SPOTPEAR_BOX128
+            bool "Spotpear ESP32-S3-1.28-BOX (experimental, round GC9A01 240x240, CST816D, ES8311)"
+        config HG_BOARD_CROWPANEL_21
+            bool "Elecrow CrowPanel 2.1-inch HMI (480x480 RGB, rotary, touch)"
+        config HG_BOARD_CROWPANEL_50
+            bool "Elecrow CrowPanel 5.0-inch HMI (800x480 RGB ILI6122, GT911 touch)"
+        config HG_BOARD_CROWPANEL_P4_101
+            bool "Elecrow CrowPanel Advanced 10.1-inch ESP32-P4 (1024x600 DSI, GT911)"
+            depends on IDF_TARGET_ESP32P4
+        config HG_BOARD_ESP32_CYD
+            bool "ESP32-2432S028 CYD (ST7789 320x240, no PSRAM, experimental)"
+            depends on IDF_TARGET_ESP32
+        config HG_BOARD_WS_P4_TOUCH_LCD_3_4C
+            bool "Waveshare ESP32-P4-WIFI6-Touch-LCD-3.4C (800x800 round DSI, ES8311+ES7210 audio, C6 Wi-Fi)"
+            depends on IDF_TARGET_ESP32P4
+        config HG_BOARD_WS_P4_TOUCH_LCD_7B
+            bool "Waveshare ESP32-P4-WIFI6-Touch-LCD-7B (1024x600 DSI, GT911 touch, ES8311+ES7210 audio, C6 Wi-Fi)"
+            depends on IDF_TARGET_ESP32P4
         config HG_BOARD_CUSTOM
             bool "Custom pins (configure below)"
     endchoice
-
-    config HG_LEGACY_MASCOT
-        bool "Include the legacy 1-bit mascot bitmaps"
-        default n if HG_BOARD_AMOLED_175 || HG_BOARD_AMOLED_175C
-        default y
-        help
-            About 27 KB of flash. The 466px round companion boards draw the
-            expression video and never the 1-bit mascot, so they leave it out
-            and link a size-only stub; every other board draws it.
-
-    config HG_EXPRESSION_PACK
-        bool "Include the expression video frames"
-        default y if HG_BOARD_AMOLED_175 || HG_BOARD_AMOLED_175C
-        default n
-        help
-            About 440 KB of flash. Only the 466px round companion boards
-            draw the expression video; every other board compiles against a
-            frame-free stand-in with the same clip metadata.
-
-    config HG_ROUND_UI
-        bool "Include round-companion-only interface features"
-        default y if HG_BOARD_AMOLED_175 || HG_BOARD_AMOLED_175C
-        default n
-        help
-            Idle face modes, the clock faces and later glance features drawn
-            only by the 466px round companion. Other boards compile none of
-            this code or its assets, so their app images do not grow.
 
     menu "Custom board pins"
         depends on HG_BOARD_CUSTOM

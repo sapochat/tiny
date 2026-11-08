@@ -3,10 +3,12 @@
 #include "port.hpp"  // first: pulls in FreeRTOS.h ahead of task.h/queue.h
 
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #include "esp_console.h"
 #include "esp_log.h"
+#include "hg/console_args.hpp"
 #include "sdkconfig.h"
 
 namespace hgp::console {
@@ -15,19 +17,26 @@ namespace {
 const char* TAG = "hg.console";
 
 int run(int argc, char** argv) {
+  // ESP-IDF has already split the line and removed its quotes. `wifi` takes several
+  // values that may hold spaces, so its arguments are quoted again.
+  const bool quote = argc && std::strcmp(argv[0], "wifi") == 0;
   std::string line;
   for (int i = 0; i < argc; ++i) {
     if (i) line.push_back(' ');
-    line += argv[i];
+    line += quote && i ? hg::quote_arg(argv[i]) : std::string(argv[i]);
   }
-  ConsoleRequest req{xSemaphoreCreateBinary(), {}};
-  if (!events::post(EventType::Console, line.data(), line.size(), 0, &req) ||
-      xSemaphoreTake(req.done, pdMS_TO_TICKS(3000)) != pdTRUE) {
+  // The app task answers on its own time. The slot outlives this function
+  // if that answer comes after the wait below gave up.
+  ConsoleRequest* req = ConsoleRequest::create();
+  if (!events::post(EventType::Console, line.data(), line.size(), 0, req)) {
+    req->release();  // nobody will answer: drop the app task's share too
+    std::printf("@error device busy\n");
+  } else if (!req->wait(3000)) {
     std::printf("@error device busy\n");
   } else {
-    std::printf("%s\n", req.reply.c_str());
+    std::printf("%s\n", req->reply().c_str());
   }
-  vSemaphoreDelete(req.done);
+  req->release();
   return 0;
 }
 
@@ -36,7 +45,7 @@ int run(int argc, char** argv) {
 void begin() {
   static const char* const kCommands[] = {"help",      "status", "diag",   "get",         "set",       "say",
                                           "talk",      "release", "cancel", "new-session", "reconnect", "forget-key",
-                                          "factory-reset", "settings", "wifi-setup"};
+                                          "factory-reset", "settings", "wifi-setup", "wifi", "phone", "perf"};
   for (const char* name : kCommands) {
     esp_console_cmd_t cmd = {};
     cmd.command = name;

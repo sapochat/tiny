@@ -8,6 +8,8 @@ on:
   push:
     branches: [main]
   pull_request:
+    # A draft stays up for review. This job starts when the pull request is marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
   schedule:
     - cron: "37 5 * * *"
   workflow_dispatch:
@@ -26,19 +28,20 @@ concurrency:
 
 env:
   # The Hermes Agent commit this SDK is verified against. To move it, run this workflow by hand
-  # with hermes_ref: main; when it passes, put the commit it printed here and in the README.
+  # with hermes_ref: main; when it passes, put the commit it printed here and in plugin/compat.py.
   HERMES_REF: 2eceb0275501b09febdec88d08b80d1fff730cf8
 
 jobs:
   integration:
     name: Plugin on Hermes (${{ github.event_name == 'schedule' && 'main' || inputs.hermes_ref || 'pinned' }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           path: hermes-gadget-sdk
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           repository: NousResearch/hermes-agent
           ref: ${{ github.event_name == 'schedule' && 'main' || inputs.hermes_ref || env.HERMES_REF }}
@@ -46,7 +49,7 @@ jobs:
       - name: Show the Hermes commit under test
         working-directory: hermes-agent
         run: git log -1 --format='Hermes Agent %H (%cs) %s'
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: hermes-agent/uv.lock

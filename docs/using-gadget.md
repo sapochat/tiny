@@ -1,326 +1,202 @@
 # Talk, type, and interrupt
 
-## Recent results
-
-On the 466px round touchscreen, swipe down from Home to Quick controls and tap
-**Recent**. The shelf shows up to eight recent jobs as cards, three at a time.
-Each card leads with a small coloured status mark and word (**Finished** green,
-**Failed** red, **Stopped** amber for a cancelled job, **Working** blue,
-**Unknown** grey), then up to two lines of the host's own final-reply excerpt,
-ending in "…" when longer. A job with no text says **No reply text**. The
-status line also says how long ago the job last changed, right-aligned: **Just
-now**, **12 min**, **3 hr**, **Yesterday** (the host's previous local calendar
-day) or **3 days**. Ages come from the host's `updated_at` and the host time Tiny
-already keeps, so they move with the device clock; without a trusted host time
-(an older host, or 12 hours offline) no age is shown rather than a guess. Tap a
-card to read it; vertical swipes scroll using the normal reading layout, and the
-reader leads with the stage mark and word above the body. It shows six text rows
-below that header; vertical swipes still reach the entire retained excerpt. With more than three
-jobs, a **More ›** pill and page dots appear; on the last page the pill reads
-**Back to top**. An empty shelf says **No recent work**. Tap the title or swipe
-right to return (result → shelf → controls → Home). Navigation does not submit,
-cancel, approve, or record anything.
-
-Every round-screen target lights while a still finger rests on it. Only that
-target's rows are redrawn. Moving the finger past the slop distance or lifting
-it clears the highlight; the highlight never acts. Quick controls show each
-slider's value inside its track, clear of the **Recent** pill.
-
-A result already open stays on its existing revision and scroll position when a
-new revision arrives. Return to the shelf and open it again to see the newer text.
-Positions are local RAM, not a cross-device bookmark. Results themselves live on
-the host and return after device or host restart; nothing is re-executed. A running
-job interrupted by disconnect or restart is **unknown**, not finished.
-
-History is device-specific, bounded to eight records and seven days. It requires
-support from both ends; older hosts and non-touch boards retain their old behavior.
-Only a short final-text glance is retained, not audio, full conversation history,
-attachments, device keys or access credentials. Credential-shaped final text is
-replaced with an omission notice; this is not a general semantic secret detector.
-Do not ask Tiny to retain secrets in results.
-
-Administrative explicit clearing is available through the host's
-`hub.work.clear(device_id)` API (the running DeviceHub owner); then request a fresh
-`work.list` or reconnect. There is no on-device Clear button in this v1.
-
-
-
-Wait for the device to show Ready. On the LCD board, BOOT is TALK and PLUS is CANCEL. On the round touchscreen, hold Home to talk. Navigation swipes never cancel a turn or answer a question.
-
-## Touch navigation
-
-Views and activity are independent: you can navigate while Hermes is thinking, streaming, or speaking without stopping it.
-
-On the 466px companion, explicit navigation uses a short 220ms ease-out arrival:
-vertical between Home and Controls/Reader, horizontal through Recent and results.
-The destination owns input immediately. A new touch or button press snaps it into
-place; recording, speech, approval, offline and errors never wait for motion.
-Navigation during speech is immediate. Text scrolling and paging stay immediate.
-
-Offline, connecting and connection-error screens use the same companion typography.
-They name the state, its consequence, and the next step. On the round board each
-also shows two targets: **Retry now** and **Settings**. Retry now tries the
-connection at once instead of waiting out the backoff, using the same reconnect
-path as the `reconnect` console command. While an attempt is already under way it
-says **Already connecting** and opens nothing new; with Wi-Fi down it says
-**Waiting for Wi-Fi**; on **Setup needed** it clears the error and tries once more
-with the same settings. Retry never resends work: a task cut off by the
-disconnect stays **Task status unknown**. **Settings** opens the local menu, where
-**Wi-Fi setup** lives where supported. Holding **HERMES** at the top still opens
-Settings as a shortcut. USB connection setup remains available. Pairing, detailed Settings,
-Wi-Fi setup, cards and images retain their existing functional layouts.
-
-| Starting view | Up / down | Right | Left |
-|---|---|---|---|
-| Home | Up opens the latest reply; down opens quick controls | No action | No action |
-| Response | Scroll text, including at either boundary | Home, retaining reading position | No action |
-| Quick controls | On the round board, drag a slider to set its level; elsewhere adjust only the slider where the gesture starts | Home | No action |
-| Approval | Scroll the question | No action | No action |
-| Recording | No navigation | No navigation | No navigation |
-
-Tap the rendered **Yes** or **No** button to decide an approval. Existing physical CANCEL and console cancellation remain available; no swipe starts a new session or resets the device. Only a one-second hold on **New chat** does (see [New chat](#new-chat)).
-
-Several swipes also have a visible tap route on the 466px round display, when there is room for it: **↓ Controls** on the idle face (only when no action fills the action row) opens quick controls, the **‹ Latest reply** and **‹ Quick controls** titles return to Home, and **Read reply** opens unread text. These routes are not universal: while Mute voice and Stop task fill the two action slots there is no Read reply or Controls target, and a reply you have already read is reopened by swiping up. Swipe down from Home for quick controls at any time.
-
-### Mute voice, Stop task and Discard
-
-These are separate actions with separate targets:
-
-| Action | What it does | What it never does |
-|---|---|---|
-| **Mute voice** | Stops the speaker immediately. Later audio for the same reply stays quiet until a new turn starts or you ask something new. | Send anything to Hermes, open the microphone, or stop Hermes working |
-| **Stop task** | Sends one stop request for the current work, quiets its speech, and shows **Stop requested** | Claim the work has stopped |
-| **Discard** | Ends a recording without making a request | Recall audio that already streamed |
-
-On the 466px display, **Mute voice** appears whenever speech is playing and **Stop task** whenever Hermes is working, on Home, the reading view and quick controls, always with Mute voice on the left and Stop task on the right. Quick controls keep their positions stable. An unavailable Mute voice is outlined; after work ends, its outcome replaces Stop task as plain status text, not a button or hit target. Pending stop requests are also plain status text. Pressing Stop task again, or CANCEL, sends nothing more. Final reply text is not the end of the work: Stop task stays available until Hermes ends the turn.
-
-On the AMOLED-1.75C, a short press of the side **PWR** key is Mute voice without looking: it quiets speech the same way, and it also stops a ringing timer from beeping (the timer stays on Home with **Dismiss** and the needs-you mark). Like Mute voice, it never stops work, answers an approval or discards a recording, and silencing never changes the screen. With nothing sounding, PWR turns the screen off, like a phone; press it again or touch the screen to turn it back on (that first touch only wakes). A screen PWR turned off stays dark while the work it was pressed over finishes; a new turn, an approval, a card or an alarm turns it back on. Holding PWR is still the board's own power-off.
-
-**Stop requested** stays until Hermes reports how that work ended:
-
-| Hermes reports | Tiny shows |
-|---|---|
-| `cancelled` | **Stopped** · Completed steps are not undone |
-| `success` | **Finished** · Stop was not confirmed |
-| `failure` | **Ended with an error** · Stop was not confirmed |
-| Connection lost first | **Outcome unknown** · Connection lost while stopping. A later report for the same turn still updates it. |
-| Stop pressed before Hermes named the work | **Outcome unknown** · Sent before Hermes started |
-| An ending that does not name the stopped turn | Nothing changes: still **Stop requested** |
-| Nothing about the turn for three minutes | **Outcome unknown** · No ending from Hermes |
-
-A stop request is not an undo: actions that already ran stay done. The outcome stays on the idle face until the next activity rather than disappearing after a few seconds. A turn that ends after you have asked something new belongs to the earlier work; it never ends or relabels the new request. Asking something new also leaves an earlier unconfirmed stop behind as unknown: the new request gets its own **Stop task**, never an inherited **Stop requested**. Work that Hermes never ends is not shown as finished; after three minutes without word from Hermes about it, Tiny says **Task status unknown** · No ending from Hermes. If the connection drops while Hermes is working, the offline screen and the idle face say **Task status unknown**; reconnecting does not resend anything.
-
-### Recording
-
-Hold Home anywhere that is not a button to talk. Audio streams to Hermes while you hold; releasing finishes the recording and makes the request, so the face says **Release to finish**. A hold shorter than 350 ms is discarded as too short.
-
-- The reading view never starts a recording from a still finger. Use its **Hold to talk** target (**Tap to talk** in tap mode), or return Home.
-- While a finger holds the screen, it owns the only touch contact, so there is no Discard button. To be able to discard, use tap-to-talk mode, or hold the physical BOOT/TALK button and tap **Discard**.
-- In tap-to-talk mode, **Discard** and **Finish** appear; a pause also finishes.
-- Discard sends `audio.cancel`. The hub drops the partial upload and makes no request, but audio that already streamed during the recording did reach the host.
-- Touch Talk targets never answer a question. The physical BOOT/TALK button keeps its existing meaning during a question (yes, after the 0.6 s arm delay); this release does not remap it.
-
-Home shows a quiet tappable reply indicator when text changes while the response is not visible: **New text**. A matching successful `turn.end` changes it to **Reply ready**; a failed ending shows **Couldn’t finish** on the round Home face, while a cancelled ending shows **Reply stopped** instead. On the 466px face-first display these are the state label above a **Read reply** pill; legacy displays retain the combined footer label. A final text snapshot alone is not completion. A turn without new text cannot mark a retained previous reply complete. Opening the response clears unread status (it does not claim every line was read); later hidden text changes make it unread again. This is local, in-memory status for the latest reply, not a notification history.
-
-Tap that footer to open the response at its retained reading position, without starting audio. It does not replace approval, recording, settings or overlays, and completion does not change your selected view. Holding the footer also does not start recording; hold elsewhere on Home to talk. A contact begun on an older reply cannot open replacement text. The existing up/down navigation remains available while the footer temporarily replaces its hint.
-
-Streaming follows new text only while at the bottom. Scrolling up holds your reading position, including after the final text arrives and when returning from Home. Scroll back to the bottom to follow again. Home retains the current activity indicator, and the previous reply remains readable while the next turn is thinking.
-
-A gesture belongs to its starting view and to the revision of the target it touched: a Mute voice contact cannot quiet a newer stream, a Stop task contact cannot stop a newer turn, and a Discard or Finish contact cannot act on a later recording. A newly arrived/replaced approval cannot consume an older contact, and a control that appears under a resting finger does not take it. Ambiguous diagonals and drags outside a button do not decide anything. A stationary hold on Home starts push-to-talk after 120 ms; once recording has started, movement is ignored and lifting the original talk contact finishes normally. Another contact during recording does nothing unless it taps a visible Discard or Finish target.
-
-Quick controls are separate from the legacy settings/hardware-check menu. When Tiny is idle, quick controls show **Settings**; otherwise it is outlined and inert. Holding the title area at the top on Home for one second **while idle** still opens the menu, as do the physical chord and console command when idle. On the round board's offline, connecting and setup-needed screens, a visible **Settings** target opens it. On those screens and pairing, holding the title (the top bar on rectangular touch boards) opens it too; this works even when the last task's outcome is unknown, and never cancels or resends that work. Settings never stop a recording, speech or work: the chord and console are refused while busy, and a refused chord is consumed rather than acting as CANCEL. A pending title hold is consumed if its view or idle eligibility changes; it cannot cancel a recording or speech that starts later. Starting a recording also invalidates older navigation contacts, without changing the original touch-owned TALK release. Its local item-navigation and Wi-Fi setup gestures are unchanged.
-
-## New chat
-
-Tiny keeps one conversation with Hermes until you start another. On the 466px round touchscreen, swipe down to quick controls and **hold New chat for one second**. It sits below Mute voice, beside Recent. While your finger rests on it, the pill lights and reads **Hold 1 sec**; at one second Tiny sends `session.new`, returns to Home, and shows **Starting a new session** until Hermes answers. A tap only shows **Hold 1 sec** for two seconds, and a finger that moves off the pill does nothing, so you can't start over by accident.
-
-New chat is offered only when Settings would be (nothing recording, speaking, asking or working) and Tiny is connected. Otherwise it stays in place, outlined and inert. A finger that went down while it was available does nothing if Hermes starts work before the second is up.
-
-The host can also start fresh on its own after a quiet stretch. See `idle_reset_minutes` in [the Hermes integration guide](hermes-integration.md#conversations-and-idle-reset). Starting a new chat clears only the conversation transcript. Recent results, Hermes memory and device settings stay.
+Wait for the device to show Ready. On the LCD board, BOOT is TALK and PLUS is CANCEL. On the round touchscreen, hold the screen to talk and swipe down to cancel.
 
 | What you want to do | Control |
 |---|---|
 | Ask a question | Hold TALK, speak, and release to send |
 | Interrupt a spoken reply | Hold TALK to start speaking |
-| Discard a recording, close a card, or request a stop | Tap CANCEL. With work running it sends one stop request; with only speech playing it silences locally. |
-| Start a fresh conversation | Hold CANCEL for two seconds, or hold **New chat** in quick controls for one second |
+| Read a spoken reply in full before it ends | Tap the screen, or press Up or Down |
+| Discard a recording, close a card, or stop a turn | Tap CANCEL |
+| Start a fresh conversation | Hold CANCEL for two seconds |
+| Open or close the [dashboard](#watch-hermes-sessions-on-the-dashboard) | Tap CANCEL on the idle screen |
 | Answer a confirmation question | TALK means yes; CANCEL means no |
+| Go back to Ready with the default Hermes profile | Press the TALK key (BOOT on most boards) twice, quickly |
 | Type in the simulator | Enter a message in the text box and press Enter |
 | Save the simulator's device screen | Press Ctrl+S |
 
+While Hermes speaks a reply, the face talks with the reply's latest two lines under it, and the whole text follows when the speech ends. Screens too small for the face and two lines, such as 240x135 and 128x128, show the text from the start.
+
 Long replies turn their own pages. Simulated boards with scroll buttons also accept Up and Down.
 
-Try asking Hermes to show a reminder on the screen. The agent can use `gadget_display` to display a card. Devices with actions can also respond to requests such as "Turn the LED purple."
+On boards with PSRAM, a recording survives the connection to Hermes dropping. The screen says "Offline, still recording" and you can finish speaking as usual. The gadget sends the whole recording once it is back online and Hermes answers as usual. If the connection doesn't come back within 45 seconds of the end of the recording, the gadget says "Couldn't send the recording". CANCEL discards it meanwhile ([the recording buffer](architecture.md#the-recording-buffer)).
+
+Try asking Hermes to show a reminder on the screen. The agent can use `gadget_display` to display a card. While the screen is dark, the card waits and appears when the screen lights up ([screen sleep](protocol.md#screen-sleep)). Devices with actions can also respond to requests such as "Turn the LED purple."
+
+On a Waveshare P4 7B with an OV5647 module attached, ask Hermes to take a picture. The plugin saves the photo as a timestamped PNG in `~/.hermes/gadgetpix/` on the Hermes computer and tells Hermes its path. Photos stay there until you delete them.
 
 If speech is missing, check [audio setup](connect-hermes.md#4-enable-speech). For connection problems, use [troubleshooting](troubleshooting.md). To change Wi-Fi or install firmware updates, see [Manage an existing gadget](setup-board.md#manage-an-existing-gadget).
 
-## Round AMOLED companion face (466×466)
+## Watch Hermes sessions on the dashboard
 
-The local Tiny v2 candidate plays motion from the approved, non-smoothed video pack on a true-black background. The full silhouette can move; this supersedes the earlier fixed-outline facial patches. Offline conversion embeds 96×96, four-level grayscale frames displayed at 192×192, at five frames per second. It does not decode MP4 on the device. Idle, listening and speaking loop; thinking, reply-ready, asking and alert play their authored entries and hold their final poses. Speaking is an authored animation, **not audio-synchronized lip-sync**.
+The dashboard lists the Hermes agent's sessions, from every platform the gateway serves, and any status tiles you set on the host. When the host offers [several profiles](hermes-integration.md#running-against-a-profile-or-a-multiplexed-gateway), a device that can switch also lists the sessions of each offered profile that has the gadget plugin enabled. Each session shows its state:
 
-Ready is selected only for successful completed unread text, not streaming, final snapshots or failures. Reading clears it. When a completed hold returns to neutral, its authored exit plays; early interruption skips the incompatible exit. New recording, speech, thinking, approval or alert preempts decorative transitions immediately, rather than waiting five seconds. These cuts are intentionally responsive and are not promised to be pixel-continuous. Hidden views keep animation time; returning shows the current activity rather than replaying a stale entry.
+| State | Colour | Meaning |
+|---|---|---|
+| busy | Blue | A turn is running |
+| approval | Amber | The turn waits for you to approve a command, on whichever device or chat asked |
+| idle | Grey | Nothing is running. An idle session leaves the list 30 minutes after its last turn |
 
-Approval prioritizes the complete scrollable question and existing Yes/No semantics, without a decorative portrait. Network loss/setup errors use the alert animation in the existing safe-area layout. During quiet idle dimming, fall-asleep leads to the sleeping loop; existing screen timeout still turns the display off on schedule and stops rendering. Waking from the sleep pose plays wake, unless a higher-priority activity preempts it. Short timeouts can skip unfinished sleep/wake decoration. The first wake touch still cannot record or approve.
+Once the device has a dashboard, the idle screen says **CANCEL shows sessions** (on a touchscreen, **Swipe down for sessions**). Tap CANCEL or swipe down to open it, and again to close it. Talking, a question or a card takes the screen over. A list longer than the screen turns its own pages; Up and Down scroll it on boards with those buttons. The headline counts the sessions waiting for approval, or else the busy ones.
 
-The face-first layout places the original 192px animated character at (137,96),
-with smooth proportional Geist text: a small HERMES label, 30px state at y299,
-and 18px support at y342. When a support line and action targets share the face,
-the two lines move up to y289 and y328 so neither touches the targets. Idle says
-**Hold to talk** or **Tap to talk** according to the configured mode, with a
-**↓ Controls** link. Listening says **Release to finish** for a touch hold,
-**Release BOOT to finish** for a button hold, or **Pause or tap Finish** in
-tap mode; its single brackets and meter reflect recording, not fabricated audio.
-Speaking has double brackets. Thinking has no fake progress; a host status
-phrase appears only when Hermes sends one.
+Tiles are lines you set from the Hermes host, for example for homelab services:
 
-Home, recording and reading share one action row below the text: one
-**210×55px** target, or two **138×55px** targets side by side. In priority
-order it holds Discard/Finish while recording, otherwise Mute voice, Stop task
-and Read reply (Home), or Hold to talk (reading, when idle). Decorative brackets
-stop above it. Unread completion is a **Reply ready** state and a **Read reply**
-target; new text and stopped replies remain distinct. Outcomes such as
-**Stopped**, **Finished**, **Outcome unknown**, **Discarded**, **Connection
-lost** or **Couldn’t finish** replace the idle caption until the next activity.
-Where that caption is not visible, the ending is still shown without moving you:
-the reading view adds one line under its action row (**Stopped · may be partial**,
-**Error · may be partial**, **Unknown · may be partial**, **Finished** or
-**Finished · stop unconfirmed**), and quick controls name it on the inert Stop
-target (**Stopped**, **Error**, **Unknown**, **Finished**). The reading line
-appears only for text from that work (text a newer turn sends for older work is
-not shown in its place); your scroll position is kept. Discarding a recording
-does not end work that is still open: Stop task stays available.
+```bash
+hermes gadget tile set nas up --state ok --label NAS
+```
 
-The reading view removes the face, labels the content **‹ Latest reply** (tap it
-to return Home), and uses 24px Geist, measured wrapping, seven 34px rows and a
-curved position marker; the seventh row ends above the action row. The complete
-reply is scrollable; reading position and bottom-follow behavior are unchanged.
-Long approval text uses five rows above equally sized **150×96px No / Yes**
-buttons with the same fill and text colour; neither answer is emphasized.
-**A question that does not fit must be read to the end before it can be
-answered.** Until its last line has been on screen once, No and Yes stay in
-place but outlined and dimmed, they are not touch targets, and the screen says
-**Scroll to read all ↓**; the physical TALK (yes) and CANCEL (no) buttons are
-refused the same way. Scrolling back up after reaching the end keeps the answers
-available. A replacement question starts unread again. Questions that fit on one
-screen are unaffected, and the arm delay before a new question accepts input is
-unchanged.
-Generic questions are not relabeled as permissions. Unsupported characters have
-a visible replacement glyph; full Unicode shaping and browser kerning are not
-implemented. Native results do not establish physical readability.
+`--state` colours the tile's dot green (`ok`), yellow (`warn`) or red (`bad`). `--ttl 300` removes the tile after five minutes unless it is set again, so a script that stops reporting doesn't leave a stale value. `hermes gadget tile list` shows the tiles, and `hermes gadget tile clear nas` (or `--all`) removes them. The dashboard holds up to eight tiles. Gadgets showing the dashboard pick up a change within a few seconds.
 
-Quick controls come in four bands. First, **88×114px** tracks labeled **Volume**
-and **Brightness**: drag anywhere along a track and the level follows your finger
-(top is 100%, bottom is 0%, or 10% for brightness), live; the value is saved once,
-when you lift. Both tracks draw the same light handle at the level and show the
-percentage inside the track, clear of the handle. A tap on a track changes nothing,
-and a sideways swipe that starts on one still goes Home. Then **Mute voice | Stop
-task** and **New chat | Recent** as **166×64px** and **156×64px** pairs, with
-24px labels, and finally **Settings** as one **166×48px** pill (Recent's place
-stays empty until the host offers the shelf). All actions always stay in the same place and are
-outlined when unavailable; Quick controls carry no status line, and status is
-never written inside a button. Home's title slot, where it used to say HERMES,
-shows **OFFLINE** when disconnected and **Last task: Finished / Stopped / Error /
-Unknown** once work has ended. When that job is on the Recent shelf, tapping
-**Last task: …** opens its result directly (a finger on it lights the title;
-holding it for a second still opens Settings instead); otherwise it shows the time (see Idle face
-below), or nothing. Home's idle support line is gone. On Home and in
-the reader, Stop task always holds the right slot of the action row while work
-is open (the left slot is Mute voice, or Read reply when a reply is waiting); a
-requested stop leaves it outlined and the status moves to the headline or the
-reader header. The reader shows how the last task ended as an 18px line above
-the text, never under the actions. **‹ Quick controls** returns Home. Drawing and hit
-testing share the same rectangles; stale contacts still cannot decide
-replacement targets. Setup, images and cards retain their safe inscribed area,
-and other display sizes keep their renderer.
+A script or cron job can keep a tile current:
 
-Pairing, Settings and Wi-Fi setup use the same design on the round board: Geist
-on true black, no pixel font. Pairing shows the code in a large 44px face with
-the host command beneath it. Settings show one row at a time on a rounded card:
-the row name, its current value large, a one-line description, a dot for each
-row, **Tap to change · Swipe for next**, and a **Done** button that closes
-Settings (holding the title still closes them too). The
-rows, values, tap/swipe/hold behaviour, the display check and the Wi-Fi setup
-flow are unchanged; Wi-Fi setup instructions are never truncated. Rectangular
-boards keep their existing renderer. Functional text on the round board is at
-least 18px Geist in a grey no darker than (164,164,169).
+```bash
+if ping -c1 -W2 nas.lan >/dev/null; then hermes gadget tile set nas up --state ok --ttl 300; else hermes gadget tile set nas down --state bad --ttl 300; fi
+```
 
-Assuming the full 1.75-inch circle is active display (0.095 mm per pixel), the
-approval buttons are nominally 14.3×9.2 mm, the shared action row 5.2 mm tall,
-and the quick-control actions 4.6 mm tall. These are geometric conversions, not
-measurements: only the approval buttons reach the 9–12 mm range explored in the
-review, and none of these sizes has been checked on a physical board.
+The device gets a new dashboard only when something on it changes. While the screen is dark, it gets the latest one when the screen lights up. To turn the dashboard off, set `dashboard: false` under `platforms.gadget.extra` ([configuration](hermes-integration.md#configuration)). Boards without a CANCEL button or a touchscreen don't show it.
 
-The perimeter is not a touch control, audio-volume scale or estimated progress. Idle has no bright ring; configured screen timeout still dims and sleeps normally. These are pixel dimensions verified in native simulation, **not physical touch-target or readability measurements**. No hardware power saving or frame-rate measurement is claimed.
+## Round screens
+
+On a round display, a thin ring just inside the glass edge shows what the device is doing. It is always on; there is no setting for it. Rectangular screens do not change. The first state that matches wins:
+
+- **Timer alarm, low battery alert, charging and full battery screens:** no ring.
+- **Resting clock:** 60 marks around the edge, in the grey of the date: the 12 hour marks are wider and run across the whole band, and the minute marks sit in the band's outer half. An amber dot, about twice as wide as the band, moves to the current second, once a second.
+- **Listening:** a green arc grows clockwise from 12 o'clock over a dim green track, showing the part of the 30-second recording limit used. It turns amber in the last 5 seconds. In tap-to-talk mode, a pause usually ends the recording before the arc fills.
+- **Firmware update:** an amber arc over a dim amber track shows the part of the image received. It is full while the device restarts.
+- **Running timer:** the countdown arc, amber over dim amber, shrinking clockwise from 12 o'clock.
+- **Thinking:** a blue comet laps the ring every 2.4 seconds.
+- **Speaking:** an amber comet laps the ring every 4 seconds.
+- **Starting up and connecting:** an amber comet, one lap every 2.4 seconds.
+
+Anything else shows no ring. A recording, an update or a battery screen takes the ring from a running timer while it lasts, and the timer's arc comes back after it. Screens not in the list, such as settings, cards and the dashboard, still show the timer's arc while a timer runs.
+
+## Timers
+
+Ask Hermes for a timer, for example "set a pasta timer for nine minutes". Hermes starts it on the device with the `timer.start` action. Any gadget with a display or a speaker can run a timer. Hermes can also ask how much time is left, or cancel the timer.
+
+- **Time left:** every screen shows it. On a round screen, an arc runs around the edge and shrinks as the time runs out; a recording, a firmware update or a battery screen takes the ring while it lasts, and the arc comes back after. On a rectangular screen, a line runs along the bottom of the top bar. The Ready screen also shows the time as text, for example "Timer 6:18".
+- **Alarm:** at zero, the screen shows TIMER DONE and the timer's name. A board with a speaker beeps twice every 1.5 seconds for one minute, and the screen flashes green with each beep. A board without a speaker shows the alarm without sound. The Knob 1.8, CrowPanel 2.1, CrowPanel 5.0 and T-Display-S3 have no speaker.
+- **Stop it:** press a button, tap the screen, or swipe down. The press only stops the alarm; it does not start a recording. Hermes can stop it with `timer.cancel`.
+- **Quiet alarm:** after one minute the beeps stop, but TIMER DONE stays on screen until you stop it. If the screen went dark, a press lights it and shows the alarm again.
+- **Other screens:** a card or an image from Hermes replaces the alarm. When Hermes starts to speak, the beeps stop and the alarm stays. A question from Hermes goes first: the alarm steps back and returns, ringing, once you answer the question or it expires. A timer that ends during a recording waits until the recording ends.
+- **Limits:** one timer runs at a time, and a new timer replaces it. The timer keeps counting when the connection to Hermes drops. It lives in the device's memory, so a restart or power cut forgets it. The end of a timer does not interrupt Hermes: the device sends a `timer.done` event that the plugin only logs.
+
+## Resting clock
+
+Any board with a display can show a large clock when there is nothing else on the screen: an idle Ready screen, online and paired, after `clock` seconds of rest. It is off by default. Turn it on with the **Clock face** settings item (Off, 30 s, 1 min, 2 min, 5 min) or on the console with `set clock 60` (0 turns it off, or 5..3600 seconds).
+
+The face shows the time and the date, with the mascot (or the profile's own face, where Hermes sends one) above them, at 70 percent of the brightness setting, and shifts by a few pixels each minute to spare the panel. On a round screen, the ring shows the 60 marks and a dot for the seconds; each minute the marks and the dot turn with the face's shift, to as much as 2 degrees either side of their place, so the marks do not stay lit on the same pixels. Anything on screen keeps it away: speech or a reply from Hermes, a card or a picture shown until dismissed, a question, a notice, a running timer, the alarm, the low-battery warning, or the settings menu. When the last of them is gone, the rest starts again.
+
+A quick tap brings Ready back and does nothing else. A hold still talks, a swipe down still cancels, and the buttons work as on Ready; the PWR key turns a lit clock's screen off. The screen timeout still applies on top: the clock first dims, then goes dark, and the next input wakes to Ready.
+
+The time comes from the network (`pool.ntp.org`, over SNTP) only while the clock is on; a device that never turns it on sends no time traffic. Boards with a clock chip (the AMOLED-1.75, 2.06 and 2.16; a PCF85063) keep the time in UTC across resets and are set from each network sync. The others wait for network time, and the settings item says so until it arrives.
+
+On ESP32 boards, `set timezone` chooses the clock's timezone as a POSIX TZ string; the default is `UTC0`. Examples: `UTC0`, `EST5EDT,M3.2.0,M11.1.0`, `CST6CDT,M3.2.0,M11.1.0`, `CET-1CEST,M3.5.0,M10.5.0/3`, `IST-5:30`. A string the firmware cannot read means UTC. `set time_format 12h` shows 12-hour time on the face; `set time_format 24h` (the default) shows 24-hour time.
 
 ## Device settings and hardware checks
 
-Hold TALK and CANCEL together for one second to open or close device settings. On a touchscreen, tap **Settings** in quick controls or hold the title bar for one second. Settings also work while the device is offline. Settings open only when the device is idle: they never stop a recording, a reply or Hermes's work. While busy the request is refused (on the round display, **Settings** stays outlined and inert).
+Hold TALK and CANCEL together for one second to open or close device settings. On a touchscreen, hold the title bar for one second. Round displays have no title bar; they show a **SETTINGS** target beneath the status dot instead. Hold it for one second. Touches in the target do not start recording. The target is hidden while a question, update or Wi-Fi setup is on screen, because holding it does nothing then. While settings is open, its label reads **BACK TO HERMES**; hold it again for one second to return. Settings also work while the device is offline. Opening settings stops the current recording or reply.
 
-Tap CANCEL to move to the next item, then tap TALK to change it. On a touchscreen, swipe down for the next item and tap to select. Boards with Up and Down buttons can move in either direction. Select **Back to Hermes** to leave.
+Settings is one list. Each row shows a small icon, the item's name, and its state at the right: a value, an on/off switch, a percentage, or `>` for an action. The selected row is highlighted and shows its description underneath; volume and brightness also show a slider there.
+
+Tap CANCEL to move to the next item, then tap TALK to change it. Boards with Up and Down buttons, or a knob, can move in either direction. The list scrolls smoothly to keep the selected row in view.
+
+On a touchscreen, drag the list up or down to scroll it, and tap a row to change it. The first tap on an on/off item flips it. The first tap on volume or brightness opens its slider; tap or drag along the bar to set the level, in steps of 5 percent. A drag only scrolls; it changes nothing. While a hardware check runs, a tap stops it and a swipe down moves to the next item, as before.
+
+Select **Back to Hermes** to leave.
 
 | Item | What it does |
 |---|---|
-| Speaker volume | Change volume in steps of 10 percent |
-| Screen brightness | Choose 10, 25, 50, 75, or 100 percent when the display supports it |
+| Speaker volume | Change volume in steps of 10 percent, or set it with the slider on a touchscreen |
+| Screen brightness | Choose 10, 25, 50, 75, or 100 percent when the display supports it, or set it with the slider on a touchscreen (5 to 100 percent) |
 | Talk mode | Choose hold-to-talk or tap-to-talk with silence detection |
-| Idle face | Round companion only: **Portrait**, **Portrait + time** (default) or **Clock** |
+| Touch to talk | Touchscreens with a TALK button (BOOT on most): choose whether holding or tapping the screen talks; on by default |
+| Hermes profile | Choose the Hermes profile (touchscreens), or switch to the next one; shown only when Hermes offers more than one |
+| Profiles per page | Touchscreens: choose how many profiles a page of the profile grid holds (2 x 2, 2 x 3, 3 x 3 or 4 x 4); shown only when Hermes offers more than one |
 | Microphone check | Show the live input level; nothing is saved or sent to Hermes |
 | Speaker check | Play a short, quiet tone at the current volume |
 | Display check | Show red, green, blue, white, and black bands |
 | Input check | Show the last button pressed; release CANCEL to leave the check |
 | Device information | Show the board, firmware, device ID, and available audio drivers |
-| Battery and power | Show available power readings on boards with a power driver |
+| Battery and power | Show available power readings on boards with a power driver; select to choose what the top of the screen shows: icon, percentage, both, or off |
+| Low battery alert | Boards with a power driver and a display: choose Off (the default), 10%, 10% and 5%, 15%, 10% and 5%, or 20% and 10% for the screen to light with a low battery reminder |
+| Low battery sound | Boards with a speaker: whether the low battery alert beeps; on by default |
+| Charging screen | Boards with a power driver and a display: show the battery level when USB is plugged in; on by default |
+| Charging sound | Boards with a power driver and a speaker: chirp when USB is plugged in; off by default |
+| Full battery screen | Boards with a power driver and a display: light the screen once per charge when the battery is full; on by default |
+| Full battery sound | Boards with a power driver and a speaker: chime once per charge when the battery is full; off by default |
+| Deep Wi-Fi sleep | ESP32 boards that read their battery: choose whether Wi-Fi sleeps deeper on battery with the screen dark; on by default (see below) |
 | Screen timeout | Choose always on, 30, 60, 120, or 300 seconds |
-| Restart | Select (or tap) twice to restart the board; it reconnects on its own |
-| Power off | Select (or tap) twice to shut down a board with a power driver |
-| Wi-Fi setup | Start [phone-based setup](setup-board.md#set-up-wi-fi-with-your-phone) on ESP32 boards |
+| Touch wakes screen | Touchscreens with a button that can wake the screen: choose whether a touch lights the dark screen; on by default |
+| Face-down sleep | Boards with a motion sensor: sleep and stay quiet while the gadget lies on its screen; off by default |
+| Clock face | Boards with a display: choose Off (the default), 30 seconds, 1, 2, or 5 minutes of rest before a resting clock shows |
+| Power off | Select twice to shut down a board with a power driver |
+| Wi-Fi setup | Start [phone-based setup](setup-board.md#set-up-wi-fi-with-your-phone) on ESP32 boards, with a QR code for the temporary network where the screen has room |
+| Phone app | On boards with Bluetooth: pair a phone app for two minutes; the screen shows the six-digit code to type on the phone. Shows whether a phone is paired and connected |
+| Language | Step through the languages of the device's own text: English, Spanish |
+| Double press home | Boards with a TALK key: choose whether two quick presses of it go back to Ready with the default profile; on by default (see below) |
+| Talk from dark screen | Boards with a TALK key: choose whether its press on a dark screen lights it and starts recording at once, or only lights it; off by default (see below) |
 
-Volume, brightness, talk mode, idle face and screen timeout survive restarts. Unavailable drivers show as unavailable. These checks help you test the hardware; a completed tone does not prove that a physical speaker produced sound.
+When Hermes offers several profiles (the host turns this on; see [Hermes integration](hermes-integration.md#running-against-a-profile-or-a-multiplexed-gateway)), the idle screen greets you with the current profile's name. The device shows at most 32 profiles, the default one first. On a touchscreen, swipe from right to left on the idle screen for a grid of profiles, opened at the page with the current one. Each profile shows an icon with its name under it, on up to two lines: the current profile's face; on boards with PSRAM, each other profile's own face or Hermes avatar, sent as a small picture and updated when it changes in Hermes (see [Faces](faces.md#thumbnails-in-the-profile-grid)); else the mascot for the default profile, and for the others the first letter of the name (a capital, for ASCII and Latin-1 letters), in a colour that stays the same for each profile. The current profile has a ring around its icon. After the last profile comes a **Settings** cell with a gear: tapping it closes the grid and opens the settings menu. It takes a cell like a profile, so it counts toward the pages. Swipe left or right on the grid to turn the page (the dots at the bottom show which page this is), tap a profile to switch to it and go back to the idle screen, or swipe down to close the grid without choosing. On boards where PWR turns the screen off (such as the AMOLED-2.06 and 1.75C), a short press of PWR on the grid goes back to the idle screen with the screen still lit; the next press turns it off. The grid follows Screen timeout like the idle screen: it dims at half the timeout, and when the screen goes dark the grid closes, so the next input wakes to the idle screen. In hold-to-talk mode, a tap on the name also opens the grid, and a hold that starts on the name still talks. With **Touch to talk** off, a tap on the name opens the grid in tap-to-talk mode too, and a hold on it does nothing. **Hermes profile** in settings opens the same grid. Boards without a touchscreen show **Change in Settings**: there, **Hermes profile** switches to the next one.
 
-Screen timeout is off by default, except on the AMOLED boards: with nothing stored they rest after 60 seconds at 80% brightness, because lit pixels cost battery and age the panel. A value you choose, including Always on, replaces the board's default; `set screen_timeout` with no value goes back to it. When enabled, a brightness-capable display dims halfway through the idle period, then goes dark. On the AMOLEDs dark means the panel itself sleeps (display off and sleep in) and no pixels are sent until something wakes it. The first button press or touch wakes it without recording or answering a prompt. Incoming replies and prompts wake it too. Recording, playback, settings, pairing and updates keep it awake. The processor and Wi-Fi remain running; this is screen sleep. Use the board's Power off control to shut down the device.
+A page holds 9 profiles (3 x 3) by default. **Profiles per page** in settings, or `set profile_grid 4|6|9|16`, chooses 2 x 2, 2 x 3 (3 x 2 on a landscape screen), 3 x 3 or 4 x 4. A screen too small for the chosen grid uses the largest smaller one where each profile stays at least about 7 mm tall and wide and its name keeps the screen's text size: the 2.06" and 1.8" AMOLEDs show all four, the round 1.75" AMOLED, the 1.85C and the 2.16" AMOLED stop at 3 x 3, and the smallest screens at 6 profiles a page. With few profiles a page uses the smallest grid that holds them all, so their icons are larger. The device asks Hermes and changes only when Hermes confirms; if Hermes is busy, try again once the reply is done. The first time you talk to a profile that hasn't approved this gadget yet, the screen shows the command to run on the Hermes host, such as `hermes -p work pairing approve gadget <code>`; run it, then ask again. The device keeps the profile across restarts.
 
-### Battery
+To leave the profile you are on in one move, press the TALK key twice within 0.4 s, start to start. On boards where BOOT talks, such as the AMOLED-2.06 watch, that key is BOOT. The second press throws away what the first one started: the recording is cancelled without its `audio.end`, so Hermes never gets a question from it, though the start of its audio may already have reached Hermes. It stops a reply on its way, closes the profile list, the dashboard or a card, and brings back Ready. Then it asks Hermes for the default profile, as **Hermes profile** would. Already on the default profile, it only brings back Ready. The first press still acts at once, so a single press or a hold talks with no delay. Only the key counts: taps on the touchscreen never make a double press. A press that only wakes a dark screen, or dismisses the alarm, starts no double press, so you can press once to wake and then hold to talk. With `wake_talk` on (below), the press that lights the screen already talks, so a double press on a dark screen lights it and goes home. A first press held long enough to send its recording (0.35 s) starts no double press either, since that question is already on its way to Hermes. In the settings menu, TALK still selects items, while Hermes asks a question it still answers yes, and while the timer alarm shows it still dismisses the alarm. If Hermes is still finishing a reply it may refuse the switch; press twice again once it is done. The **Double press home** settings item or `set double_home off` turns the shortcut off, and a second quick press then talks again; it is on by default.
 
-On boards with a fuel gauge (the AMOLED-1.75 and 1.75C), Home shows the charge on its bottom rim, under **Controls**: a small cell and the percentage. It is grey normally, amber at 20% or less, red at 10% or less and green while charging. Plugged in and full, the mark goes away. Quick controls carry the charge in their title instead (**64% · Battery**, **64% · Charging** or **64% · Plugged in**).
+On a touchscreen with a TALK button (BOOT on most touch boards), the **Touch to talk** settings item or `set touch_talk off` leaves the touchscreen out of talking: in either talk mode, holding or tapping the screen never starts a recording, never sends one and never talks over a reply. Only the button does. The idle screen's hint names the button, such as **hold BOOT to talk**. Everything else the touchscreen does stays: a tap still answers yes to a question (a swipe down answers no), changes a settings item, stops a timer alarm, opens the profile grid or shows a spoken reply's whole text, and a swipe down still discards a recording, closes a list or card, stops a turn or opens the dashboard. Those answer or navigate, and none of them opens the microphone. Boards without a TALK button ignore the setting, since the touchscreen is their only way to talk. It is on by default.
 
-At 20% on battery, Tiny wakes the screen once with **Battery 20% · charge soon**. Charging, or a charge above 25%, re-arms the notice. At 10% Home's detail line reads **Low battery: connect USB**. When two gauge readings in a row (five seconds apart) are 5% or less, Tiny shows **Battery empty** for ten seconds and then powers off cleanly through the PMIC. Plugging in USB during those ten seconds cancels it. A recording, open work or speech gets up to ten more seconds to finish first. `status` reports the countdown as `power.shutdown_in_s`.
+Volume, brightness, talk mode, touch to talk, battery indicator, low battery alert, low battery sound, charging screen, charging sound, full battery screen and sound, screen timeout, face-down sleep, clock face, time format, language, double press home, talk from dark screen and deep Wi-Fi sleep survive restarts. Unavailable drivers show as unavailable. These checks help you test the hardware; a completed tone does not prove that a physical speaker produced sound.
+
+The battery indicator is off by default. When a driver percentage or explicitly enabled voltage estimate is available, each select on **Battery and power** moves to the next choice: icon only, percentage only, both, or off. It sits in the title bar, or centred at the top edge of a round display, just below the ring; without an available percentage it shows nothing. The icon fills green while charging and turns red at 15 percent or less (or at the highest low battery alert level, when that is higher) with an explicit battery-only power reading; with the percentage alone, the number changes color instead. The percentage is the same value as in **Battery and power**. From the USB console, use `set battery_display icon`, `percentage`, `both` or `off`.
+
+On voltage-only boards, first confirm that a compatible **single-cell 3.7 V Li-ion battery is actually fitted**, then enable the rough display estimate from the serial console:
+
+```text
+set battery_estimate liion
+set battery_display percentage
+```
+
+Both settings persist; neither is enabled automatically. The Power page labels this value **voltage estimate**. It follows a typical single-cell Li-ion resting-voltage curve from 3300 mV (0%) to 4200 mV (100%), linear between points (3840 mV is 50%) and rounded down; readings outside 2000–4500 mV, missing readings, or an explicitly absent battery hide it. Charging raises the voltage, so while the board reports charging or external power the top of the screen shows the battery icon without a number, whatever the indicator style, and the Power page marks the value as high on a charger; 100% does not mean charging is complete. It does not detect battery presence, USB power, capacity, or runtime. Native driver percentages always take precedence, including zero. Raw status and gateway telemetry remain unchanged. The estimate adds no alarms of its own; the low battery alert below uses it only on a board that reports battery-only power.
+
+Use `set battery_estimate off` (or `set battery_estimate` to clear it) to stop deriving percentages, and `set battery_display off` to hide any indicator. The percentage remains visible while charging; charging turns percentage-only text green. Red low-battery coloring requires an explicit battery-only power reading, which the LCD-1.54 does not supply.
+
+The low battery alert is off by default. With levels set, the screen lights when the battery percentage reaches one of them, even if it was dark, and fills it with the alert: a large red battery, nearly empty, with a **!** in it, the percentage large in red, and **Low battery** and **Connect USB to charge** below. The icon reads by its shape too, not only by its red. The mascot steps aside while it shows. It goes by itself after 10 seconds, and the screen then times out as usual. Using the gadget while it shows closes it and does what it always does: holding TALK or the screen starts recording, a tap on the name opens the profiles, CANCEL opens the dashboard, PWR darkens the screen. A screen that was dark still takes its first touch or press as only a wake. Choose the levels with the **Low battery alert** settings item, or from the USB console with up to three percentages from 1 to 50:
+
+```text
+set battery_alert 10,5
+set battery_alert off
+```
+
+Each level alerts once per discharge: a percentage that wobbles around a level, or a reading that jumps past it, does not repeat it, and a jump past several levels shows only the lowest. A level counts again only after charging lifts the battery at least 5 points above it, so a minute on USB does not bring the alert back the moment it is unplugged. Plugging in closes an alert on the screen, and no alert shows while the board reports USB power or charging. Like the red indicator, it needs an explicit battery-only reading from the power driver, so the LCD-1.54 never shows it. It waits while you are talking, Hermes is replying or asking a question, the settings are open, a card is up, or the gadget lies face down, and shows at the next reading after that. An open profile list or dashboard does not hold it back: the alert shows over it, and the list is still there when the alert goes. On a board with a speaker it beeps once as it appears, unless Hermes is speaking, the microphone is open or the timer alarm is ringing; turn the beep off with the **Low battery sound** settings item or `set battery_alert_sound off`. On boards whose percentage comes from an uncalibrated gauge, such as the LCD-1.83's AXP2101, it fires at whatever that gauge reports, which can be well away from the real charge left. The AMOLED-1.75C and the AMOLED-2.06 use a discharge curve measured on their own cell instead.
+
+Plugging in USB lights the screen for 5 seconds, as a phone does: a large green battery filled to the current level with a lightning bolt, the percentage large in green, and **Charging** below. The screen then times out as usual. A dark screen notices the cable at once; a lit one within 5 seconds. With the screen timeout off, a screen the power key had darkened goes dark again when the notice ends. It only shows after a battery-only reading, so starting up on USB or a board that cannot tell when USB is connected shows nothing, and unplugging shows nothing either. It does not interrupt a conversation, a reply, a question, the settings or a gadget lying face down: plugged in during one of those, it is skipped, and the battery indicator shows the charge. It shows over an open profile list or dashboard, which is still there after. On a voltage estimate the level reads high on a charger, so the notice shows the bolt and **USB power** without a level. Using the gadget while it shows closes it and acts as usual, as with the low battery alert. Turn it off with the **Charging screen** settings item or `set charging_notice off`. Plugging in is silent by default; the **Charging sound** settings item or `set charging_sound on` adds a short rising chirp, played whether or not the screen notice is on, and never over Hermes, an open microphone or the timer alarm.
+
+When a charge finishes on USB, the screen lights for 5 seconds with a full green battery, **100%** large in green, and **Battery full** and **You can unplug** below. The charge counts as finished when the driver, after reporting charging, reports not charging for three readings in a row (about 10 to 15 seconds) with USB still in, or when the gauge climbs to 100%, whichever comes first. A charger that is still starting up when the cable goes in, or that drops out for a single reading, does not count. It is said once per plug, and only after the battery was seen charging, so plugging in a full battery says nothing. Like the other notices it waits for a quiet screen, goes by itself, and using the gadget meanwhile closes it and acts as usual. A soft rising chime can go with it: it is off by default, because a charge often ends at night, and `set charged_sound on` or the **Full battery sound** settings item turns it on. The screen and the chime are separate settings; `set charged_notice off` or the **Full battery screen** item turns the screen off, for example for a gadget that charges by the bed.
+
+Screen timeout is off by default. When enabled, a brightness-capable display dims halfway through the idle period, then goes dark. The first button press or touch wakes it without recording or answering a prompt. Incoming replies and prompts wake it too. A reply that the screen went dark on before you touched anything comes back when you wake the screen, until you press a button or touch the screen while its text is showing. Waiting for Hermes to answer, recording, playback, Wi-Fi setup, pairing (with Hermes or a phone) and updates keep it awake. The settings menu sleeps like any other screen, and the input that wakes it leaves the menu on the same item, including a running hardware check. The profile list and the dashboard time out too, and close when the screen goes dark, so the input that wakes it shows the home screen. The processor and Wi-Fi remain running; this is screen sleep. AMOLED panels also switch their output off while dark. Use the board's Power off control to shut down the device.
+
+The **Talk from dark screen** settings item or `set wake_talk on` makes the TALK key (BOOT on the AMOLED-2.06) talk from a dark screen in one press: the press lights the screen and starts recording, as it would on a lit screen. In hold-to-talk mode, keep holding and speak; in tap-to-talk mode, the recording runs until you tap again or stop speaking. In hold-to-talk mode, a press too short to be speech is discarded, as always. The press still only wakes the screen when it is from the touchscreen or PWR, when the gadget lies face down, when the alarm or a question is on screen, when the settings menu went dark, and when the gadget can't reach Hermes or isn't paired. It is off by default, so a button pressed in a bag doesn't record. It pairs well with `touch_wake off`, which leaves the key as the way to wake the screen.
+
+On battery with the screen dark and nothing going on, Wi-Fi sleeps deeper: once Hermes has sent nothing but its heartbeat for 10 seconds, the radio checks the router for messages every third beacon, about every 300 ms on most routers, instead of every beacon. A message from Hermes, such as a reminder, can then arrive up to about 0.3 s later. Lighting the screen or talking wakes the radio fully at once, so a reply is not slowed, and any message from Hermes brings back the lighter sleep. Some routers drop or delay a client that sleeps this deeply: if the gadget goes offline while its screen is dark on battery, turn off the **Deep Wi-Fi sleep** settings item, or `set wifi_deep_sleep off`. Wi-Fi then uses only the lighter sleep on battery, as firmware before this setting did. The item shows on ESP32 boards that read their battery. On USB, Wi-Fi never sleeps either way.
+
+On a touchscreen with a button that can wake the screen (TALK, BOOT or PWR), the **Touch wakes screen** settings item or `set touch_wake off` leaves the touchscreen out of waking it: while the screen is dark, touches are ignored, and only a button press lights it. That press only wakes the screen, as before. Once it is lit, the touchscreen works as usual. A gadget in a pocket or bag then stays dark however it is touched. Boards without such a button ignore the setting, since the touchscreen is their only way back. It is on by default.
+
+On the AMOLED-1.75C, a short press of PWR puts the screen to sleep the same way, whether or not Screen timeout is on. The same activities keep it awake: a press during recording, playback, Wi-Fi setup or an update does nothing. In the settings menu, the press is Back instead: it closes the menu, and any hardware check running in it, and leaves the screen lit on the home screen; a second press there turns the screen off. On the profile grid it is Back too: it goes back to the idle screen, still lit. Over the dashboard, or a card or image, the press closes it and turns the screen off, so the screen wakes to the home screen. Press PWR again, touch the screen or press BOOT to wake it. Replies and prompts wake it as well; Wi-Fi or the connection to Hermes dropping and coming back does not.
+
+Boards with a motion sensor and a backlit display (the AMOLED-1.75) can also sleep face down. This is off by default; turn it on with the **Face-down sleep** settings item or `set face_down_sleep on`. After about a second lying face down the screen goes dark, listening is cancelled and Hermes goes quiet: a reply being spoken stops, and speech that arrives while the gadget lies there is dropped. Hermes keeps working, and the reply's text waits; it shows from the top once the gadget is turned over. A ringing timer alarm goes quiet too, and stays quiet when the gadget is turned back over: laying it face down is a way to hush it. A timer that ends face down still rings, with the screen dark. Nothing lights the screen while it lies there, and turning it over lights it within a second; if the sensor stops reporting, the screen lights on its own.
+
+## Language
+
+The device's own text (the Ready screen, hints, status, settings and errors) is English unless you choose another language, or choose **auto** to follow Hermes's. Hermes's replies, cards and questions come in whatever language Hermes writes them, whatever this setting says.
+
+Choose it in one of three ways:
+
+- Select **Language** in device settings until the one you want shows. After the last language comes **Automatic, as Hermes**. Each language is shown in its own name (Español), and the item keeps the English word beside its translation (Idioma / Language), so you can find it again in a language you can't read.
+- Ask Hermes, for example "put the screen in Spanish". The firmware offers the agent a `screen.language` action.
+- On the USB console, `set language es` or `set language auto`; `set language` with no value goes back to English.
+
+With **auto**, the device takes the language Hermes names when it connects: Hermes's own language (`HERMES_LANGUAGE`, else `display.language`), or the gadget plugin's `language` setting if you set one ([configuration](hermes-integration.md#configuration)). A language the firmware doesn't have, or none, shows as English.
+
+The languages are English (`en`) and Spanish (`es`). The font draws Latin-1 and the Russian alphabet, so translations and Hermes's replies keep their accents, ñ, ¿ and ¡, and Russian replies show in Cyrillic; letters from other alphabets show without their marks, or as `?`. To add a language, see [Translate the device text](development.md#translate-the-device-text).
 
 Incoming confirmation prompts and firmware updates close settings. You cannot open settings during a prompt or update. The USB console also accepts `settings`, `settings close`, and `set brightness 50`.
-
-### Idle face (round companion)
-
-The 466px round board chooses what idle Home shows with the **Idle face** setting (console key `idle_face`: `portrait`, `portrait_time` or `clock`):
-
-- **Portrait**: the animated face alone, as before.
-- **Portrait + time** (default): the face, with the local time at 44px in Home's title slot when nothing else uses it. The slot's precedence is connection status (**OFFLINE**), then **Last task: …**, then the time.
-- **Clock**: 72px digits under a smaller face; status keeps the title slot.
-
-The time is the Hermes host's local time, sent in `welcome` and every heartbeat ([protocol](protocol.md)). Tiny shows a 12-hour `h:mm` without a leading zero. When it does not know the time (an older host, or no sync for a day) it draws nothing, and Clock falls back to the full portrait; it never shows an invented or stale time. A new minute repaints only the time. The dim and sleep schedule is unchanged. Other boards do not build this feature (`CONFIG_HG_ROUND_UI`), so their firmware is unchanged.
-
-### Needs-you mark (round companion)
-
-When something waits for you, idle Home on the 466px round board shows one bright amber dot centred above the title slot. That means reply text you haven't opened yet (the same unread state as **Read reply**) or a timer that ended while nobody answered ([Timers](#timers-round-companion)). The dot persists until its reason clears: opening the reply removes it, waiting does not. It never says what is waiting, so it gives nothing away when someone else is at your desk, and it sits beside the title slot's status or time instead of replacing them. It shows only on idle Home: while Hermes is thinking or speaking, during a recording, or on another view it is not drawn. An approval needs no mark, because a question takes over the screen until you answer it. It uses state the device already has; there is no protocol change, and other boards don't build it (`CONFIG_HG_ROUND_UI`).
-
-### Timers (round companion)
-
-Hermes can set countdown timers on the 466px round board with its existing `gadget_action` tool, so "set a pasta timer for 9 minutes" works by voice. The device actions are:
-
-| Action | Arguments | Result |
-|---|---|---|
-| `timer.start` | `seconds` (1 to 86400, required), `label` (optional, up to 32 bytes) | the timer: `id`, `label`, `seconds`, `remaining_s`, `state` |
-| `timer.cancel` | `id` (optional when only one timer is set) | `cancelled` (the timer) and `timers` (how many remain) |
-| `timer.list` | none | `timers`, soonest first |
-
-Up to four run at once. With several set, `timer.cancel` without an `id` refuses and lists the ids rather than guessing. Cancelling a ringing timer also stops its alarm.
-
-While a timer runs, idle Home shows the time left (`9:00`, `1:02:05`) in place of **Hold to talk**, at 44px, with its label (or **Timer**) underneath; with several, the soonest one and **+N more**. Each second repaints only the countdown. On the offline and connecting screens the countdown takes the title (**Pasta · 8:58**).
-
-When a timer ends, Tiny takes over the screen from any view (Home, reading, Recent, quick controls, Settings or an offline screen): **Time’s up**, the timer's name, and one 250×100px **Dismiss**. It beeps locally, a short square tone (the speaker check's generator) about once a second, at the current volume. Only **Dismiss** ends it: swipes, taps elsewhere and the title hold do nothing. A recording keeps the screen until you release it (and nothing beeps into the microphone), and a question from Hermes still takes over; the alarm comes back after either while it is still ringing. A reply's speech interrupts the beep but not the alarm screen.
-
-After a minute unanswered the beeping stops and the alarm moves to Home: **Timer done** with the timer's name, a **Dismiss** target and the [needs-you mark](#needs-you-mark-round-companion), until you dismiss it.
-
-Timers count on the device's monotonic clock, not on the host's time, so they keep running and ring through Wi-Fi loss, and a host clock change (DST, NTP) does not move them. Nothing is sent to Hermes when a timer ends. They are kept in memory only: **a restart or power loss loses every timer, silently**. Other boards do not build timers (`CONFIG_HG_ROUND_UI`) and do not offer the actions.
-
-### Glance sizes (round companion)
-
-Home is read from across a desk, so on the 466px round board its state word (**Hold to talk**, **Speaking**, **Reply ready**, …) is 44px Geist whenever it fits under the face without adding a row. When an action row and a detail line both need that space (for example **Thinking** · Sending… or **Stop requested** · Waiting for Hermes to confirm), or the word is wider than 400px (**Task status unknown**), it stays 30px. The title-slot status (**OFFLINE**, **Last task: …**), the detail line, the action-row labels and **↓ Controls** are 24px; nothing functional on Home is smaller. In a half-width action slot **Read reply** drops its arrow so the 24px label fits. Reader, Recent, Settings and quick-controls text is read at arm's length and is unchanged. The 44px face is part of the round-only build (`CONFIG_HG_ROUND_UI`); other boards keep their sizes. These are native-simulator pixel sizes, not a physical legibility measurement.

@@ -1,6 +1,8 @@
 """Hermes-independent plugin modules: text shaping, audio, device store."""
 
+import asyncio
 import io
+import json
 import math
 import struct
 import wave
@@ -24,6 +26,46 @@ def test_markdown_is_flattened_for_small_screens():
 def test_typography_and_accents_fold_to_ascii_and_emoji_drop():
     out = textfmt.for_device("Café “quoted” — it’s 20°C \U0001F600")
     assert out == "Cafe \"quoted\" - it's 20 degC"
+
+
+def test_a_latin1_device_keeps_its_accents_and_folds_the_rest():
+    out = textfmt.for_device("¿Café “quoted” — it’s 20°C, Ñandú? Łódź 日本 \U0001F600", "latin1")
+    assert out == "¿Café \"quoted\" - it's 20°C, Ñandú? Lódz"
+
+
+def test_a_cjk_device_keeps_chinese_and_folds_the_rest():
+    out = textfmt.for_device("今天台中天氣晴朗，氣溫 28 度！“好”\U0001F600 café", "cjk")
+    assert out == '今天台中天氣晴朗，氣溫 28 度！"好" café'
+    # The other charsets still drop CJK.
+    assert textfmt.for_device("日本 ok", "latin1") == "ok"
+
+
+def test_a_latin1_cyrillic_device_keeps_russian_and_folds_the_rest():
+    out = textfmt.for_device("Привет, Ёжик! “Café” — 20°C \U0001F600 日本", "latin1-cyrillic")
+    assert out == 'Привет, Ёжик! "Café" - 20°C'
+    # Letters outside Russian are folded like any other script: dropped or to their base letter.
+    assert textfmt.for_device("Київ ok", "latin1-cyrillic") == "Кив ok"
+    # The other charsets still drop Cyrillic.
+    assert textfmt.for_device("Привет ok", "latin1") == "ok"
+
+
+def test_a_latin1_cyrillic_device_composes_decomposed_russian_letters():
+    # й and ё written as и/е plus a combining breve/diaeresis keep their marks.
+    decomposed = "\u0438\u0306 \u0435\u0308 \u0418\u0306 \u0415\u0308"
+    assert textfmt.for_device(decomposed, "latin1-cyrillic") == "й ё Й Ё"
+    assert textfmt.for_device("мо\u0438\u0306 ёж", "latin1-cyrillic") == "мой ёж"
+    # Decomposed Latin folds exactly as for "latin1" (the mark is dropped, not composed).
+    assert (textfmt.for_device("Cafe\u0301", "latin1-cyrillic")
+            == textfmt.for_device("Cafe\u0301", "latin1"))
+
+
+def test_a_latin1_device_gets_plain_spaces_and_no_soft_hyphens():
+    assert textfmt.for_device("a\xa0b co\xadop\tx", "latin1") == "a b coop x"
+
+
+def test_an_unknown_charset_is_left_alone():
+    # A device announcing something the plugin doesn't know draws what it can itself.
+    assert textfmt.for_device("Café \U0001F600", "utf-8") == "Café \U0001F600"
 
 
 def test_think_blocks_never_reach_the_screen():
@@ -94,3 +136,478 @@ def test_pairing_codes_expire(tmp_path):
     assert store.pairing_for("hg-0123456789abcdef")[0] == "ABCD2345"
     store.remember_pairing("hg-0123456789abcdef", "ABCD2345", "cmd", ttl_s=-1)
     assert store.pairing_for("hg-0123456789abcdef") is None
+
+
+def test_store_changes_from_another_process_are_seen(tmp_path):
+    """The gateway keeps its DeviceStore open; `hermes gadget forget` edits the same file from another process."""
+    gateway = DeviceStore(tmp_path)
+    gateway.enroll("hg-0123456789abcdef", b"k" * 32, name="Kitchen", board="b")
+
+    cli = DeviceStore(tmp_path)  # a second process: fresh instance on the same file
+    assert cli.forget("hg-0123456789abcdef")
+
+    gateway.touch("hg-0123456789abcdef", firmware="0.2.0")  # the device reconnects
+    assert gateway.key_for("hg-0123456789abcdef") is None, "a forgotten key must not be resurrected by the gateway"
+    assert DeviceStore(tmp_path).key_for("hg-0123456789abcdef") is None
+
+    cli.enroll("hg-fedcba9876543210", b"j" * 32)  # and the other way round
+    assert gateway.key_for("hg-fedcba9876543210") == b"j" * 32
+
+
+def test_an_unapproved_device_expires_and_an_approved_one_stays(tmp_path, monkeypatch):
+    from hermes_gadget_plugin import store as storemod
+
+    now = {"t": 1_000_000.0}
+    monkeypatch.setattr(storemod.time, "time", lambda: now["t"])
+    store = DeviceStore(tmp_path)
+    store.enroll("hg-0123456789abcdef", b"k" * 32, name="Stranger", address="10.0.0.9")
+    store.enroll("hg-fedcba9876543210", b"j" * 32, name="Mine")
+    store.confirm("hg-fedcba9876543210")
+    assert set(store.pending()) == {"hg-0123456789abcdef"}
+    assert store.devices()["hg-0123456789abcdef"]["pending"] is True
+    assert store.devices()["hg-fedcba9876543210"]["pending"] is False
+
+    now["t"] += storemod.PENDING_TTL_S - 1
+    store.touch("hg-0123456789abcdef")  # still in contact: the clock restarts
+    now["t"] += storemod.PENDING_TTL_S - 1
+    assert store.key_for("hg-0123456789abcdef") == b"k" * 32
+
+    now["t"] += 2  # no contact for a whole TTL
+    assert store.key_for("hg-0123456789abcdef") is None, "an unapproved record is gone after its TTL"
+    assert "hg-0123456789abcdef" not in store.devices()
+    assert store.key_for("hg-fedcba9876543210") == b"j" * 32, "an approved record stays"
+
+
+def test_battery_log_writes_a_row_per_interval_and_at_once_on_a_power_change(tmp_path):
+    import csv
+
+    from hermes_gadget_plugin.battery_log import BatteryLog
+
+    now = [1_700_000_000.0]
+    log = BatteryLog(tmp_path, clock=lambda: now[0], interval_s=30)
+    reading = {"battery_mv": 3950, "battery_percent": 72, "charging": 0, "external_power": 0, "battery_present": 1}
+    assert log.record("hg-1/../x", reading) == tmp_path / "hg-1_.._x.csv"  # the id cannot leave the directory
+    now[0] += 10
+    assert log.record("hg-1/../x", {**reading, "battery_mv": 3949}) is None  # not due yet
+    now[0] += 5
+    assert log.record("hg-1/../x", {**reading, "charging": 1, "external_power": 1}) is not None  # USB plugged in
+    now[0] += 30
+    assert log.record("hg-1/../x", {**reading, "battery_mv": 3990, "charging": 1, "external_power": 1}) is not None
+    assert log.record("hg-1/../x", {"temperature": 21}) is None  # no battery reading: nothing to log
+    rows = list(csv.DictReader((tmp_path / "hg-1_.._x.csv").open()))
+    assert [r["battery_mv"] for r in rows] == ["3950", "3950", "3990"]
+    assert [r["charging"] for r in rows] == ["0", "1", "1"]
+    assert rows[0]["unix_s"] == "1700000000" and rows[0]["battery_percent"] == "72"
+
+
+def test_battery_log_rolls_over_a_full_file(tmp_path):
+    from hermes_gadget_plugin.battery_log import BatteryLog
+
+    now = [0.0]
+    log = BatteryLog(tmp_path, clock=lambda: now[0], interval_s=1, max_bytes=200)
+    for i in range(20):
+        now[0] += 1
+        log.record("hg-1", {"battery_mv": 4000 - i})
+    assert (tmp_path / "hg-1.1.csv").exists()
+    assert (tmp_path / "hg-1.csv").stat().st_size < 400
+    assert (tmp_path / "hg-1.csv").read_text().startswith("time,unix_s,battery_mv")
+
+
+def test_owner_binding_survives_forget_from_a_stale_store(tmp_path):
+    device = "hg-0123456789abcdef"
+    gateway = DeviceStore(tmp_path)
+    gateway.enroll(device, b"k" * 32)
+    cli = DeviceStore(tmp_path)  # another process
+    assert not gateway.owner_bound(device)
+    gateway.bind_to_owner(device)
+    gateway.bind_to_owner(device)  # idempotent
+    assert cli.forget(device)  # deletes the device's record; it is not a revocation
+    assert DeviceStore(tmp_path).owner_bound(device)
+
+
+# -- hub: utterances that end without audio ---------------------------------------------
+
+
+class _FakeDevice:
+    """The slice of DeviceSession the hub's audio path touches; records what it would send."""
+
+    name = "Desk"
+    device_id = "hg-0000000000000000"
+
+    def __init__(self, caps=None):
+        self.caps = caps if caps is not None else {}
+        self.sent = []
+        self._upload = None
+
+    async def send_notice(self, text, ttl_s=8):
+        self.sent.append(("notice", text))
+
+    async def turn_end(self, turn, outcome="success"):
+        self.sent.append(("turn.end", turn, outcome))
+
+    def spawn(self, coro):
+        return asyncio.get_running_loop().create_task(coro)
+
+
+def test_a_too_short_utterance_ends_the_turn_so_the_device_settles():
+    from hermes_gadget_plugin import hub
+
+    async def run():
+        device = _FakeDevice(caps={"inputs": ["talk"], "talk_mode": "hold"})
+        device._upload = hub._Upload(id="a1", stream=4, rate=16000, started=0.0, pcm=bytearray(3200))
+        await hub.DeviceHub(None, hub.HubDelegate())._h_audio_end(device, {"stream": 4})
+        assert device.sent == [("notice", "Didn't catch that - hold the button while speaking"),
+                               ("turn.end", "", "cancelled")]
+
+    asyncio.run(run())
+
+
+def test_an_end_with_no_audio_also_ends_the_turn():
+    from hermes_gadget_plugin import hub
+
+    async def run():
+        device = _FakeDevice()
+        await hub.DeviceHub(None, hub.HubDelegate())._h_audio_end(device, {"stream": 9})
+        assert ("turn.end", "", "cancelled") in device.sent
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("caps, notice", [
+    ({"inputs": ["talk", "touch"], "talk_mode": "tap"}, "Didn't catch that - tap and speak"),
+    ({"inputs": ["talk", "touch"], "talk_mode": "hold"}, "Didn't catch that - hold the screen while speaking"),
+    ({"inputs": ["talk", "cancel"], "talk_mode": "hold"}, "Didn't catch that - hold the button while speaking"),
+])
+def test_the_retry_hint_names_the_control_the_device_uses(caps, notice):
+    from hermes_gadget_plugin import hub
+
+    async def run():
+        device = _FakeDevice(caps=caps)
+        device._upload = hub._Upload(id="a3", stream=4, rate=16000, started=0.0, pcm=bytearray(800))
+        await hub.DeviceHub(None, hub.HubDelegate())._h_audio_end(device, {"stream": 4})
+        assert ("notice", notice) in device.sent
+
+    asyncio.run(run())
+
+
+def test_long_enough_utterance_still_reaches_the_delegate():
+    from hermes_gadget_plugin import hub
+
+    heard = []
+
+    class Delegate(hub.HubDelegate):
+        async def on_utterance(self, session, msg_id, wav, seconds):
+            heard.append((msg_id, seconds))
+
+    async def run():
+        device = _FakeDevice()
+        device._upload = hub._Upload(id="a2", stream=4, rate=16000, started=0.0, pcm=bytearray(16000))
+        await hub.DeviceHub(None, Delegate())._h_audio_end(device, {"stream": 4})
+        await asyncio.sleep(0)
+        assert heard == [("a2", 0.5)]
+        assert device.sent == []
+
+    asyncio.run(run())
+
+
+# -- faces -------------------------------------------------------------------------------
+
+class _Wire:
+    """A device's socket: records what the hub sends."""
+
+    remote_address = ("127.0.0.1", 1)
+
+    def __init__(self):
+        self.sent = []
+
+    async def send(self, raw):
+        self.sent.append(json.loads(raw))
+
+
+def _slow_face_session(tmp_path, hub=None):
+    """A paired, current session on default whose face is made only once ``delegate.release`` is set."""
+    from hermes_gadget_plugin.face import ProfileFace
+    from hermes_gadget_plugin.hub import DeviceHub, DeviceSession, HubDelegate
+
+    class SlowDefault(HubDelegate):
+        def __init__(self):
+            self.release = asyncio.Event()
+
+        async def face(self, session):
+            if session.profile != "default":
+                return None
+            await self.release.wait()
+            return ProfileFace.of(b"the default profile's face")
+
+    delegate, wire = SlowDefault(), _Wire()
+    hub = hub or DeviceHub(DeviceStore(tmp_path), delegate)
+    session = DeviceSession(hub, wire, {"device_id": "hg-1", "caps": {"faces": 1}})
+    session.paired = True
+    hub.sessions[session.device_id] = session
+    return session, hub.delegate, wire
+
+
+def test_a_face_that_arrives_after_a_profile_switch_is_not_sent(tmp_path):
+    """The switch sends the new profile's face; a slow face for the old one must never follow it."""
+
+    async def main():
+        session, delegate, wire = _slow_face_session(tmp_path)
+        first = session.update_face()  # as after welcome, on default
+        await asyncio.sleep(0)
+        session.profile = "ops"
+        await session.send_profile()
+        delegate.release.set()
+        await asyncio.gather(first, session._face_task, return_exceptions=True)
+        return wire.sent
+
+    assert asyncio.run(main()) == [{"type": "profile", "profile": "ops"}]
+
+
+def test_a_face_that_arrives_after_the_device_is_unpaired_is_not_sent(tmp_path):
+    async def main():
+        session, delegate, wire = _slow_face_session(tmp_path)
+        first = session.update_face()
+        await asyncio.sleep(0)
+        await session.set_paired(False)  # revoked while the face was being made
+        delegate.release.set()
+        await asyncio.gather(first, session._face_task, return_exceptions=True)
+        return wire.sent, session.face_hash
+
+    assert asyncio.run(main()) == ([{"type": "unpaired"}], None)
+
+
+def test_a_face_made_for_a_replaced_connection_is_dropped(tmp_path):
+    """A reconnect replaces the connection while its face is still being made: only the new one answers."""
+
+    async def main():
+        old, delegate, old_wire = _slow_face_session(tmp_path)
+        first = old.update_face()
+        await asyncio.sleep(0)
+        new, _, new_wire = _slow_face_session(tmp_path, old.hub)  # the hub's sessions now name the new one
+        await old.close("replaced by a newer connection")
+        delegate.release.set()
+        await asyncio.gather(first, new.update_face(), return_exceptions=True)
+        return [m["type"] for m in old_wire.sent], [m["type"] for m in new_wire.sent], new.face_hash
+
+    old_sent, new_sent, held = asyncio.run(main())
+    assert "face" not in old_sent and new_sent == ["face"] and held is not None
+
+
+class _DeviceSocket:
+    """A device's socket as DeviceHub._handle uses it: says hello, answers the challenge with the
+    device's key, and ends once closed. ``hangs`` makes its close never finish, like a connection
+    whose device rebooted: the close handshake waits on a peer that is gone."""
+
+    remote_address = ("127.0.0.1", 1)
+
+    def __init__(self, key, hangs=False):
+        from hermes_gadget_plugin import protocol
+
+        self.key, self.device_id, self.hangs = key, protocol.device_id_for_key(key), hangs
+        self.inbox, self.sent = asyncio.Queue(), []
+        self.inbox.put_nowait(json.dumps({"type": "hello", "proto": protocol.VERSION, "device_id": self.device_id,
+                                          "caps": {}}))
+
+    async def send(self, raw):
+        from hermes_gadget_plugin import protocol
+
+        msg = json.loads(raw)
+        self.sent.append(msg)
+        if msg["type"] == "challenge":
+            self.inbox.put_nowait(json.dumps({"type": "auth",
+                                              "mac": protocol.auth_mac(self.key, self.device_id, msg["nonce"])}))
+
+    async def recv(self):
+        return await self.inbox.get()
+
+    async def close(self, code=1000, reason=""):
+        if self.hangs:
+            await asyncio.Event().wait()
+        self.inbox.put_nowait(None)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raw = await self.inbox.get()
+        if raw is None:
+            raise StopAsyncIteration
+        return raw
+
+
+def test_a_reconnect_is_welcomed_without_waiting_for_the_old_connection_to_close(tmp_path):
+    """A device that rebooted connects again while its old connection still looks open. Closing the old
+    one waits on a peer that is gone; the new connection's welcome must not wait for it (it took seconds)."""
+    from hermes_gadget_plugin.hub import DeviceHub, HubDelegate
+
+    async def main():
+        key = bytes(range(32))
+        hub = DeviceHub(DeviceStore(tmp_path), HubDelegate())
+        old, new = _DeviceSocket(key, hangs=True), _DeviceSocket(key)
+        hub.store.enroll(old.device_id, key)
+        hub.store.confirm(old.device_id)
+        handlers = [asyncio.create_task(hub._handle(old))]
+        for _ in range(200):
+            if any(m["type"] == "welcome" for m in old.sent):
+                break
+            await asyncio.sleep(0.01)
+        handlers.append(asyncio.create_task(hub._handle(new)))
+        welcomed = False
+        for _ in range(100):  # 1 s, far more than a welcome takes
+            welcomed = any(m["type"] == "welcome" for m in new.sent)
+            if welcomed:
+                break
+            await asyncio.sleep(0.01)
+        current = hub.sessions[new.device_id]._ws is new
+        new.inbox.put_nowait(None)
+        await hub.stop()
+        for h in handlers:
+            h.cancel()
+        await asyncio.gather(*handlers, return_exceptions=True)
+        return welcomed, current
+
+    assert asyncio.run(main()) == (True, True)
+
+
+class _MediaWire(_Wire):
+    """A device's socket that also records binary frames."""
+
+    async def send(self, raw):
+        self.sent.append(raw if isinstance(raw, bytes) else json.loads(raw))
+
+
+@pytest.mark.parametrize("faces, px", [(1, 0), ({"v": 2, "px": 144}, 144), ({"v": 2, "px": 999}, 0),
+                                       ({"v": 2, "px": True}, 0), ({"v": 2}, 0), (None, 0)])
+def test_a_device_says_whether_it_draws_faces_and_at_what_size(faces, px):
+    from hermes_gadget_plugin.hub import DeviceSession
+
+    session = DeviceSession(None, _Wire(), {"device_id": "hg-1", "caps": {"faces": faces}})
+    assert session.face_px == px
+    assert session.shows_faces() == (faces == 1 or px > 0)
+
+
+def test_a_colour_face_goes_as_face_start_chunks_and_face_end(tmp_path):
+    from hermes_gadget_plugin.face import ColourFace, ProfileFace
+    from hermes_gadget_plugin.hub import DeviceHub, DeviceSession, HubDelegate
+    from hermes_gadget_plugin.protocol import CHANNEL_FACE, parse_binary
+
+    anchors = (607, 293, 262, 620, 801, 107, 396, 508, 586, 649)
+    colour = ColourFace(px=64, rgb565=bytes(range(256)) * 32, anchors=anchors)
+
+    class Colour(HubDelegate):
+        async def face(self, session):
+            return ProfileFace("c0ffee", lambda: colour)
+
+    async def main():
+        wire = _MediaWire()
+        hub = DeviceHub(DeviceStore(tmp_path), Colour())
+        session = DeviceSession(hub, wire, {"device_id": "hg-1", "caps": {"faces": {"v": 2, "px": 64}}})
+        session.paired = True
+        session.face_hash = "an older face"
+        hub.sessions[session.device_id] = session
+        await session.update_face()
+        return session, wire.sent
+
+    session, sent = asyncio.run(main())
+    start, *chunks, end = sent
+    assert start == {"type": "face.start", "stream": start["stream"], "profile": "default", "hash": "c0ffee",
+                     "width": 64, "height": 64, "format": "rgb565", "anchors": list(colour.anchors)}
+    frames = [parse_binary(c) for c in chunks]
+    assert [(f.channel, f.stream, f.seq) for f in frames] == [(CHANNEL_FACE, start["stream"], i) for i in range(2)]
+    assert b"".join(f.payload for f in frames) == colour.rgb565
+    assert end == {"type": "face.end", "stream": start["stream"]}
+    assert session.face_hash == "c0ffee"
+
+
+@pytest.mark.parametrize("faces, frames", [({"v": 2, "px": 144, "frames": True}, True), ({"v": 2, "px": 144}, False),
+                                           ({"v": 2, "px": 144, "frames": 1}, False),
+                                           ({"v": 2, "frames": True}, False), (1, False)])
+def test_a_device_says_whether_it_draws_blink_and_talk_frames(faces, frames):
+    from hermes_gadget_plugin.hub import DeviceSession
+
+    assert DeviceSession(None, _Wire(), {"device_id": "hg-1", "caps": {"faces": faces}}).face_frames is frames
+
+
+def test_a_moving_colour_face_names_its_bands_and_sends_them_after_the_idle_picture(tmp_path):
+    from hermes_gadget_plugin.face import ColourFace, ProfileFace
+    from hermes_gadget_plugin.hub import DeviceHub, DeviceSession, HubDelegate
+    from hermes_gadget_plugin.protocol import parse_binary
+
+    idle, blink, talk = bytes([1]) * 64 * 64 * 2, bytes([2]) * 64 * 2 * 5, bytes([3]) * 64 * 2 * 3
+    colour = ColourFace(px=64, rgb565=idle, anchors=(607, 293, 262, 620, 801, 107, 396, 508, 586, 649),
+                        blink=(20, 5, blink), talk=(40, 3, talk))
+
+    class Colour(HubDelegate):
+        async def face(self, session):
+            return ProfileFace("moving", lambda: colour)
+
+    async def main():
+        wire = _MediaWire()
+        hub = DeviceHub(DeviceStore(tmp_path), Colour())
+        session = DeviceSession(hub, wire, {"device_id": "hg-1",
+                                            "caps": {"faces": {"v": 2, "px": 64, "frames": True}}})
+        session.paired = True
+        hub.sessions[session.device_id] = session
+        await session.update_face()
+        return wire.sent
+
+    start, *chunks, end = asyncio.run(main())
+    assert (start["type"], start["blink"], start["talk"], end["type"]) == ("face.start", [20, 5], [40, 3], "face.end")
+    assert b"".join(parse_binary(c).payload for c in chunks) == idle + blink + talk
+
+
+@pytest.mark.parametrize("held_at", ["face.start", "face.end"])
+def test_a_colour_face_cut_off_mid_send_is_cleared_when_the_profile_has_none(tmp_path, held_at):
+    """The device may hold the old face, the new one, or nothing: a later "no face" must clear it."""
+    from hermes_gadget_plugin.face import ColourFace, ProfileFace
+    from hermes_gadget_plugin.hub import DeviceHub, DeviceSession, HubDelegate
+
+    colour = ColourFace(px=64, rgb565=bytes(64 * 64 * 2), anchors=(607, 293, 262, 620, 801, 107, 396, 508, 586, 649))
+
+    class HeldWire(_MediaWire):
+        """Takes each message, but holds the socket at ``held_at`` until released."""
+
+        def __init__(self):
+            super().__init__()
+            self.holding, self.release = asyncio.Event(), asyncio.Event()
+
+        async def send(self, raw):
+            await super().send(raw)
+            if not isinstance(raw, bytes) and self.sent[-1]["type"] == held_at:
+                self.holding.set()
+                await self.release.wait()
+
+    async def main():
+        wire = HeldWire()
+        hub = DeviceHub(DeviceStore(tmp_path), HubDelegate())
+        session = DeviceSession(hub, wire, {"device_id": "hg-1", "caps": {"faces": {"v": 2, "px": 64}}})
+        session.paired = True
+        session.face_hash = "already-on-device"
+        hub.sessions[session.device_id] = session
+        state = session.face_state()
+        first = session.update_face(ProfileFace("new-colour", lambda: colour), state)
+        await wire.holding.wait()
+        second = session.update_face(None, state)  # the profile has no face now: the mascot
+        wire.release.set()
+        await asyncio.gather(first, second, return_exceptions=True)
+        return session, wire.sent
+
+    session, sent = asyncio.run(main())
+    assert sent[-1] == {"type": "face", "profile": "default"}  # cleared, whatever the device holds
+    assert session.face_hash is None
+
+
+def test_a_face_found_before_an_unpair_is_not_sent_after_it(tmp_path):
+    """The welcome's face was found while paired; an unpair during the welcome's send must not let it go out."""
+    from hermes_gadget_plugin.face import ProfileFace
+
+    async def main():
+        session, delegate, wire = _slow_face_session(tmp_path)
+        found_for = session.face_state()
+        found = ProfileFace.of(b"the default profile's face")
+        session.paired = False  # revoked while the welcome was being sent
+        delegate.release.set()
+        await session.update_face(found, found_for)
+        return wire.sent
+
+    assert asyncio.run(main()) == []

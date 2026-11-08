@@ -22,9 +22,17 @@ extern "C" {
 #define HGSIM_API __attribute__((visibility("default")))
 #endif
 
-#define HGSIM_ABI_VERSION 7
+#define HGSIM_ABI_VERSION 8
 
 typedef struct hgsim hgsim;
+
+/* Local wall-clock time (see hg::WallTime). */
+typedef struct hgsim_wall_time {
+  int year, month, day; /* month 1-12, day 1-31 */
+  int weekday;          /* 0 = Sunday */
+  int hour, minute, second;
+} hgsim_wall_time;
+
 
 typedef struct hgsim_host {
   void* user;
@@ -62,6 +70,8 @@ typedef struct hgsim_host {
   void (*update_abort)(void* user);
   void (*update_restart)(void* user);
   void (*update_confirm)(void* user);
+  /* local time of day; return 1 and fill `out` when known, 0 otherwise */
+  int (*wall_time)(void* user, hgsim_wall_time* out);
 } hgsim_host;
 
 typedef struct hgsim_config {
@@ -86,21 +96,15 @@ typedef struct hgsim_config {
   int touch; /* the screen is the main input (see hg::TouchGestures) */
   size_t update_capacity; /* bytes the update slot holds; 0 = no over-the-air updates */
   int update_pending;     /* this boot runs an installed update that isn't confirmed yet */
-  /* A battery gauge and PMIC scripted with hgsim_set_power; power-off and Settings → Restart
-   * are counted (hgsim_hal_state), never carried out. */
-  int power;
-  /* Screen defaults while no setting is stored (hg::DeviceProfile); 0 keeps the core's. */
-  int default_screen_timeout_s;
-  int default_brightness;
+  int has_power;         /* explicitly supplied simulated power readings */
+  int motion;            /* an accelerometer feeds hgsim_motion (face-down sleep) */
 } hgsim_config;
 
 /* Action handler: fill `result_json` (a JSON object) and return 1, or write an
  * error message into it and return 0. */
 typedef int (*hgsim_action_fn)(void* user, const char* args_json, char* result_json, size_t cap);
 
-/* SILENCE is the AMOLED 1.75C's PWR key as its PMIC reports it; round touch boards have it. */
-enum { HGSIM_BUTTON_TALK = 0, HGSIM_BUTTON_CANCEL = 1, HGSIM_BUTTON_UP = 2, HGSIM_BUTTON_DOWN = 3,
-       HGSIM_BUTTON_SILENCE = 4 };
+enum { HGSIM_BUTTON_TALK = 0, HGSIM_BUTTON_CANCEL = 1, HGSIM_BUTTON_UP = 2, HGSIM_BUTTON_DOWN = 3 };
 
 HGSIM_API int hgsim_abi_version(void);
 HGSIM_API hgsim* hgsim_create(const hgsim_config* config, const hgsim_host* host);
@@ -118,9 +122,16 @@ HGSIM_API void hgsim_transport_closed(hgsim* sim, const char* reason);
 HGSIM_API void hgsim_button(hgsim* sim, int button, int pressed);
 /* Touchscreen sample in screen pixels; touching = 0 when the finger lifts. */
 HGSIM_API void hgsim_touch(hgsim* sim, int touching, int x, int y);
+/* Accelerometer sample in milli-g, device frame (+z out of the screen); send a few per second. */
+HGSIM_API void hgsim_motion(hgsim* sim, int x_mg, int y_mg, int z_mg);
 HGSIM_API void hgsim_mic_samples(hgsim* sim, const int16_t* samples, size_t count);
 HGSIM_API void hgsim_submit_text(hgsim* sim, const char* text);
 HGSIM_API void hgsim_set_sensor(hgsim* sim, const char* name, double value);
+/* Full replacement; available is 0/1. Optional fields use -1 for unknown:
+ * booleans -1/0/1, millivolts -1 or 0..65535, percentage -1 or 0..100.
+ * Returns 0 without mutation for invalid input, NULL, or no configured power device. */
+HGSIM_API int hgsim_set_power(hgsim* sim, int available, int battery_present, int battery_mv,
+                             int battery_percent, int charging, int external_power);
 HGSIM_API void hgsim_emit_event(hgsim* sim, const char* name, const char* data_json, int notify_agent);
 
 /* Serial-console command; returns the response length (written into out). */
@@ -130,16 +141,6 @@ HGSIM_API int hgsim_status(hgsim* sim, char* out, size_t cap);
 HGSIM_API const char* hgsim_screen(hgsim* sim);
 /* RGB565, native byte order, width*height pixels. */
 HGSIM_API const uint16_t* hgsim_framebuffer(hgsim* sim, int* width, int* height);
-/* What the panel shows: only pixels inside flushed rectangles are copied from the
- * framebuffer (same size and order). NULL for a headless device. */
-HGSIM_API const uint16_t* hgsim_panel(hgsim* sim);
-/* Pixels sent to the panel since creation (sum of flushed rectangle areas). */
-HGSIM_API uint64_t hgsim_flushed_px(hgsim* sim);
-/* What the next gauge read returns (config.power). percent < 0 makes reads fail. */
-HGSIM_API void hgsim_set_power(hgsim* sim, int percent, int mv, int usb, int charging);
-/* HAL counters as JSON: panel_asleep, panel_sleeps, panel_wakes, flushes_while_asleep,
- * power_offs, restarts. */
-HGSIM_API int hgsim_hal_state(hgsim* sim, char* out, size_t cap);
 
 #ifdef __cplusplus
 }

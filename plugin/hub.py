@@ -13,24 +13,43 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import secrets
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
-from . import audio, protocol
+from . import audio, opus, protocol
+from .face import ColourFace, ProfileFace
 from .store import DeviceStore
-from .work import WorkStore
 
 log = logging.getLogger("hermes_gadget.hub")
 
 HANDSHAKE_TIMEOUT_S = 10.0
+FACE_LOOKUP_S = 1.5          # how long a welcome waits to learn the face's hash (devices give up after 10 s)
 AUDIO_FRAME_MS = 40          # outbound audio frame duration
-PLAYBACK_LEAD_S = 0.5        # how far ahead of real time playback audio is sent
+PLAYBACK_LEAD_S = 0.5        # how far ahead of real time playback audio is sent, at least
+PLAYBACK_LEAD_MAX_S = 3.0    # the most a device's announced buffer can raise the lead to
 IMAGE_CHUNK_BYTES = 4096
+MAX_THUMB_PX = 128           # the largest profile thumbnail a device may ask for (caps.faces.thumbs)
+MAX_THUMBS = 32              # the profiles a device keeps from welcome, and so thumbnails at most
 MIN_UTTERANCE_S = 0.25
 MAX_FRAME_BYTES = 1 << 20
+MAX_PENDING_DEVICES = 16     # unapproved devices the store keeps, in total...
+MAX_PENDING_PER_ADDRESS = 4  # ...and from one network address
+
+
+def short_utterance_notice(session: "DeviceSession") -> str:
+    """The retry hint, worded for how this device takes speech."""
+    if "touch" in (session.caps.get("inputs") or []):
+        return ("Didn't catch that - tap and speak" if session.caps.get("talk_mode") == "tap"
+                else "Didn't catch that - hold the screen while speaking")
+    return "Didn't catch that - hold the button while speaking"
+
+
+_LOOK_UP = object()  # update_face(): find the face first
+_UNSURE = object()  # face_hash while a face is on its way: the old one, the new one or none
 
 
 class HubDelegate:
@@ -38,6 +57,28 @@ class HubDelegate:
 
     async def is_paired(self, session: "DeviceSession") -> bool:
         return True
+
+    def profiles(self, session: "DeviceSession | None" = None) -> list[dict]:
+        """Hermes profiles ``session`` may switch between, as ``[{"id", "name"}]``; empty disables switching."""
+        return []
+
+    async def select_profile(self, session: "DeviceSession", profile: str) -> str | None:
+        """Bind ``session`` to ``profile`` (set ``session.profile``); return None, or why not."""
+        return "unknown"
+
+    async def face(self, session: "DeviceSession") -> ProfileFace | None:
+        """The face of the profile answering ``session`` (docs/protocol.md#faces), or None for the mascot.
+        Return quickly: the welcome waits for its hash. Slow work belongs in ``ProfileFace.load``."""
+        return None
+
+    async def thumb(self, session: "DeviceSession", profile: str) -> ProfileFace | None:
+        """``profile``'s thumbnail for ``session``'s profile grid (docs/protocol.md#profile-thumbnails):
+        its ``load`` gives ``session.thumb_px`` square RGB565. None: the device shows the initial."""
+        return None
+
+    def language(self, session: "DeviceSession") -> Optional[str]:
+        """The language id ``welcome`` names for a device left on ``auto`` (e.g. ``"es"``), or None."""
+        return None
 
     async def on_ready(self, session: "DeviceSession") -> None:
         pass
@@ -90,20 +131,46 @@ class _Upload:
     truncated: bool = False
 
 
+@dataclass
+class _Held:
+    """Screen updates held back while a device's screen is dark (docs/protocol.md#screen-sleep).
+
+    Only the latest of each is kept: one status phrase, one dashboard, and one card
+    or image (the newer replaces the older, as it would on screen).
+    """
+    status: str | None = None
+    dashboard: dict | None = None
+    view: tuple | None = None  # ("card", title, body) or ("image", width, height, rgb565)
+    ttl_s: float = 0
+    held_at: float = 0.0
+
+
 class AudioOut:
     """One outbound audio stream, resampled to the device rate and paced.
 
-    Frames are sent at most ``PLAYBACK_LEAD_S`` ahead of real time so a device
-    needs only a small jitter buffer. ``finish()`` returns immediately; the
-    pump sends the tail and ``audio.end`` in the background.
+    Frames are sent at most the session's ``playback_lead_s`` ahead of real time:
+    half the buffer the device announces (``caps.speaker.buffer_ms``), between
+    ``PLAYBACK_LEAD_S`` and ``PLAYBACK_LEAD_MAX_S``, so a burst never overflows it.
+    ``finish()`` returns immediately; the pump sends the tail and ``audio.end`` in
+    the background.
     """
 
     def __init__(self, session: "DeviceSession", stream: int, src_rate: int, channels: int = 1):
         self._session = session
         self.stream = stream
         self.rate = session.speaker_rate
+        self._lead = getattr(session, "playback_lead_s", PLAYBACK_LEAD_S)
         self._resampler = audio.Resampler(src_rate, self.rate, channels)
         self._frame_bytes = max(2, self.rate * 2 * AUDIO_FRAME_MS // 1000)
+        # Opus when the device decodes it and the host has libopus: one packet per frame.
+        self._encoder: opus.Encoder | None = None
+        bitrate = session.hub.opus_bitrate
+        if bitrate > 0 and "opus" in session.speaker_formats and opus.available():
+            try:
+                self._encoder = opus.Encoder(self.rate, bitrate)
+            except (RuntimeError, ValueError) as exc:
+                log.info("PCM16 for %s: %s", session.device_id, exc)
+        self.format = "opus" if self._encoder else "pcm16"
         self._buf = bytearray()
         self._queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._task: asyncio.Task | None = None
@@ -113,8 +180,9 @@ class AudioOut:
         self.done = asyncio.Event()
 
     async def start(self, *, turn: str | None = None) -> None:
+        _note(self._session, state="speaking")
         await self._session.send_json(
-            protocol.message("audio.start", stream=self.stream, rate=self.rate, format="pcm16", turn=turn))
+            protocol.message("audio.start", stream=self.stream, rate=self.rate, format=self.format, turn=turn))
         self._task = asyncio.create_task(self._pump())
 
     def write(self, pcm: bytes) -> None:
@@ -139,6 +207,7 @@ class AudioOut:
         if self.aborted:
             return
         self.closed = self.aborted = True
+        _note(self._session, state="ready")
         if self._task:
             self._task.cancel()
         try:
@@ -150,27 +219,51 @@ class AudioOut:
     async def _pump(self) -> None:
         loop = asyncio.get_running_loop()
         seq = 0
-        base = loop.time()
+        base = None
         try:
             while True:
                 frame = await self._queue.get()
                 if frame is None:
                     break
+                if base is None:
+                    # Clock starts at the first audio frame, not at pump start:
+                    # TTS time-to-first-audio is not a stall and must not rebase.
+                    base = loop.time()
                 ahead = self.sent_seconds - (loop.time() - base)
                 if ahead < 0:
-                    base += ahead  # producer stalled: rebase so we never burst past the lead
-                elif ahead > PLAYBACK_LEAD_S:
-                    await asyncio.sleep(ahead - PLAYBACK_LEAD_S)
-                await self._session.send_binary(protocol.binary(protocol.CHANNEL_AUDIO, self.stream, seq, frame))
+                    # The producer stalled: playback is caught up, so restart the clock here.
+                    # (Moving `base` by `ahead` went the wrong way and let the rest of the
+                    # reply out in one burst after the first stall.)
+                    base = loop.time() - self.sent_seconds
+                elif ahead > self._lead:
+                    await asyncio.sleep(ahead - self._lead)
+                payload = frame
+                if self._encoder:
+                    # Opus takes whole frames: pad the last one with silence.
+                    payload = self._encoder.encode(frame.ljust(self._frame_bytes, b"\0"))
+                await self._session.send_binary(protocol.binary(protocol.CHANNEL_AUDIO, self.stream, seq, payload))
                 seq += 1
-                self.sent_seconds += len(frame) / 2 / self.rate
+                self.sent_seconds += len(frame) / 2 / self.rate  # paced by audio time, not bytes
             await self._session.send_json(protocol.message("audio.end", stream=self.stream))
         except asyncio.CancelledError:
             pass
         except Exception as exc:  # connection dropped mid-stream
             log.debug("audio pump stopped: %s", exc)
         finally:
+            if self._encoder:
+                self._encoder.close()
+            # The device plays what it buffered after the last frame goes out; the mirror says so.
+            activity = getattr(self._session, "activity", None) or {}
+            if getattr(self._session, "_audio_out", None) in (self, None) and activity.get("state") == "speaking":
+                _note(self._session, state="ready", ready_after=time.time() + min(self._lead, 3.0))
             self.done.set()
+
+
+def _note(session, **changes) -> None:
+    """Record what a device shows, for the Desktop mirror; a stand-in session without it is fine."""
+    note = getattr(session, "note", None)
+    if callable(note):
+        note(**changes)
 
 
 class DeviceSession:
@@ -193,19 +286,44 @@ class DeviceSession:
         sensors = hello.get("sensors")
         self.sensors: dict = dict(sensors) if isinstance(sensors, dict) else {}
         self.sensors_at: float = time.time() if self.sensors else 0.0
+        # The device reports this in hello and in state when it changes; firmware that
+        # doesn't counts as always lit, so nothing is held back for it.
+        self.display_sleeping: bool = hello.get("display_sleeping") is True
         self.paired = False
+        self.unpaired_reason: str | None = None  # why no pairing code can let it in, as last sent
+        self.profile = "default"  # the Hermes profile that answers this device
+        self.face_hash: str | None | object = None  # the face the device holds; None is the mascot
+        # The profile the device takes as its own, which a face must name: the last `profile` or
+        # `welcome.profile`, else the one it named in hello. A gadget route doesn't change it.
+        self.device_profile = "default"
         self.connected_at = time.time()
         self.last_rx = time.monotonic()
+        # What the device's screen is showing, for the Desktop page's live mirror (status.json):
+        # ready, listening, thinking or speaking, with what Hermes heard and the reply so far.
+        self.activity: dict = {"state": "ready", "heard": "", "reply": "", "status": "", "at": time.time()}
         self.closed = False
         self._send_lock = asyncio.Lock()
-        self._work_turns: set[str] = set()
-        self._work_enrollment = hub.store.devices().get(self.device_id, {}).get("enrolled_at")
         self._upload: _Upload | None = None
         self._audio_out: AudioOut | None = None
         self._stream_counter = 0
         self._pending: dict[str, asyncio.Future] = {}
         self._tasks: set[asyncio.Task] = set()
+        self._face_task: asyncio.Task | None = None  # update_face(): at most one, ended with the session
+        # The profiles the welcome offered, and the thumbnails the device holds for them (profile -> hash):
+        # what it named in hello, until the welcome says which it keeps.
+        self.roster_ids: list[str] = []
+        held = hello.get("thumbs")
+        self.thumb_hashes: dict[str, str] = {
+            str(k): v for k, v in held.items() if isinstance(v, str) and 0 < len(v) <= 64
+        } if isinstance(held, dict) and self.thumb_px else {}
+        self._thumb_task: asyncio.Task | None = None  # update_thumbs(): one at a time
+        # profile -> the hash of a thumbnail that could not be made: not tried again until the hash changes
+        self._thumb_failed: dict[str, str] = {}
+        self._thumbs_offered: set[str] | None = None  # the served profiles at the last pairing check
+        self._thumbs_dirty = False
         self._ota_inbox: asyncio.Queue | None = None  # the device's ota.* replies, while an update runs
+        self._dashboard_sent: dict | None = None  # the last dashboard this connection delivered
+        self._dashboards = 0  # dashboards offered, sent or held
 
     # -- capabilities -----------------------------------------------------------
 
@@ -219,9 +337,55 @@ class DeviceSession:
         return isinstance(self.caps.get("speaker"), dict)
 
     @property
+    def speaker_formats(self) -> list[str]:
+        """Speaker audio formats the device decodes; PCM16 always."""
+        spk = self.caps.get("speaker") or {}
+        formats = spk.get("formats") if isinstance(spk, dict) else None
+        names = [str(f) for f in formats if isinstance(f, str)] if isinstance(formats, list) else []
+        return names if "pcm16" in names else ["pcm16", *names]
+
+    @property
     def speaker_rate(self) -> int:
         spk = self.caps.get("speaker") or {}
         return int(spk.get("rate") or 16000) if isinstance(spk, dict) else 16000
+
+    @property
+    def playback_lead_s(self) -> float:
+        """How far ahead of real time reply audio may go: half the playback buffer the device
+        announces (``caps.speaker.buffer_ms``), within PLAYBACK_LEAD_S..PLAYBACK_LEAD_MAX_S.
+        A device that doesn't announce one, or announces nonsense, gets PLAYBACK_LEAD_S."""
+        spk = self.caps.get("speaker")
+        buffer_ms = spk.get("buffer_ms") if isinstance(spk, dict) else None
+        if type(buffer_ms) is not int or buffer_ms <= 0:
+            return PLAYBACK_LEAD_S
+        # Clamp the integer before dividing: a value past float range would raise OverflowError.
+        buffer_ms = min(max(buffer_ms, int(PLAYBACK_LEAD_S * 2000)), int(PLAYBACK_LEAD_MAX_S * 2000))
+        return buffer_ms / 2000
+
+    @property
+    def face_px(self) -> int:
+        """The size the device draws a colour face at (docs/protocol.md#faces); 0: one-colour faces only."""
+        faces = self.caps.get("faces")
+        if isinstance(faces, dict) and type(faces.get("v")) is int and faces["v"] >= 2:
+            px = faces.get("px")
+            if type(px) is int and 1 <= px <= 256:
+                return px
+        return 0
+
+    @property
+    def face_frames(self) -> bool:
+        """Whether the device's colour faces blink and talk (docs/protocol.md#faces)."""
+        return self.face_px > 0 and self.caps["faces"].get("frames") is True
+
+    @property
+    def thumb_px(self) -> int:
+        """The side of the profile thumbnails the device's grid takes (caps.faces.thumbs); 0: none."""
+        px = self.face_px and self.caps["faces"].get("thumbs")
+        return px if type(px) is int and 16 <= px <= MAX_THUMB_PX else 0
+
+    def shows_faces(self) -> bool:
+        """Whether the device draws the faces the server sends: one-colour ones, or colour ones too."""
+        return self.caps.get("faces") == 1 or self.face_px > 0
 
     @property
     def charset(self) -> str:
@@ -235,80 +399,95 @@ class DeviceSession:
         w, h = int(img.get("width") or 0), int(img.get("height") or 0)
         return (w, h) if w > 0 and h > 0 else None
 
+    @property
+    def dashboard_version(self) -> int:
+        """The dashboard layout the device draws (``caps.dashboard.v``), or 0 when it has none."""
+        dash = self.caps.get("dashboard")
+        v = dash.get("v") if isinstance(dash, dict) else None
+        return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0
+
     def action_names(self) -> list[str]:
         return [a["name"] for a in self.actions]
 
+    # -- what the screen shows, for the Desktop mirror ------------------------------
+
+    def note(self, **changes) -> None:
+        """Record a change to what the device shows. Text is cut short: this is a mirror, not a log."""
+        for key, value in changes.items():
+            self.activity[key] = value[:280] if isinstance(value, str) else value
+        self.activity["at"] = time.time()
+
     # -- outbound -----------------------------------------------------------------
 
-    @property
-    def has_work(self) -> bool:
-        return self.caps.get("work") == {"v": 1}
-
-    async def work_snapshot(self) -> None:
-        if not self.has_work:
-            return
-        enrolled = self.hub.store.devices().get(self.device_id)
-        allowed = enrolled and self.paired and await self.hub.delegate.is_paired(self)
-        items = self.hub.work.items(self.device_id) if allowed else []
-        await self.send_json(protocol.message("work", items=items))
-
     async def send_json(self, obj: dict) -> None:
-        changed = False
-        enrolled = self.hub.store.devices().get(self.device_id, {})
-        allowed = self.has_work and self.paired and enrolled.get("enrolled_at") == self._work_enrollment and bool(enrolled)
-        if allowed and not (self.closed and obj.get("type") == "turn.start"):
-            changed = self.hub.work.observe(self.device_id, obj)
-            if obj.get("type") == "turn.start" and isinstance(obj.get("turn"), str):
-                self._work_turns.add(obj["turn"])
-                retained = {r["origin"]["turn"] for r in self.hub.work.items(self.device_id)}
-                self._work_turns.intersection_update(retained)
-        if self.closed:
-            current = self.hub.get(self.device_id)
-            if changed and current is not None and current is not self:
-                await current.work_snapshot()
-            if obj.get("type") in ("turn.start", "turn.end", "reply"):
-                return  # journal-only receipt, never a replay
         payload = json.dumps({k: v for k, v in obj.items() if v is not None}, separators=(",", ":"))
         async with self._send_lock:
             await self._ws.send(payload)
-        if changed:
-            await self.work_snapshot()
 
     async def send_binary(self, data: bytes) -> None:
         async with self._send_lock:
             await self._ws.send(data)
 
     async def send_reply(self, text: str, *, turn: str | None = None, interim: bool = False) -> None:
+        if not interim:
+            self.note(reply=text)
         await self.send_json(protocol.message("reply", text=text, turn=turn, interim=interim or None))
 
     async def send_delta(self, text: str, *, turn: str | None = None) -> None:
+        self.note(reply=text)
         await self.send_json(protocol.message("reply.delta", text=text, turn=turn))
 
     async def send_transcript(self, text: str) -> None:
+        self.note(heard=text)
         await self.send_json(protocol.message("transcript", text=text))
 
-    async def send_status(self, text: str) -> None:
+    async def send_status(self, text: str) -> bool:
+        """Show the working-state phrase. False when it is held until the screen lights up."""
+        if self.display_sleeping:
+            self.hub._hold(self.device_id).status = text
+            return False
+        held = self.hub._held.get(self.device_id)
+        if held:
+            held.status = None
+        self.note(status=text)
         await self.send_json(protocol.message("status", text=text))
+        return True
 
     async def send_notice(self, text: str, ttl_s: float = 8) -> None:
         await self.send_json(protocol.message("notice", text=text, ttl_s=ttl_s))
 
-    async def turn_start(self, turn: str, *, request: str | None = None) -> None:
-        """``request`` names the device's own ``text``/``audio.start`` id this turn serves."""
-        await self.send_json(protocol.message("turn.start", turn=turn, request=request))
+    async def turn_start(self, turn: str) -> None:
+        if self.activity.get("state") != "thinking":
+            self.note(state="thinking", reply="", status="")
+        await self.send_json(protocol.message("turn.start", turn=turn))
 
     async def turn_end(self, turn: str, outcome: str = "success") -> None:
+        held = self.hub._held.get(self.device_id)
+        if held:
+            held.status = None  # the phrase was about this turn
+        out = self._audio_out
+        self.note(state="speaking" if out is not None and not out.done.is_set() else "ready", status="")
         await self.send_json(protocol.message("turn.end", turn=turn, outcome=outcome))
 
     async def send_pairing(self, code: str, command: str) -> None:
         await self.send_json(protocol.message("pairing", code=code, command=command))
 
-    async def set_paired(self, paired: bool) -> None:
-        if paired == self.paired:
+    async def set_paired(self, paired: bool, reason: str | None = None) -> None:
+        """``reason`` tells an unpaired device why no pairing code can let it in. A change of reason alone
+        is sent too; a bare ``unpaired`` clears the one the device shows."""
+        if paired == self.paired and reason == self.unpaired_reason:
             return
-        self.paired = paired
-        await self.send_json(protocol.message("paired" if paired else "unpaired"))
-        await self.work_snapshot()
+        self.paired, self.unpaired_reason = paired, reason
+        if paired:
+            self.hub.store.confirm(self.device_id)
+        extra = {"reason": reason} if reason else {}
+        await self.send_json(protocol.message("paired" if paired else "unpaired", **extra))
+        if not paired:
+            self.face_hash = None  # unpaired drops the device's face
+            self.thumb_hashes.clear()  # and its thumbnails
+        self.update_face()
+        if paired:
+            self.update_thumbs()
 
     async def ask(self, prompt_id: str, title: str, text: str, ttl_s: float | None = None) -> None:
         """Show a yes/no question; the answer arrives as ``on_prompt_reply``."""
@@ -317,17 +496,215 @@ class DeviceSession:
     async def close_prompt(self, prompt_id: str) -> None:
         await self.send_json(protocol.message("prompt.close", id=prompt_id))
 
-    async def show_card(self, title: str, body: str, ttl_s: float = 15) -> None:
-        await self.send_json(protocol.message("display", title=title, body=body, ttl_s=ttl_s))
+    async def send_profile(self, error: str | None = None) -> None:
+        profile, before = self.profile, self.device_profile
+        await self.send_json(protocol.message("profile", profile=profile, error=error))
+        if error is None:
+            self.device_profile = profile
+            if profile != before:
+                self.face_hash = None  # a device that changes profile drops its face; the same one keeps it
+            self.update_face()
 
-    async def show_image(self, width: int, height: int, rgb565: bytes, ttl_s: float = 30) -> None:
+    async def find_face(self) -> ProfileFace | None:
+        """The face the device should show now; unpaired devices get the mascot (None)."""
+        if not self.paired or not self.shows_faces():
+            return None
+        return await self.hub.delegate.face(self)
+
+    def current(self) -> bool:
+        """Still the device's open connection: a reconnect replaces it."""
+        return not self.closed and self.hub.sessions.get(self.device_id) is self
+
+    def face_state(self) -> tuple:
+        """What decides the face: a face found for another state is not this one's."""
+        return self.device_profile, self.profile, self.paired
+
+    def update_face(self, face: ProfileFace | None | object = _LOOK_UP,
+                    found_for: tuple | None = None) -> asyncio.Task | None:
+        """Bring the device's face up to date, beside the messages: the session's one face operation.
+        It is for the state now; a newer one replaces it, and the session's end stops it. ``face`` is
+        what find_face() returned when the state was ``found_for``; it is looked up again otherwise."""
+        if not self.shows_faces():
+            return None
+        state = self.face_state()
+        if found_for != state or (isinstance(face, ProfileFace) and not face.valid()):
+            face = _LOOK_UP
+        if self._face_task:
+            self._face_task.cancel()
+        self._face_task = self.spawn(self._send_face(state, face))
+        return self._face_task
+
+    async def _send_face(self, state: tuple, face: ProfileFace | None | object) -> None:
+        """Send the face for ``state``, or the mascot, unless the device holds it already."""
+        # Switched, (un)paired or replaced since: whatever changed started its own update.
+        stale = lambda: (self.face_state() != state or not self.current()  # noqa: E731
+                         or isinstance(face, ProfileFace) and not face.valid())
+        if stale():
+            return
+        if face is _LOOK_UP:
+            face = await self.find_face()
+        digest = face.hash if face else None
+        if stale() or digest == self.face_hash:
+            return
+        try:
+            data = await asyncio.to_thread(face.load) if face else None
+        except Exception as exc:  # an unreadable picture leaves the mascot, which the device shows now
+            log.warning("no face for %s: %s", self.device_id, exc)
+            return
+        if stale():
+            return
+        self.face_hash = _UNSURE  # until the last message is out: a cancelled send leaves it unknown
+        if isinstance(data, ColourFace):
+            stream = self._next_stream()
+            bands = {frame: band for frame, band in (("blink", data.blink), ("talk", data.talk)) if band}
+            await self.send_json(protocol.message(
+                "face.start", stream=stream, profile=state[0], hash=digest, width=data.px, height=data.px,
+                format="rgb565", anchors=list(data.anchors),
+                **{frame: [y, rows] for frame, (y, rows, _) in bands.items()}))
+            await self._send_chunks(protocol.CHANNEL_FACE, stream,
+                                    data.rgb565 + b"".join(pixels for *_, pixels in bands.values()))
+            await self.send_json(protocol.message("face.end", stream=stream))
+        else:
+            await self.send_json(protocol.message(
+                "face", profile=state[0], hash=digest, bits=base64.b64encode(data).decode() if data else None))
+        self.face_hash = digest
+
+    def update_thumbs(self, offered: "set[str] | None" = None) -> asyncio.Task | None:
+        """Bring the device's profile thumbnails up to date: each offered profile's, sent only where its
+        hash differs from the one the device holds, and a clear where a profile has none any more. One
+        pass at a time; a call during one makes it go over the profiles again. ``offered``, when given,
+        is the profiles the gateway serves now: a welcome's profile that has since been parked or taken
+        off the offer is skipped until the next welcome drops it."""
+        if not self.thumb_px or not self.paired or self.closed:
+            return None
+        if offered is not None:
+            self._thumbs_offered = offered
+        self._thumbs_dirty = True
+        if self._thumb_task is None or self._thumb_task.done():
+            self._thumb_task = self.spawn(self._send_thumbs())
+        return self._thumb_task
+
+    async def _send_thumbs(self) -> None:
+        px = self.thumb_px
+        while self._thumbs_dirty and self.current() and self.paired:
+            self._thumbs_dirty = False
+            for profile in list(self.roster_ids):
+                if self._thumbs_dirty or not self.current() or not self.paired:
+                    break
+                if self._thumbs_offered is not None and profile not in self._thumbs_offered:
+                    continue  # parked or no longer offered since the welcome
+                digest = None
+                try:
+                    thumb = await self.hub.delegate.thumb(self, profile)
+                except Exception as exc:  # a lookup that failed says nothing: the device keeps what it shows
+                    log.debug("thumbnail lookup of %s for %s failed: %s", profile, self.device_id, exc)
+                    continue
+                try:
+                    digest = thumb.hash if thumb else None
+                    if digest == self.thumb_hashes.get(profile) or (digest and digest == self._thumb_failed.get(profile)):
+                        continue
+                    self._thumb_failed.pop(profile, None)
+                    if thumb is None:
+                        await self.send_json(protocol.message("face.thumb", profile=profile))
+                        self.thumb_hashes.pop(profile, None)
+                        continue
+                    data = await asyncio.to_thread(thumb.load)
+                except Exception as exc:  # an unreadable picture leaves what the device shows, once per hash
+                    if digest:
+                        self._thumb_failed[profile] = digest
+                    log.warning("no thumbnail of %s for %s: %s", profile, self.device_id, exc)
+                    continue
+                if len(data) != px * px * 2:
+                    self._thumb_failed[profile] = digest
+                    log.warning("no thumbnail of %s for %s: %d bytes, not %d", profile, self.device_id, len(data), px * px * 2)
+                    continue
+                if not self.current() or not self.paired:
+                    continue
+                self.thumb_hashes.pop(profile, None)  # until the last message is out
+                stream = self._next_stream()
+                await self.send_json(protocol.message(
+                    "face.thumb.start", stream=stream, profile=profile, hash=digest, width=px, height=px,
+                    format="rgb565"))
+                await self._send_chunks(protocol.CHANNEL_FACE, stream, data)
+                await self.send_json(protocol.message("face.thumb.end", stream=stream))
+                if self.paired:  # an unpaired device dropped it, and the hub forgot it
+                    self.thumb_hashes[profile] = digest
+
+    async def show_card(self, title: str, body: str, ttl_s: float = 15) -> bool:
+        """Show a card. False when it is held until the screen lights up."""
+        if self._hold_view(("card", title, body), ttl_s):
+            return False
+        await self.send_json(protocol.message("display", title=title, body=body, ttl_s=ttl_s))
+        return True
+
+    async def show_image(self, width: int, height: int, rgb565: bytes, ttl_s: float = 30) -> bool:
+        """Show an image. False when it is held until the screen lights up."""
+        if self._hold_view(("image", width, height, rgb565), ttl_s):
+            return False
         stream = self._next_stream()
         await self.send_json(protocol.message(
             "image.start", stream=stream, width=width, height=height, format="rgb565", ttl_s=ttl_s))
-        for seq, off in enumerate(range(0, len(rgb565), IMAGE_CHUNK_BYTES)):
-            await self.send_binary(protocol.binary(
-                protocol.CHANNEL_IMAGE, stream, seq, rgb565[off: off + IMAGE_CHUNK_BYTES]))
+        await self._send_chunks(protocol.CHANNEL_IMAGE, stream, rgb565)
         await self.send_json(protocol.message("image.end", stream=stream))
+        return True
+
+    async def _send_chunks(self, channel: int, stream: int, data: bytes) -> None:
+        """An image's or a colour face's pixels, in binary frames after their *.start."""
+        for seq, off in enumerate(range(0, len(data), IMAGE_CHUNK_BYTES)):
+            await self.send_binary(protocol.binary(channel, stream, seq, data[off: off + IMAGE_CHUNK_BYTES]))
+
+    async def send_dashboard(self, dashboard: dict) -> bool:
+        """Send a dashboard snapshot if it differs from the last one delivered. False when it
+        wasn't sent: unchanged, or held until the screen lights up (only the latest is kept)."""
+        self._dashboards += 1
+        if self.display_sleeping:
+            self.hub._hold(self.device_id).dashboard = dashboard
+            return False
+        held = self.hub._held.get(self.device_id)
+        if held:
+            held.dashboard = None  # this one is newer
+        if dashboard == self._dashboard_sent:
+            return False
+        self._dashboard_sent = dashboard
+        await self.send_json(dashboard)
+        return True
+
+    def _hold_view(self, view: tuple, ttl_s: float) -> bool:
+        if not self.display_sleeping:
+            held = self.hub._held.get(self.device_id)
+            if held:
+                held.view = None  # this one replaces it
+            return False
+        held = self.hub._hold(self.device_id)
+        held.view, held.ttl_s, held.held_at = view, ttl_s, time.monotonic()
+        return True
+
+    async def screen_woke(self) -> None:
+        """Send what was held back while the screen was dark: the latest of each."""
+        held = self.hub._held.pop(self.device_id, None)
+        if held is None:
+            return
+        if held.status is not None:
+            offered = self._dashboards
+            await self.send_status(held.status)
+            if self._dashboards != offered:
+                held.dashboard = None  # a newer one was offered while the status went out
+        # Only to a connection that may get one now: paired, and drawing that dashboard version.
+        if held.dashboard is not None and self.paired and self.dashboard_version >= held.dashboard.get("v", 1):
+            await self.send_dashboard(held.dashboard)
+        if held.view is None:
+            return
+        ttl_s = held.ttl_s
+        if ttl_s and ttl_s > 0:
+            # A card or image only lasts so long; what is left of that counts from when it was sent.
+            left = ttl_s - (time.monotonic() - held.held_at)
+            if left <= 0:
+                return
+            ttl_s = math.ceil(left)
+        if held.view[0] == "card":
+            await self.show_card(held.view[1], held.view[2], ttl_s)
+        else:
+            await self.show_image(held.view[1], held.view[2], held.view[3], ttl_s)
 
     def _next_stream(self) -> int:
         self._stream_counter = self._stream_counter % 250 + 1
@@ -403,14 +780,16 @@ class DeviceSession:
 
     def _shutdown(self) -> None:
         self.closed = True
+        if self._face_task:
+            self._face_task.cancel()
+        if self._thumb_task:
+            self._thumb_task.cancel()
         for fut in self._pending.values():
             if not fut.done():
                 fut.set_exception(ActionError(f"{self.name} disconnected"))
         if self._ota_inbox is not None:
             self._ota_inbox.put_nowait(
                 protocol.message("ota.error", code="disconnected", message=f"{self.name} disconnected"))
-        # History last: live teardown has already happened if journaling misbehaves.
-        self.hub.work.interrupt(self.device_id, self._work_turns)
         if self._audio_out and self._audio_out._task:
             self._audio_out._task.cancel()
 
@@ -424,6 +803,7 @@ class DeviceSession:
             "board": self.board,
             "firmware": self.firmware,
             "paired": self.paired,
+            "profile": self.profile,
             "connected_for_s": int(time.time() - self.connected_at),
             "screen": {k: disp[k] for k in ("width", "height", "text_cols", "text_rows") if k in disp} or None,
             "speaker": self.has_speaker,
@@ -435,6 +815,7 @@ class DeviceSession:
             ],
             "sensors": self.sensors,
             "sensors_age_s": int(time.time() - self.sensors_at) if self.sensors_at else None,
+            "display_sleeping": self.display_sleeping,
         }
 
     def prompt_context(self) -> str:
@@ -453,26 +834,6 @@ class DeviceSession:
         return " ".join(parts)
 
 
-def host_clock() -> tuple[int, int]:
-    """This host's wall clock and its current UTC offset (DST included).
-
-    Uses Hermes's configured timezone when the gateway has one, else the system's.
-    """
-    now = time.time()
-    tz = None
-    try:
-        from hermes_time import get_timezone  # Hermes gateway; absent in standalone hubs
-
-        tz = get_timezone()
-    except Exception:
-        tz = None
-    import datetime as _dt
-
-    moment = _dt.datetime.fromtimestamp(now, tz) if tz is not None else _dt.datetime.fromtimestamp(now).astimezone()
-    offset = moment.utcoffset()
-    return int(now), int(offset.total_seconds()) if offset is not None else 0
-
-
 class DeviceHub:
     def __init__(
         self,
@@ -486,23 +847,25 @@ class DeviceHub:
         heartbeat_s: int = 20,
         ssl_context=None,
         max_utterance_s: float = 60.0,
-        clock=None,
+        opus_bitrate: int = 24000,
     ):
         self.store = store
-        # Wall clock shared with the device (welcome + every ping): () -> (unix_s, utc_offset_s),
-        # or None for a host that shares no time. Defaults to this host's local time.
-        self.clock = host_clock if clock is None else clock if callable(clock) else None
-        self.work = WorkStore(store.path.parent)
         self.delegate = delegate
         self.host, self.port, self.path = host, port, "/" + path.strip("/")
         self.access_token = access_token or None
         self.heartbeat_s = max(5, int(heartbeat_s))
         self.ssl_context = ssl_context
         self.max_utterance_s = max_utterance_s
+        self.opus_bitrate = max(0, int(opus_bitrate))  # 0 = always PCM16
         self.sessions: dict[str, DeviceSession] = {}
         self.loop: asyncio.AbstractEventLoop | None = None
         self._server = None
         self._tasks: set[asyncio.Task] = set()  # DeviceSession.spawn, including devices already gone
+        # Held back while a screen is dark, by device id: kept across reconnects.
+        self._held: dict[str, _Held] = {}
+
+    def _hold(self, device_id: str) -> _Held:
+        return self._held.setdefault(device_id, _Held())
 
     # -- lifecycle -------------------------------------------------------------------
 
@@ -565,6 +928,13 @@ class DeviceHub:
             return connection.respond(404, "Not a Hermes gadget endpoint\n")
         return None
 
+    @staticmethod
+    def _address(ws) -> str:
+        try:
+            return str(ws.remote_address[0])
+        except (AttributeError, IndexError, TypeError):
+            return ""
+
     async def _recv_json(self, ws, timeout: float) -> dict:
         try:
             raw = await asyncio.wait_for(ws.recv(), timeout)
@@ -608,8 +978,18 @@ class DeviceHub:
             key = protocol.decode_key(str(auth.get("key") or ""))
             if key is None or protocol.device_id_for_key(key) != device_id:
                 raise Rejected("auth_failed", "enrollment key does not match device_id")
-            self.store.enroll(device_id, key, name=str(hello.get("name") or ""), board=str(hello.get("board") or ""))
-            log.info("enrolled new device %s (%s)", device_id, hello.get("name"))
+            # Anyone who reaches the port can enroll; pairing is what admits them. Until
+            # then a device is pending, and only so many may wait at once.
+            address = self._address(ws)
+            pending = self.store.pending()
+            if len(pending) >= MAX_PENDING_DEVICES:
+                raise Rejected("busy", f"{len(pending)} devices are already waiting to be paired; approve or "
+                                       "forget some first (hermes gadget devices)")
+            if sum(1 for rec in pending.values() if rec.get("address") == address) >= MAX_PENDING_PER_ADDRESS:
+                raise Rejected("busy", f"{address} already has {MAX_PENDING_PER_ADDRESS} devices waiting to be paired")
+            self.store.enroll(device_id, key, name=str(hello.get("name") or ""), board=str(hello.get("board") or ""),
+                              address=address)
+            log.info("enrolled new device %s (%s) from %s", device_id, hello.get("name"), address)
         self.store.touch(device_id, name=str(hello.get("name") or ""), board=str(hello.get("board") or ""),
                          firmware=str(hello.get("firmware") or "")[:32])
         return hello
@@ -626,20 +1006,62 @@ class DeviceHub:
                 await ws.close(1008, r.code)
                 return
 
-            self.work.bind(hello["device_id"], self.store.devices()[hello["device_id"]]["enrolled_at"])
             session = DeviceSession(self, ws, hello)
             previous = self.sessions.get(session.device_id)
             self.sessions[session.device_id] = session
             if previous is not None:
-                await previous.close("replaced by a newer connection")
+                # A newer connection from the same device means the old one is gone (it rebooted, or
+                # moved networks). Its close handshake waits on a peer that may never answer, until
+                # TCP gives up or the close times out; the welcome mustn't wait for that.
+                previous.spawn(previous.close("replaced by a newer connection"))
             session.paired = bool(await self.delegate.is_paired(session))
-            await session.send_json(protocol.message(
-                "welcome", session=session.session_id, paired=session.paired,
-                heartbeat_s=self.heartbeat_s, server="hermes", proto=protocol.VERSION,
-                work={"v": 1} if session.has_work else None, time=self._time_field()))
-            await session.work_snapshot()
+            if session.paired:
+                self.store.confirm(session.device_id)
+            roster = self.delegate.profiles(session) if session.caps.get("profiles") is True else []
+            if roster:
+                wanted = hello.get("profile")
+                if isinstance(wanted, str) and wanted and wanted != session.profile:
+                    await self.delegate.select_profile(session, wanted)  # a refusal leaves "default"
+            named = hello.get("profile")
+            named = named if isinstance(named, str) and named else "default"
+            session.device_profile = session.profile if roster else named
+            # The welcome keeps the face the device holds only if it is the profile's face now. Finding
+            # its hash reads a file; a lookup that stalls counts as unknown, and is done again below.
+            face: ProfileFace | None | object = _LOOK_UP
+            looked_up = session.face_state()
+            try:
+                face = await asyncio.wait_for(session.find_face(), FACE_LOOKUP_S)
+            except asyncio.TimeoutError:
+                log.warning("device %s: the face lookup took over %.1f s", session.device_id, FACE_LOOKUP_S)
+            if not session.current():
+                return
+            if session.face_state() != looked_up:  # unpaired meanwhile, say: that face is not for now
+                face = _LOOK_UP
+            # Built after the awaits, so it says what holds now (pairing can change meanwhile).
+            welcome = dict(session=session.session_id, paired=session.paired, heartbeat_s=self.heartbeat_s,
+                           server="hermes", proto=protocol.VERSION)
+            language = self.delegate.language(session)
+            if language:
+                welcome["language"] = language
+            if roster:
+                welcome.update(profile=session.profile, profiles=roster)
+                session.roster_ids = [str(p["id"]) for p in roster if isinstance(p, dict) and p.get("id")][:MAX_THUMBS]
+            if (isinstance(face, ProfileFace) and session.paired and hello.get("face") == face.hash
+                    and session.device_profile == named and face.valid()):
+                welcome["face"] = face.hash
+            await session.send_json(protocol.message("welcome", **welcome))
+            session.unpaired_reason = None  # the welcome clears it on the device; on_ready sends it again
+            session.face_hash = welcome.get("face")  # the welcome keeps that face, or drops the device's
+            session.update_face(face, looked_up)  # after the welcome's send, which may let the state change
+            face = None  # the task has it; an avatar's picture goes with the task
+            # The welcome keeps the device's thumbnails of offered profiles, and only while it is paired.
+            session.thumb_hashes = {k: v for k, v in session.thumb_hashes.items()
+                                    if session.paired and k in session.roster_ids}
+            session.update_thumbs()
             log.info("device %s (%s) online, paired=%s", session.device_id, session.name, session.paired)
             await self.delegate.on_ready(session)
+            if not session.display_sleeping:
+                session.spawn(session.screen_woke())  # lit again after a reconnect
             heartbeat = asyncio.create_task(self._heartbeat(session))
 
             async for raw in ws:
@@ -658,6 +1080,8 @@ class DeviceHub:
                 heartbeat.cancel()
             if session is not None:
                 session._shutdown()
+                if session._face_task:
+                    await asyncio.gather(session._face_task, return_exceptions=True)
                 if self.sessions.get(session.device_id) is session:
                     del self.sessions[session.device_id]
                 log.info("device %s offline", session.device_id)
@@ -665,20 +1089,6 @@ class DeviceHub:
                     await self.delegate.on_disconnect(session)
                 except Exception:
                     log.exception("on_disconnect failed")
-
-    def _time_field(self) -> dict | None:
-        """``{unix, utc_offset_s}`` for the device's clock, or None (field omitted)."""
-        if self.clock is None:
-            return None
-        try:
-            got = self.clock()
-            if got is None:
-                return None
-            unix, offset = got
-            return {"unix": int(unix), "utc_offset_s": int(offset)}
-        except Exception:
-            log.exception("host clock failed; sending no time")
-            return None
 
     async def _heartbeat(self, session: DeviceSession) -> None:
         while True:
@@ -688,7 +1098,7 @@ class DeviceHub:
                 await session.close("heartbeat timeout")
                 return
             try:
-                await session.send_json(protocol.message("ping", ts=int(time.time() * 1000), time=self._time_field()))
+                await session.send_json(protocol.message("ping", ts=int(time.time() * 1000)))
             except Exception:
                 return
 
@@ -702,9 +1112,6 @@ class DeviceHub:
             return
         if not isinstance(msg, dict):
             return
-        if msg.get("type") == "work.list":
-            await session.work_snapshot()
-            return
         handler = self._routes.get(str(msg.get("type")))
         if handler is None:
             log.debug("[%s] ignoring %r", session.device_id, msg.get("type"))
@@ -714,6 +1121,7 @@ class DeviceHub:
     async def _h_text(self, session: DeviceSession, msg: dict) -> None:
         text = str(msg.get("text") or "").strip()
         if text:
+            _note(session, state="thinking", heard=text[:4000], reply="", status="")
             session.spawn(self.delegate.on_text(session, str(msg.get("id") or ""), text[:4000]))
 
     async def _h_audio_start(self, session: DeviceSession, msg: dict) -> None:
@@ -727,6 +1135,12 @@ class DeviceHub:
             return
         session._upload = _Upload(
             id=str(msg.get("id") or ""), stream=int(msg.get("stream") or 0), rate=rate, started=time.monotonic())
+        _note(session, state="listening", heard="", reply="", status="")
+        resent = msg.get("resent")
+        if isinstance(resent, int) and resent > 0:
+            # Recorded through a lost connection and sent whole now, as fast as the link takes it.
+            log.info("device %s: recording %s sent again after a lost connection (%s ms after it began)",
+                     session.device_id, session._upload.id, msg.get("age_ms"))
 
     def _on_binary(self, session: DeviceSession, data: bytes) -> None:
         frame = protocol.parse_binary(data)
@@ -746,19 +1160,23 @@ class DeviceHub:
     async def _h_audio_end(self, session: DeviceSession, msg: dict) -> None:
         up = session._upload
         session._upload = None
-        if up is None or int(msg.get("stream") or 0) != up.stream:
-            return
-        seconds = audio.duration_s(bytes(up.pcm), up.rate)
-        if up.gaps:
+        if up is not None and int(msg.get("stream") or 0) != up.stream:
+            up = None  # an end for a stream this session never started still settles the device
+        if up is not None and up.gaps:
             log.debug("[%s] utterance had %d sequence gaps", session.device_id, up.gaps)
-        if seconds < MIN_UTTERANCE_S:
-            await session.send_notice("Didn't catch that - hold the button while speaking")
+        seconds = audio.duration_s(bytes(up.pcm), up.rate) if up is not None else 0.0
+        if up is None or seconds < MIN_UTTERANCE_S:
+            # An empty-id turn.end settles the device; without it the device waits on "Sending..." for minutes.
+            await session.send_notice(short_utterance_notice(session))
+            await session.turn_end("", outcome="cancelled")
             return
         wav = audio.wav_bytes(bytes(up.pcm), up.rate)
+        _note(session, state="thinking")
         session.spawn(self.delegate.on_utterance(session, up.id, wav, seconds))
 
     async def _h_audio_cancel(self, session: DeviceSession, msg: dict) -> None:
         session._upload = None
+        _note(session, state="ready")
 
     async def _h_cancel(self, session: DeviceSession, msg: dict) -> None:
         await session.stop_audio()
@@ -784,6 +1202,13 @@ class DeviceHub:
             fut.set_exception(ActionError(str(msg.get("error") or "action failed")))
 
     async def _h_state(self, session: DeviceSession, msg: dict) -> None:
+        sleeping = msg.get("display_sleeping")
+        if isinstance(sleeping, bool) and sleeping != session.display_sleeping:
+            session.display_sleeping = sleeping
+            log.debug("[%s] screen %s", session.device_id, "dark" if sleeping else "lit")
+            if not sleeping:
+                # Off the receive loop: a held image takes a while to send.
+                session.spawn(session.screen_woke())
         sensors = msg.get("sensors")
         if isinstance(sensors, dict):
             session.sensors.update(sensors)
@@ -805,6 +1230,11 @@ class DeviceHub:
         if session._ota_inbox is not None:
             session._ota_inbox.put_nowait(msg)
 
+    async def _h_profile_select(self, session: DeviceSession, msg: dict) -> None:
+        wanted = msg.get("profile")
+        error = await self.delegate.select_profile(session, wanted) if isinstance(wanted, str) and wanted else "unknown"
+        await session.send_profile(error)
+
     _routes = {
         "text": _h_text,
         "audio.start": _h_audio_start,
@@ -822,4 +1252,5 @@ class DeviceHub:
         "ota.ack": _h_ota,
         "ota.done": _h_ota,
         "ota.error": _h_ota,
+        "profile.select": _h_profile_select,
     }

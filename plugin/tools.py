@@ -35,8 +35,10 @@ DEVICES_SCHEMA = {
 
 DISPLAY_SCHEMA = {
     "name": "gadget_display",
-    "description": "Show a short card (title and text) on a gadget's screen, e.g. a timer, list or note. "
-                   "Screens are small: keep text brief and plain (no Markdown).",
+    "description": "Show a short card (title and text) on a gadget's screen, e.g. a list or note. "
+                   "For timers use the device's timer.* actions through gadget_action when it lists them. "
+                   "Screens are small: keep text brief and plain (no Markdown). While the screen is off "
+                   "the card waits and appears when it lights up.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -51,7 +53,7 @@ DISPLAY_SCHEMA = {
 
 ACTION_SCHEMA = {
     "name": "gadget_action",
-    "description": "Invoke an action a gadget exposes (for example an LED, relay, buzzer or volume control). "
+    "description": "Invoke an action a gadget exposes (for example an LED, relay, buzzer, volume control or camera capture). "
                    "Use gadget_devices first if you do not know the action names and parameters.",
     "parameters": {
         "type": "object",
@@ -146,10 +148,14 @@ def gadget_display(args: dict, **_kw) -> str:
     except (TypeError, ValueError):
         seconds = 20
     try:
-        _run(adapter, session.show_card(title, text, seconds))
+        shown = _run(adapter, session.show_card(title, text, seconds))
     except Exception as exc:
         return _error(f"could not reach {session.name}: {exc}")
-    return json.dumps({"success": True, "device": session.name, "shown_for_s": seconds or "until dismissed"})
+    result = {"success": True, "device": session.name, "shown_for_s": seconds or "until dismissed"}
+    if shown is False:
+        result["held"] = ("the screen is off; the card is shown when it lights up, "
+                          "for what is left of its time, unless a newer card or image replaces it")
+    return json.dumps(result)
 
 
 def gadget_action(args: dict, **_kw) -> str:
@@ -159,6 +165,8 @@ def gadget_action(args: dict, **_kw) -> str:
     session, err = _resolve(adapter, args.get("device"))
     if err:
         return _error(err)
+    if session is None:
+        return _error("no connected gadget is available")
     if (err := _usable(session)):
         return _error(err)
     action = str(args.get("action") or "").strip()
@@ -171,6 +179,14 @@ def gadget_action(args: dict, **_kw) -> str:
         result = _run(adapter, session.invoke_action(action, call_args, timeout=CALL_TIMEOUT_S - 2))
     except Exception as exc:
         return _error(str(exc))
+    if action == "camera.capture":
+        try:
+            from .camera_capture import save_camera_capture
+
+            capture = save_camera_capture(result, session.device_id)
+        except Exception as exc:
+            return _error(f"could not save the camera capture: {exc}")
+        return json.dumps({"success": True, "device": session.name, "action": action, **capture})
     return json.dumps({"success": True, "device": session.name, "action": action, "result": result})
 
 

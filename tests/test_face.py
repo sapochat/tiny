@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ import pytest
 pytest.importorskip("PIL", reason="the face command needs Pillow (the images extra)")
 
 from hermes_gadget import cli, face  # noqa: E402  (after the Pillow guard)
+from hermes_gadget_plugin import face as profile_faces  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 SHIPPED = REPO / "firmware" / "core" / "src" / "mascot_data.cpp"
@@ -130,6 +132,266 @@ def test_the_mascot_has_a_geometry_check_too(tmp_path):
     assert cli.main(["face", "--out", str(tmp_path / "m.cpp"), "--preview", str(tmp_path / "p.png"),
                      "--check", str(check)]) == 0
     assert check.exists()
+
+
+def test_a_face_file_carries_the_firmwares_frames_then_its_anchors(tmp_path):
+    out = tmp_path / "gadget-face.bin"
+    assert cli.main(["face", "--out", str(out), "--preview", str(tmp_path / "p.png")]) == 0
+    shipped = SHIPPED.read_text()
+    data = arrays(shipped)
+    bits = b"".join(data[f"k{frame}{size}"] for size in EXPECTED for frame in ("Idle", "Blink", "Talk"))
+    anchors = [int(v) for v in re.findall(r"-?\d+", re.search(r"kAnchors = (.*);", shipped).group(1))]
+    assert out.read_bytes() == bits + struct.pack("<10h", *anchors)
+    assert len(bits) + 20 == profile_faces.FACE_BYTES
+
+
+def test_a_face_files_anchors_stay_on_the_bitmap():
+    """The device refuses a face with an anchor off the bitmap, so one drawn past an edge is held to it."""
+    from PIL import Image
+
+    blank = Image.new("L", (face.MASTER_SIZE, face.MASTER_SIZE), 0)
+    geo = {"ear_cup": (-50, 300), "mouth_pt": (500, 1100), "think_dot": (800, 100), "eyes_rows": (400, 500),
+           "mouth_rows": (980, 1100)}
+    data = profile_faces.pack(dict.fromkeys(face.FRAMES, blank), geo)
+    assert struct.unpack("<10h", data[-20:]) == (0, 293, 488, 1000, 781, 98, 391, 488, 957, 1000)
+
+
+def _disc(path: Path, ink: tuple, paper: tuple) -> Path:
+    """An original drawing: a filled disc with two eye holes."""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (300, 300), paper)
+    draw = ImageDraw.Draw(img)
+    draw.ellipse((50, 40, 250, 260), fill=ink)
+    draw.ellipse((100, 110, 130, 140), fill=paper)
+    draw.ellipse((170, 110, 200, 140), fill=paper)
+    img.save(path)
+    return path
+
+
+def test_an_avatar_becomes_light_ink_whichever_way_it_is_drawn(tmp_path):
+    """The screen draws light on dark: dark art on white and white art on dark give the same face."""
+    dark_on_light = profile_faces.from_picture(_disc(tmp_path / "a.png", (20, 20, 20), (250, 250, 250)))
+    light_on_dark = profile_faces.from_picture(_disc(tmp_path / "b.png", (240, 240, 240), (10, 10, 10)))
+    idle192 = slice(-20 - 3 * 4608, -20 - 2 * 4608)
+    ink = sum(bin(b).count("1") for b in dark_on_light[idle192])
+    assert 0.3 < ink / (192 * 192) < 0.6, "the disc, not the paper around it"
+    differ = sum(bin(a ^ b).count("1") for a, b in zip(dark_on_light[idle192], light_on_dark[idle192]))
+    assert differ < 0.01 * ink  # the same disc, give or take its antialiased edge
+
+
+def test_a_replaced_avatar_gets_a_new_face_even_with_the_same_size_and_time(tmp_path):
+    """A face is named by the picture's bytes, so a restored or copied avatar with the old metadata
+    still gets its own face."""
+    from PIL import Image
+
+    home = tmp_path / "ops"
+    (home / "assets").mkdir(parents=True)
+    avatar = home / "assets" / "avatar.png"
+    # Uncompressed (BMP bytes under the avatar's name), so both pictures have the same size.
+    Image.open(_disc(tmp_path / "a.png", (240, 240, 240), (10, 10, 10))).save(avatar, format="BMP")
+    before = profile_faces.for_profile(home)
+    before.load()
+    stat = avatar.stat()
+    Image.open(_disc(tmp_path / "b.png", (240, 240, 240), (120, 10, 10))).save(avatar, format="BMP")
+    os.utime(avatar, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    assert (avatar.stat().st_size, avatar.stat().st_mtime_ns) == (stat.st_size, stat.st_mtime_ns)
+    after = profile_faces.for_profile(home)
+    assert after.hash != before.hash
+    assert after.load() == profile_faces.from_picture(avatar) != before.load()
+
+
+def test_a_face_file_and_an_avatar_never_share_a_hash(tmp_path):
+    """A face file whose bytes are an avatar's hash input still gets a hash of its own."""
+    source = bytes(profile_faces.FACE_BYTES - len(profile_faces.AVATAR_DRAWING))
+    with_file, with_avatar = tmp_path / "file", tmp_path / "avatar"
+    (with_avatar / "assets").mkdir(parents=True)
+    with_file.mkdir()
+    (with_file / profile_faces.FACE_FILE).write_bytes(profile_faces.AVATAR_DRAWING + source)
+    (with_avatar / "assets" / "avatar.png").write_bytes(source)
+    assert profile_faces.for_profile(with_file).hash != profile_faces.for_profile(with_avatar).hash
+
+
+PINNED_DRAWING = "788c2b3a73475e59"  # from_picture's drawing of _disc's light disc, with Pillow 12.3
+PINNED_TRANSPARENT_DRAWING = "eb09c14f03399765"  # and of _smiling_disc, antialiased, on transparency
+
+
+def test_the_avatar_drawing_is_pinned_to_its_version(tmp_path):
+    """A different drawing from the same picture must come with a new AVATAR_DRAWING, or devices that
+    hold the old drawing keep it. One picture is opaque, the other transparent with soft edges."""
+    drawn = profile_faces.digest(profile_faces.from_picture(_disc(tmp_path / "a.png", (240, 240, 240), (10, 10, 10))))
+    transparent = profile_faces.digest(profile_faces.from_picture(_smiling_disc(tmp_path / "b.png", scale=4)))
+    assert (profile_faces.AVATAR_DRAWING, drawn, transparent) == (
+        b"hermes-gadget avatar 2\n", PINNED_DRAWING, PINNED_TRANSPARENT_DRAWING), (
+        "from_picture draws differently: bump AVATAR_DRAWING in plugin/face.py, then record the new digests here")
+
+
+@pytest.mark.parametrize("body, drawn", [((255, 255, 255), "eb09c14f03399765"), ((0, 51, 204), "b45b7d3fbc867878")],
+                         ids=["white", "blue"])
+def test_a_cartoon_on_transparency_converts_as_before_the_one_colour_fallback(tmp_path, body, drawn):
+    """Only a drawing with nearly nothing on either side of the cut takes the fallback: a cartoon with
+    features converts exactly as f0a6b71's converter drew it (these digests come from that converter)."""
+    face = profile_faces.from_picture(_smiling_disc(tmp_path / "avatar.png", scale=4, body=body))
+    assert profile_faces.digest(face) == drawn
+
+
+@pytest.mark.parametrize("eye_radius, drawn", [(7, "e3bb93e9649e7be6"), (10, "4267e3c778eb4bb9"),
+                                                (14, "3a158facbc3d6347")])
+def test_a_dark_cartoon_with_small_light_features_converts_as_before(tmp_path, eye_radius, drawn):
+    """Little of it crosses the cut, but it isn't one colour, so it keeps f0a6b71's drawing (these digests come
+    from that converter) instead of becoming a solid disc."""
+    from PIL import Image, ImageDraw
+
+    path, r = tmp_path / "avatar.png", eye_radius
+    img = Image.new("RGBA", (300, 300), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse((30, 30, 270, 270), fill=(20, 20, 20, 255))
+    for cx in (100, 200):
+        draw.ellipse((cx - r, 105 - r, cx + r, 105 + r), fill=(255, 255, 255, 255))
+    draw.arc((110, 150, 190, 205), 20, 160, fill=(255, 255, 255, 255), width=4)
+    img.save(path)
+    assert profile_faces.digest(profile_faces.from_picture(path)) == drawn
+
+
+def test_profiles_that_are_gone_leave_no_faces_behind(tmp_path, monkeypatch):
+    import gc
+    import shutil
+    import tracemalloc
+
+    monkeypatch.setattr(profile_faces, "from_picture", lambda path: bytes(profile_faces.FACE_BYTES))
+    tracemalloc.start()
+    try:
+        start = tracemalloc.get_traced_memory()[0]
+        for i in range(40):
+            home = tmp_path / f"p{i}"
+            (home / "assets").mkdir(parents=True)
+            (home / "assets" / "avatar.png").write_bytes(b"picture %d" % i)
+            profile_faces.for_profile(home).load()
+            shutil.rmtree(home)
+        gc.collect()
+        assert tracemalloc.get_traced_memory()[0] - start < 200_000  # forty kept faces would hold over 1 MB
+    finally:
+        tracemalloc.stop()
+
+
+def _smiling_disc(path: Path, scale: int = 1, body=(255, 255, 255), features=(0, 0, 0)) -> Path:
+    """Original art on a transparent canvas: a disc with eyes and a smile, white on black unless told
+    otherwise. With ``scale`` above 1 it is drawn that much larger and scaled down, so its edges are
+    antialiased."""
+    from PIL import Image, ImageDraw
+
+    s, body, features = scale, body + (255,), features + (255,)
+    img = Image.new("RGBA", (300 * s, 300 * s), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse((30 * s, 30 * s, 270 * s, 270 * s), fill=body)
+    draw.ellipse((85 * s, 85 * s, 125 * s, 125 * s), fill=features)
+    draw.ellipse((175 * s, 85 * s, 215 * s, 125 * s), fill=features)
+    draw.arc((90 * s, 130 * s, 210 * s, 230 * s), 20, 160, fill=features, width=12 * s)
+    if s > 1:
+        img = img.resize((300, 300), Image.Resampling.LANCZOS)
+    img.save(path)
+    return path
+
+
+def _ink_at(face: bytes, size: int, x: float, y: float) -> bool:
+    """Whether the idle frame at ``size`` px has ink at (x, y), as fractions of the picture."""
+    offset = sum(3 * s * s // 8 for s in profile_faces.SIZES if s < size)
+    col, row = int(x * size), int(y * size)
+    return bool(face[offset + row * size // 8 + col // 8] >> (7 - col % 8) & 1)
+
+
+@pytest.mark.parametrize("body", [(255, 255, 255), (0, 51, 204), (106, 13, 173)], ids=["white", "blue", "purple"])
+def test_a_drawing_with_features_on_a_transparent_background_keeps_them(tmp_path, body):
+    """A cartoon with dark eyes and a dark mouth keeps them as holes in its body."""
+    features = (0, 0, 0)
+    face = profile_faces.from_picture(_smiling_disc(tmp_path / "avatar.png", body=body, features=features))
+    for size in (64, 192):
+        assert _ink_at(face, size, 70 / 300, 160 / 300), f"{size} px: the cheek is ink"
+        assert not _ink_at(face, size, 105 / 300, 105 / 300), f"{size} px: the left eye is a hole"
+        assert not _ink_at(face, size, 195 / 300, 105 / 300), f"{size} px: the right eye is a hole"
+        assert not _ink_at(face, size, 150 / 300, 228 / 300), f"{size} px: the mouth is a hole"
+        assert not _ink_at(face, size, 5 / 300, 5 / 300), f"{size} px: the transparent corner is no ink"
+
+
+@pytest.mark.parametrize("mouth_right", [225, 230])
+def test_a_large_dark_mouth_stays_a_hole_in_the_body(tmp_path, mouth_right):
+    """The body's colour comes from its outline, so a mouth bigger than the rest of the face is still the hole."""
+    from PIL import Image, ImageDraw
+
+    path = tmp_path / "avatar.png"
+    img = Image.new("RGBA", (300, 300), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse((30, 30, 270, 270), fill=(255, 255, 255, 255))
+    draw.ellipse((75, 60, 105, 90), fill=(0, 0, 0, 255))
+    draw.ellipse((195, 60, 225, 90), fill=(0, 0, 0, 255))
+    draw.ellipse((65, 100, mouth_right, 265), fill=(0, 0, 0, 255))
+    img.save(path)
+    face = profile_faces.from_picture(path)
+    for size in (64, 192):
+        assert _ink_at(face, size, 45 / 300, 150 / 300), f"{size} px: the cheek is ink"
+        assert _ink_at(face, size, 150 / 300, 45 / 300), f"{size} px: the forehead is ink"
+        assert not _ink_at(face, size, 150 / 300, 190 / 300), f"{size} px: the mouth is a hole"
+
+
+def _ink_share(face: bytes, size: int) -> float:
+    """The share of the idle frame at ``size`` px that is ink."""
+    offset = sum(3 * s * s // 8 for s in profile_faces.SIZES if s < size)
+    return sum(bin(b).count("1") for b in face[offset:offset + size * size // 8]) / (size * size)
+
+
+@pytest.mark.parametrize("colour, scale", [
+    ((255, 255, 255), 1), ((0, 0, 0), 1), ((128, 128, 128), 1), ((245, 230, 30), 1), ((128, 128, 128), 4)],
+    ids=["white", "black", "grey", "yellow", "grey-antialiased"])
+def test_a_solid_drawing_on_a_transparent_background_keeps_its_shape(tmp_path, colour, scale):
+    """Its visible pixels are the shape, whatever their colour: one colour gives no light or dark parts."""
+    from PIL import Image, ImageDraw
+
+    path = tmp_path / "avatar.png"
+    img = Image.new("RGBA", (300 * scale, 300 * scale), (0, 0, 0, 0))
+    ImageDraw.Draw(img).ellipse((50 * scale, 40 * scale, 250 * scale, 260 * scale), fill=colour + (255,))
+    if scale > 1:
+        img = img.resize((300, 300), Image.Resampling.LANCZOS)
+    img.save(path)
+    face = profile_faces.from_picture(path)
+    for size in (64, 192):
+        assert 0.3 < _ink_share(face, size) < 0.7, f"{size} px: {_ink_share(face, size):.0%} ink, not the disc"
+
+
+def test_a_flat_star_on_a_transparent_background_keeps_its_shape(tmp_path):
+    import math
+
+    from PIL import Image, ImageDraw
+
+    path = tmp_path / "avatar.png"
+    points = [(150 + (120 if i % 2 == 0 else 50) * math.sin(i * math.pi / 5),
+               150 - (120 if i % 2 == 0 else 50) * math.cos(i * math.pi / 5)) for i in range(10)]
+    img = Image.new("RGBA", (300, 300), (0, 0, 0, 0))
+    ImageDraw.Draw(img).polygon(points, fill=(128, 128, 128, 255))
+    img.save(path)
+    face = profile_faces.from_picture(path)
+    for size in (64, 192):
+        assert _ink_share(face, size) > 0.15 and _ink_at(face, size, 0.5, 0.5), f"{size} px: not the star"
+
+
+def test_a_profile_shows_its_face_file_then_its_avatar_then_the_mascot(tmp_path, caplog):
+    home = tmp_path / "ops"
+    (home / "assets").mkdir(parents=True)
+    assert profile_faces.for_profile(home) is None  # nothing: the mascot
+
+    avatar = _disc(home / "assets" / "avatar.png", (240, 240, 240), (10, 10, 10))
+    converted = profile_faces.for_profile(home)
+    assert converted.load() == profile_faces.from_picture(avatar)
+    assert profile_faces.for_profile(home, convert=False) is None  # no Pillow: face files only
+
+    (home / profile_faces.FACE_FILE).write_bytes(b"not a face")
+    assert profile_faces.for_profile(home).hash == converted.hash  # a broken file is passed over, and said so
+    assert "not a face file" in caplog.text
+
+    assert cli.main(["face", "--out", str(home / profile_faces.FACE_FILE), "--preview", str(tmp_path / "p.png")]) == 0
+    made = (home / profile_faces.FACE_FILE).read_bytes()
+    hand_made = profile_faces.for_profile(home)
+    assert hand_made.load() == made and hand_made.hash == profile_faces.ProfileFace.of(made).hash != converted.hash
+    assert profile_faces.for_profile(home, convert=False).load() == made
 
 
 def test_outside_a_checkout_the_command_says_where_to_run_it(tmp_path, monkeypatch, capsys):
@@ -302,12 +564,17 @@ def test_picker_command_runs_in_the_shell_and_preserves_the_picture(tmp_path, pl
     picker.skip()
 
     command = picker.command(src) + " --out face.cpp --preview preview.png --check check.png"
-    env = dict(os.environ, PYTHONPATH=str(REPO / "python"))
+    # Keep the parent's PYTHONPATH: it may be what makes hermes_gadget_plugin importable.
+    pythonpath = filter(None, [str(REPO / "python"), os.environ.get("PYTHONPATH")])
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(pythonpath))
     env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env["PATH"]
     shell = (["powershell", "-NoProfile", "-NonInteractive", "-Command", command]
              if os.name == "nt" else ["/bin/sh", "-c", command])
-    result = subprocess.run(shell, cwd=tmp_path, env=env, capture_output=True, text=True,
-                            timeout=60, check=False)
+    # The command is non-interactive, so do not inherit stdin: on Windows the parent's
+    # STD_INPUT_HANDLE is stale once pytest's fd capture has replaced fd 0, and spawning
+    # with it fails with "WinError 6: The handle is invalid".
+    result = subprocess.run(shell, cwd=tmp_path, env=env, stdin=subprocess.DEVNULL,
+                            capture_output=True, text=True, timeout=60, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "ink box:   x 128..640  y 128..768" in result.stdout
     assert "eyes:      left (192, 256, 320, 384)  right (448, 256, 576, 384)" in result.stdout
@@ -347,3 +614,316 @@ def test_the_picker_says_what_it_needs_when_there_is_no_tk(tmp_path, monkeypatch
     with pytest.raises(SystemExit) as exc:
         face.pick_features(src, face.Options(mask="bright"))
     assert "Tk" in str(exc.value) and "brew install python-tk" in str(exc.value)
+
+
+def _badge(path: Path, transparent: bool) -> Path:
+    """An original drawing: a rose disc with a black eye, on transparency or on a sky-blue square."""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGBA", (400, 300), (0, 0, 0, 0) if transparent else (90, 170, 240, 255))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse((100, 50, 300, 250), fill=(220, 60, 120, 255))
+    draw.ellipse((160, 120, 190, 150), fill=(0, 0, 0, 255))
+    img.save(path)
+    return path
+
+
+def _px(face, x: int, y: int) -> int:
+    i = 2 * (y * face.px + x)
+    return face.rgb565[i] | face.rgb565[i + 1] << 8
+
+
+def test_a_colour_avatar_keeps_its_shape_on_transparency_and_is_cropped_when_opaque(tmp_path):
+    rose = (220 & 0xF8) << 8 | (60 & 0xFC) << 3 | 120 >> 3
+    shape = profile_faces.colour_from_picture(_badge(tmp_path / "t.png", True), 144)
+    assert shape.px == 144 and len(shape.rgb565) == 144 * 144 * 2
+    assert _px(shape, 0, 0) == 0 and _px(shape, 143, 143) == 0  # transparent corners: the screen shows through
+    assert _px(shape, 72, 72) == rose
+    # The whole disc is in the square: its 400x300 canvas is fitted, not cropped (the disc spans 72 px of 144).
+    row = [_px(shape, x, 80) for x in range(144)]
+    assert row.count(rose) > 60 and row[0] == row[143] == 0
+    assert _px(shape, 63, 66) == 0x0020  # the black eye stays black, not transparent
+
+    opaque = profile_faces.colour_from_picture(_badge(tmp_path / "o.png", False), 144)
+    sky = (90 & 0xF8) << 8 | (170 & 0xFC) << 3 | 240 >> 3
+    assert _px(opaque, 0, 0) == sky  # cropped to the square, background and all
+    assert 0 not in {_px(opaque, x, y) for x in range(144) for y in range(144)}
+    assert all(0 <= v <= 1000 for v in opaque.anchors) and len(opaque.anchors) == 10
+
+
+def test_a_colour_face_is_named_by_its_picture_and_its_size_and_a_face_file_still_wins(tmp_path):
+    home = tmp_path / "ops"
+    (home / "assets").mkdir(parents=True)
+    _badge(home / "assets" / "avatar.png", True)
+    one_colour = profile_faces.for_profile(home)
+    colour = profile_faces.for_profile(home, colour_px=144)
+    assert isinstance(colour.load(), profile_faces.ColourFace) and colour.load().px == 144
+    assert len({one_colour.hash, colour.hash, profile_faces.for_profile(home, colour_px=192).hash}) == 3
+    assert profile_faces.for_profile(home, colour_px=144).hash == colour.hash  # a reconnect finds it again
+    assert profile_faces.for_profile(home, convert=False, colour_px=144) is None  # no Pillow: face files only
+
+    assert cli.main(["face", "--out", str(home / profile_faces.FACE_FILE), "--preview", str(tmp_path / "p.png")]) == 0
+    made = (home / profile_faces.FACE_FILE).read_bytes()
+    assert profile_faces.for_profile(home, colour_px=144).load() == made
+
+
+def _moving_face(path: Path, eyes=(100, 120), mouth=(200, 206), shift: int = 0) -> Path:
+    """An original picture: a rose disc on sky blue with black eyes and mouth across the rows given (of
+    300), or none where None. `shift` moves all of it down."""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (400, 300), (90, 170, 240))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse((100, 30 + shift, 300, 270 + shift), fill=(220, 60, 120))
+    for rows, x0, x1 in ((eyes, 150, 250), (mouth, 170, 230)):
+        if rows:
+            draw.rectangle((x0, rows[0] + shift, x1, rows[1] + shift), fill=(0, 0, 0))
+    img.save(path)
+    return path
+
+
+def _frames_home(tmp_path: Path, avatar: str = "avatar.png", **frames) -> Path:
+    """A profile whose avatar is _moving_face(), with `blink`/`talk` pictures as _moving_face keywords:
+    `blink={"eyes": None}` saves avatar-blink.png with the eyes gone. A `name` key sets the file name."""
+    home = tmp_path / avatar
+    (home / "assets").mkdir(parents=True)
+    _moving_face(home / "assets" / avatar)
+    for frame, kw in frames.items():
+        kw = dict(kw)
+        _moving_face(home / "assets" / kw.pop("name", f"avatar-{frame}.png"), **kw)
+    return home
+
+
+def _rows(face, data: bytes, y0: int, y1: int) -> bytes:
+    return data[y0 * 2 * face.px: y1 * 2 * face.px]
+
+
+def _most(a: bytes, b: bytes) -> int:
+    """The largest difference between two runs of RGB565 pixels, in levels of 255; 255 where one is
+    transparent and the other not."""
+    most = 0
+    for (p,), (q,) in zip(struct.iter_unpack("<H", a), struct.iter_unpack("<H", b)):
+        most = max(most, 255 if (not p) != (not q) else max(abs((p >> 11) - (q >> 11)) * 8,
+                                                             abs((p >> 5 & 63) - (q >> 5 & 63)) * 4,
+                                                             abs((p & 31) - (q & 31)) * 8))
+    return most
+
+
+def test_blink_and_talk_pictures_send_only_the_rows_they_change(tmp_path):
+    home = _frames_home(tmp_path, blink={"eyes": None}, talk={"mouth": (195, 235)})
+    face = profile_faces.for_profile(home, colour_px=144, frames=True).load()
+    still = profile_faces.colour_from_picture(home / "assets" / "avatar.png", 144)
+    assert face.rgb565 == still.rgb565 and face.anchors == still.anchors
+    for name, band in (("avatar-blink.png", face.blink), ("avatar-talk.png", face.talk)):
+        whole = profile_faces.colour_from_picture(home / "assets" / name, 144).rgb565
+        y, n, pixels = band
+        assert 0 < n and y + n <= 144 and pixels == _rows(face, whole, y, y + n)
+        # The band is exactly the rows that change by more than 16 levels: its first and last rows do, and
+        # outside it nothing does.
+        assert _most(_rows(face, whole, y, y + 1), _rows(face, still.rgb565, y, y + 1)) > 16
+        assert _most(_rows(face, whole, y + n - 1, y + n), _rows(face, still.rgb565, y + n - 1, y + n)) > 16
+        assert _most(_rows(face, whole, 0, y), _rows(face, still.rgb565, 0, y)) <= 16
+        assert _most(_rows(face, whole, y + n, 144), _rows(face, still.rgb565, y + n, 144)) <= 16
+    assert face.blink[0] < face.talk[0]  # the eyes are above the mouth
+    assert face.blink[1] + face.talk[1] <= 144 // 2
+
+    # A device without frames gets the still face, named as before; the pictures name a face that moves.
+    plain = profile_faces.for_profile(home, colour_px=144)
+    assert plain.load().blink is None and plain.load().talk is None
+    moving = profile_faces.for_profile(home, colour_px=144, frames=True).hash
+    for name in ("avatar-blink.png", "avatar-talk.png"):
+        (home / "assets" / name).unlink()
+    assert profile_faces.for_profile(home, colour_px=144, frames=True).hash == plain.hash != moving
+
+
+def test_either_frame_alone_moves_and_the_other_stays_still(tmp_path):
+    # JPEG and WebP too: saved like the avatar, the rows they leave alone come out the same.
+    home = _frames_home(tmp_path, "avatar.jpg", talk={"mouth": (195, 235), "name": "avatar-talk.jpg"})
+    face = profile_faces.for_profile(home, colour_px=144, frames=True).load()
+    assert face.blink is None and face.talk is not None
+    home = _frames_home(tmp_path, "avatar.webp", blink={"eyes": None, "name": "avatar-blink.webp"})
+    face = profile_faces.for_profile(home, colour_px=144, frames=True).load()
+    assert face.blink is not None and face.talk is None
+
+
+def test_a_frame_that_changes_too_many_rows_leaves_the_face_still_and_is_said_once(tmp_path, caplog, monkeypatch):
+    monkeypatch.setattr(profile_faces, "_refused", set())
+    home = _frames_home(tmp_path, blink={"eyes": None, "shift": 40}, talk={"mouth": (195, 235)})
+    found = profile_faces.for_profile(home, colour_px=144, frames=True)
+    with caplog.at_level("WARNING", logger="hermes_gadget_plugin.face"):
+        face = found.load()
+        assert face.blink is None and face.talk is None  # the talk picture fits, but the face stays still
+        assert face.rgb565 == profile_faces.colour_from_picture(home / "assets" / "avatar.png", 144).rgb565
+        found.load()  # a reconnect makes it again: the log does not repeat
+    refusals = [r.getMessage() for r in caplog.records if "avatar-blink.png" in r.getMessage()]
+    assert len(refusals) == 1
+    blink = re.escape(str(home / "assets" / "avatar-blink.png"))
+    assert re.fullmatch(blink + r" differs from avatar\.png in \d+ of 144 rows, more than the 72 the device has "
+                        r"room for; draw it from the same picture with only the eyes changed", refusals[0]), refusals[0]
+
+
+def test_bands_that_do_not_fit_together_leave_the_face_still(tmp_path, caplog, monkeypatch):
+    monkeypatch.setattr(profile_faces, "_refused", set())
+    # Each fits alone in 72 rows; together they need more.
+    home = _frames_home(tmp_path, blink={"eyes": (40, 150)}, talk={"mouth": (180, 270)})
+    with caplog.at_level("WARNING", logger="hermes_gadget_plugin.face"):
+        face = profile_faces.for_profile(home, colour_px=144, frames=True).load()
+    assert face.blink is None and face.talk is None
+    assert re.search(re.escape(str(home / "assets" / "avatar-blink.png")) + " and " +
+                     re.escape(str(home / "assets" / "avatar-talk.png")) +
+                     r" differ from avatar\.png in \d+ rows together, more than the 72 the device has room for",
+                     caplog.text), caplog.text
+    (home / "assets" / "avatar-blink.png").unlink()
+    assert profile_faces.for_profile(home, colour_px=144, frames=True).load().talk is not None
+
+
+def test_each_profiles_refused_frame_is_said_with_its_path(tmp_path, caplog, monkeypatch):
+    monkeypatch.setattr(profile_faces, "_refused", set())
+    homes = [_frames_home(tmp_path / name, blink={"eyes": None, "shift": 40}) for name in ("ops", "default")]
+    with caplog.at_level("WARNING", logger="hermes_gadget_plugin.face"):
+        for home in homes:
+            assert profile_faces.for_profile(home, colour_px=144, frames=True).load().blink is None
+    for home in homes:  # the same picture in two profiles: two files to fix
+        assert caplog.text.count(str(home / "assets" / "avatar-blink.png") + " differs") == 1
+
+
+def test_a_frame_file_that_is_no_picture_leaves_the_still_avatar(tmp_path, caplog, monkeypatch):
+    monkeypatch.setattr(profile_faces, "_refused", set())
+    home = _frames_home(tmp_path, talk={"mouth": (195, 235)})
+    (home / "assets" / "avatar-blink.png").write_bytes(b"not a png")
+    found = profile_faces.for_profile(home, colour_px=144, frames=True)
+    with caplog.at_level("WARNING", logger="hermes_gadget_plugin.face"):
+        face = found.load()
+        found.load()
+    assert face.blink is None and face.talk is None
+    assert face.rgb565 == profile_faces.colour_from_picture(home / "assets" / "avatar.png", 144).rgb565
+    assert caplog.text.count(str(home / "assets" / "avatar-blink.png") + " is not a picture") == 1
+
+
+def test_a_frame_that_turns_black_into_transparency_changes_those_rows(tmp_path):
+    """Black is one green step from transparent in RGB565, well inside the noise allowed; it still counts."""
+    from PIL import Image, ImageDraw
+
+    home = tmp_path / "ops"
+    (home / "assets").mkdir(parents=True)
+    for name, eye in (("avatar.png", (0, 0, 0, 255)), ("avatar-blink.png", (0, 0, 0, 0))):
+        img = Image.new("RGBA", (144, 144), (0, 0, 0, 0))  # drawn at the device's size: nothing is resampled
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((24, 24, 119, 119), fill=(220, 60, 120, 255))
+        draw.rectangle((48, 50, 95, 59), fill=eye)
+        img.save(home / "assets" / name)
+    face = profile_faces.for_profile(home, colour_px=144, frames=True).load()
+    assert face.blink is not None and face.blink[:2] == (50, 10)
+
+
+@pytest.mark.parametrize("channel", [1, 2], ids=["green", "blue"])
+def test_a_change_in_one_colour_counts_past_16_levels(tmp_path, channel):
+    """Rows 50-59 change 40 levels in green or blue only, rows 80-89 by 12: a band of rows 50-59."""
+    from PIL import Image, ImageDraw
+
+    home = tmp_path / "ops"
+    (home / "assets").mkdir(parents=True)
+    grey = (120, 120, 120)
+    Image.new("RGB", (144, 144), grey).save(home / "assets" / "avatar.png")  # at the device's size: no resampling
+    frame = Image.new("RGB", (144, 144), grey)
+    draw = ImageDraw.Draw(frame)
+    for (top, bottom), step in (((50, 59), 40), ((80, 89), 12)):
+        draw.rectangle((0, top, 143, bottom), fill=tuple(v + step * (i == channel) for i, v in enumerate(grey)))
+    frame.save(home / "assets" / "avatar-blink.png")
+    blink = profile_faces.for_profile(home, colour_px=144, frames=True).load().blink
+    assert blink is not None and blink[:2] == (50, 10)
+
+
+def _sent_faces(tmp_path: Path, home: Path, change=None) -> list:
+    """What a paired colour device with frames is sent for `home`'s face: once, and once more after
+    `change()` when given."""
+    import asyncio
+
+    from hermes_gadget_plugin.hub import DeviceHub, DeviceSession, HubDelegate
+    from hermes_gadget_plugin.store import DeviceStore
+    from test_plugin_units import _MediaWire
+
+    class Profile(HubDelegate):
+        async def face(self, session):
+            return profile_faces.for_profile(home, colour_px=144, frames=True)
+
+    async def run():
+        wire = _MediaWire()
+        hub = DeviceHub(DeviceStore(tmp_path / "store"), Profile())
+        session = DeviceSession(hub, wire, {"device_id": "hg-1", "caps": {"faces": {"v": 2, "px": 144, "frames": True}}})
+        session.paired = True
+        hub.sessions[session.device_id] = session
+        await session.update_face()
+        if change:
+            change()
+            await session.update_face()
+        return wire.sent
+
+    return asyncio.run(run())
+
+
+def test_a_frame_file_that_is_no_picture_sends_the_avatar_alone(tmp_path):
+    from hermes_gadget_plugin.protocol import parse_binary
+
+    home = _frames_home(tmp_path, talk={"mouth": (195, 235)})
+    (home / "assets" / "avatar-blink.png").write_bytes(b"not a png")
+    still = profile_faces.colour_from_picture(home / "assets" / "avatar.png", 144)
+    start, *chunks, end = _sent_faces(tmp_path, home)
+    assert start["type"] == "face.start" and "blink" not in start and "talk" not in start
+    assert start["anchors"] == list(still.anchors)
+    assert b"".join(parse_binary(chunk).payload for chunk in chunks) == still.rgb565
+    assert end == {"type": "face.end", "stream": start["stream"]}
+
+
+def test_removing_an_empty_frame_file_lets_the_other_frame_move(tmp_path):
+    """An empty blink file leaves the face still; once it goes, the talk picture moves the mouth."""
+    home = _frames_home(tmp_path, talk={"mouth": (195, 235)})
+    blink = home / "assets" / "avatar-blink.png"
+    blink.write_bytes(b"")
+    starts = [m for m in _sent_faces(tmp_path, home, blink.unlink)
+              if isinstance(m, dict) and m["type"] == "face.start"]
+    assert len(starts) == 2 and "talk" not in starts[0] and "talk" in starts[1]
+
+
+def test_a_frame_with_transparent_eyes_is_cropped_like_its_opaque_avatar(tmp_path):
+    """A 400x300 opaque avatar is cropped to the square; a blink picture that cuts its eyes out to
+    transparency is not fitted whole for that, so only the eye rows change."""
+    from PIL import Image, ImageDraw
+
+    home = _frames_home(tmp_path)
+    blink = Image.open(home / "assets" / "avatar.png").convert("RGBA")
+    ImageDraw.Draw(blink).rectangle((150, 100, 250, 120), fill=(0, 0, 0, 0))
+    blink.save(home / "assets" / "avatar-blink.png")
+    face = profile_faces.for_profile(home, colour_px=144, frames=True).load()
+    assert face.blink is not None
+    y, rows, _ = face.blink
+    assert 40 <= y and y + rows <= 66  # the eyes, rows 100-120 of 300, are rows 48-58 of 144
+
+
+def test_a_profile_thumbnail_is_its_avatar_in_colour_or_its_face_files_idle_frame(tmp_path):
+    home = tmp_path / "ops"
+    (home / "assets").mkdir(parents=True)
+    assert profile_faces.thumb_for_profile(home, px=96) is None  # nothing to show: the initial
+    _badge(home / "assets" / "avatar.png", True)
+    thumb = profile_faces.thumb_for_profile(home, px=96)
+    data = thumb.load()
+    assert len(data) == 96 * 96 * 2
+    rose = (220 & 0xF8) << 8 | (60 & 0xFC) << 3 | 120 >> 3
+    pixels = [p for (p,) in struct.iter_unpack("<H", data)]
+    assert pixels[0] == 0  # the transparent corner stays transparent
+    assert pixels.count(rose) > 1000  # the rose disc, in colour
+    # Named by its picture and size, apart from the profile's own face of the same picture.
+    assert profile_faces.thumb_for_profile(home, px=96).hash == thumb.hash
+    assert len({thumb.hash, profile_faces.thumb_for_profile(home, px=64).hash,
+                profile_faces.for_profile(home, colour_px=96).hash}) == 3
+    assert profile_faces.thumb_for_profile(home, convert=False, px=96) is None  # no Pillow: face files only
+
+    # A face file wins, as it does for the profile's face: its idle frame in the one-colour face's ink.
+    assert cli.main(["face", "--out", str(home / profile_faces.FACE_FILE), "--preview", str(tmp_path / "p.png")]) == 0
+    from_file = profile_faces.thumb_for_profile(home, convert=False, px=96)
+    assert from_file is not None and from_file.hash != thumb.hash
+    ink = set(p for (p,) in struct.iter_unpack("<H", from_file.load()))
+    r, g, b = profile_faces.THUMB_INK
+    assert ink == {0, (r & 0xF8) << 8 | (g & 0xFC) << 3 | b >> 3}
+    (home / profile_faces.FACE_FILE).write_bytes(b"not a face")  # a broken face file: the avatar again
+    assert profile_faces.thumb_for_profile(home, px=96).hash == thumb.hash

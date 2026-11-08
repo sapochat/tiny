@@ -10,10 +10,16 @@
 #include "driver/spi_master.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_ops.h"
+#include "esp_lcd_gc9a01.h"
 #include "esp_lcd_panel_st7789.h"
+#include "esp_lcd_spd2010.h"
 #include "esp_log.h"
 #include "panel_box3.hpp"
+#include "panel_sh8601.hpp"
 #include "panel_cores3.hpp"
+#include "panel_spotpear128.hpp"
+#include "panel_vocat.hpp"
+#include "panel_ws185.hpp"
 #include "freertos/task.h"
 
 namespace hgp {
@@ -21,23 +27,54 @@ namespace {
 
 const char* TAG = "hg.lcd";
 constexpr spi_host_device_t kHost = SPI2_HOST;
+#if CONFIG_HG_BOARD_ESP32_CYD
+// The CYD has no PSRAM, so every byte counts. Keep the DMA bounce buffer to four
+// rows (2.5 KiB).
+constexpr int kBounceRows = 4;
+// A 320x240x2 = 150 KiB framebuffer does not fit: about 137 KiB of internal RAM
+// is free at boot, and it has to leave room for Wi-Fi and the audio codec as
+// well. Hold a 320x120x2 = 75 KiB band of rows instead and let the UI draw the
+// screen in bands of that size (Display::framebuffer_rows).
+constexpr int kCydFrameRows = 120;
+constexpr size_t kCydFrameBytes = 320 * kCydFrameRows * 2;
+#else
 constexpr int kBounceRows = 20;
+#endif
 constexpr ledc_channel_t kBlChannel = LEDC_CHANNEL_0;
+
+#if CONFIG_HG_BOARD_ESP32_CYD
+uint16_t* cyd_framebuffer = nullptr;
+// Reserve the band from an early constructor: by the time the display starts,
+// Wi-Fi and the task stacks have already fragmented the heap, and a block this
+// size would no longer fit as one allocation. LovyanGFX proves the panel itself
+// needs no PSRAM.
+__attribute__((constructor(101))) void reserve_cyd_framebuffer() {
+  cyd_framebuffer = static_cast<uint16_t*>(heap_caps_malloc(kCydFrameBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+}
+#endif
 
 }  // namespace
 
 bool SpiDisplay::on_trans_done(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void* ctx) {
   BaseType_t woken = pdFALSE;
   xSemaphoreGiveFromISR(static_cast<SpiDisplay*>(ctx)->done_, &woken);
-  // esp_lcd's SPI path ignores this callback's return value, so request the switch here.
-  // Without it the flushing task waits for the next 10 ms tick after every chunk.
-  if (woken == pdTRUE && xPortInIsrContext()) portYIELD_FROM_ISR();
-  return woken == pdTRUE;
+  if (woken) portYIELD_FROM_ISR();  // the SPI panel IO ignores this callback's return value
+  return false;
 }
 
 bool SpiDisplay::begin(const LcdConfig& cfg, i2c_master_bus_handle_t i2c_bus) {
   cfg_ = cfg;
-  bool ili9341 = false;
+  const bool qspi = cfg.controller == LcdController::St77916 || cfg.controller == LcdController::Sh8601 ||
+                     cfg.controller == LcdController::Spd2010;
+  const bool st77916 = cfg.controller == LcdController::St77916;
+  const bool gc9a01 = cfg.controller == LcdController::Gc9a01;
+  // The SPD2010 accepts a window only when both x edges are multiples of 4.
+  // This port always draws from x = 0 across the full width, plus gap_x.
+  if (cfg.controller == LcdController::Spd2010 && (cfg.width % 4 != 0 || cfg.gap_x % 4 != 0)) {
+    ESP_LOGE(TAG, "SPD2010 x range must start and end on a multiple of 4");
+    return false;
+  }
+  bool ili9341 = cfg.controller == LcdController::Ili9341;
   bool cores3_e = false;
   if (cfg.controller == LcdController::Box3) {
     if (!i2c_bus) return false;
@@ -49,7 +86,11 @@ bool SpiDisplay::begin(const LcdConfig& cfg, i2c_master_bus_handle_t i2c_bus) {
       ili9341 = true;
     }
   }
-  controller_name_ = ili9341 ? "ili9342" : "st7789";
+  controller_name_ = cfg.controller == LcdController::Sh8601 ? "sh8601"
+                     : cfg.controller == LcdController::Spd2010 ? "spd2010"
+                     : qspi ? "st77916" : gc9a01 ? "gc9a01"
+                     : cfg.controller == LcdController::Ili9341 ? "ili9341"
+                     : ili9341 ? "ili9342" : "st7789";
   if (cfg.controller == LcdController::CoreS3) {
     if (!i2c_bus) return false;
     i2c_device_config_t device = {};
@@ -77,46 +118,142 @@ bool SpiDisplay::begin(const LcdConfig& cfg, i2c_master_bus_handle_t i2c_bus) {
     cores3_e = version == 0x12;
     controller_name_ = cores3_e ? "ili9342e" : "ili9342c";
   }
+  frame_rows_ = cfg.height;
+#if CONFIG_HG_BOARD_ESP32_CYD
+  // Reuse the band reserved at boot; a late allocation this large would fail.
+  frame_rows_ = std::min<int>(cfg.height, kCydFrameRows);
+  fb_ = cyd_framebuffer;
+  if (!fb_ || static_cast<size_t>(cfg.width) * frame_rows_ * 2 != kCydFrameBytes) {
+    ESP_LOGE(TAG, "the reserved %d-row band does not fit the %ux%u panel", kCydFrameRows, cfg.width, cfg.height);
+    fb_ = nullptr;
+  }
+#else
   const size_t px = static_cast<size_t>(cfg.width) * cfg.height;
   fb_ = static_cast<uint16_t*>(heap_caps_malloc(px * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (!fb_) fb_ = static_cast<uint16_t*>(heap_caps_malloc(px * 2, MALLOC_CAP_8BIT));
-  bounce_rows_ = kBounceRows;
-  bounce_ = static_cast<uint16_t*>(heap_caps_malloc(static_cast<size_t>(cfg.width) * bounce_rows_ * 2, MALLOC_CAP_DMA));
+#endif
+  bounce_ = static_cast<uint16_t*>(heap_caps_malloc(static_cast<size_t>(cfg.width) * kBounceRows * 2, MALLOC_CAP_DMA));
   if (!fb_ || !bounce_) {
     ESP_LOGE(TAG, "not enough memory for a %ux%u framebuffer", cfg.width, cfg.height);
     return false;
   }
-  std::memset(fb_, 0, px * 2);
+  std::memset(fb_, 0, static_cast<size_t>(cfg.width) * frame_rows_ * 2);
   done_ = xSemaphoreCreateBinary();
+  if (!done_) {
+    ESP_LOGE(TAG, "could not create the flush-completion semaphore");
+    return false;
+  }
+  // A band takes about 2.6 ms on a 320-px panel at 40 MHz. Allow ten times the
+  // band at the configured clock, and never less than 100 ms.
+  const uint32_t band_ms = static_cast<uint32_t>(cfg.width) * kBounceRows * 16 / (std::max(1, cfg.spi_mhz) * 1000u) + 1;
+  // BandFlush counts in framebuffer rows, so the whole-panel resend it does after
+  // a timeout stays inside the buffer. On a banded panel that is one band.
+  bands_.emplace(
+      frame_rows_, kBounceRows, std::max<uint32_t>(100, 10 * band_ms),
+      [this](int y, int rows) {
+        const int w = cfg_.width, top = frame_origin_ + y;
+        std::memcpy(bounce_, fb_ + static_cast<size_t>(y) * w, static_cast<size_t>(rows) * w * 2);
+        return esp_lcd_panel_draw_bitmap(panel_, 0, top, w, top + rows, bounce_) == ESP_OK;
+      },
+      [this](uint32_t ms) { return xSemaphoreTake(done_, pdMS_TO_TICKS(ms)) == pdTRUE; });
 
   spi_bus_config_t bus = {};
   bus.mosi_io_num = cfg.mosi;
-  bus.miso_io_num = -1;
+  bus.miso_io_num = cfg.miso;
   bus.sclk_io_num = cfg.sclk;
   bus.quadwp_io_num = -1;
   bus.quadhd_io_num = -1;
-  bus.max_transfer_sz = cfg.width * bounce_rows_ * 2;
-  ESP_ERROR_CHECK(spi_bus_initialize(kHost, &bus, SPI_DMA_CH_AUTO));
+  if (qspi) {
+    bus.data1_io_num = cfg.d1;
+    bus.data2_io_num = cfg.d2;
+    bus.data3_io_num = cfg.d3;
+    bus.flags = SPICOMMON_BUSFLAG_QUAD;
+  }
+  bus.max_transfer_sz = cfg.width * kBounceRows * 2;
+  if (!esp_ok(spi_bus_initialize(kHost, &bus, SPI_DMA_CH_AUTO), TAG, "spi_bus_initialize")) return false;
 
   esp_lcd_panel_io_spi_config_t io_cfg = {};
   io_cfg.dc_gpio_num = static_cast<gpio_num_t>(cfg.dc);
   io_cfg.cs_gpio_num = static_cast<gpio_num_t>(cfg.cs);
   io_cfg.pclk_hz = static_cast<uint32_t>(cfg.spi_mhz) * 1000 * 1000;
-  io_cfg.lcd_cmd_bits = 8;
+  io_cfg.lcd_cmd_bits = qspi ? 32 : 8;
+  io_cfg.flags.quad_mode = qspi;
   io_cfg.lcd_param_bits = 8;
-  io_cfg.spi_mode = 0;
+  // Espressif's SPD2010_PANEL_IO_QSPI_CONFIG uses SPI mode 3. The other panels
+  // in this file use mode 0.
+  io_cfg.spi_mode = cfg.controller == LcdController::Spd2010 ? 3 : 0;
   io_cfg.trans_queue_depth = 4;
   io_cfg.on_color_trans_done = &SpiDisplay::on_trans_done;
   io_cfg.user_ctx = this;
-  ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(static_cast<esp_lcd_spi_bus_handle_t>(kHost), &io_cfg, &io_));
+  uint8_t panel_id[4] = {};
+  if (st77916) {
+    if (cfg.rst >= 0) {
+      // Boards without an I/O expander leave the panel reset line floating at
+      // boot; hold it deasserted or the ID read below returns zeros.
+      const gpio_num_t rst_gpio = static_cast<gpio_num_t>(cfg.rst);
+      gpio_config_t io = {};
+      io.pin_bit_mask = 1ULL << rst_gpio;
+      io.mode = GPIO_MODE_OUTPUT;
+      gpio_config(&io);
+      gpio_set_level(rst_gpio, cfg.reset_active_high ? 0 : 1);
+      vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    // As in the factory demo, read the panel ID (command 0x04) at 3 MHz. It
+    // selects one of the two vendor initialization tables below.
+    const uint32_t full_speed = io_cfg.pclk_hz;
+    io_cfg.pclk_hz = 3000000;
+    if (esp_lcd_new_panel_io_spi(static_cast<esp_lcd_spi_bus_handle_t>(kHost), &io_cfg, &io_) != ESP_OK) return false;
+    const esp_err_t read = esp_lcd_panel_io_rx_param(io_, (0x0Bu << 24) | (0x04u << 8), panel_id, sizeof(panel_id));
+    esp_lcd_panel_io_del(io_);
+    io_ = nullptr;
+    io_cfg.pclk_hz = full_speed;
+    ESP_LOGI(TAG, "ST77916 panel ID %02x %02x %02x %02x", panel_id[0], panel_id[1], panel_id[2], panel_id[3]);
+    // The ID only chooses between Waveshare's two tables; a board with its own
+    // table logs it and goes on.
+    if (cfg.st77916_panel == St77916Panel::Waveshare185 &&
+        (read != ESP_OK || panel_id[0] != 0 || panel_id[2] != 0x7f || panel_id[3] != 0x7f ||
+         (panel_id[1] != 0x7f && panel_id[1] != 0x02))) {
+      ESP_LOGE(TAG, "unknown ST77916 panel revision; refusing guessed initialization");
+      return false;
+    }
+  }
+  if (!esp_ok(esp_lcd_new_panel_io_spi(static_cast<esp_lcd_spi_bus_handle_t>(kHost), &io_cfg, &io_), TAG, "esp_lcd_new_panel_io_spi")) return false;
 
   esp_lcd_panel_dev_config_t panel_cfg = {};
   panel_cfg.reset_gpio_num = static_cast<gpio_num_t>(cfg.rst);
-  panel_cfg.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
+  panel_cfg.rgb_ele_order = cfg.bgr ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB;
   panel_cfg.bits_per_pixel = 16;
   panel_cfg.flags.reset_active_high = cfg.reset_active_high;
   ili9341_vendor_config_t vendor = {};
-  if (ili9341) {
+  st77916_vendor_config_t st_vendor = {};
+  if (qspi) {
+    const bool newer = panel_id[1] == 0x02;
+    if (cfg.controller == LcdController::Sh8601) {
+      sh8601_vendor_config_t sh_vendor = {};
+      sh_vendor.flags.use_qspi_interface = 1;
+      sh_vendor.init_cmds = kSh8601PanelInit;
+      sh_vendor.init_cmds_size = sizeof(kSh8601PanelInit) / sizeof(kSh8601PanelInit[0]);
+      panel_cfg.vendor_config = &sh_vendor;
+      if (!esp_ok(esp_lcd_new_panel_sh8601(io_, &panel_cfg, &panel_), TAG, "esp_lcd_new_panel_sh8601")) return false;
+    } else if (cfg.controller == LcdController::Spd2010) {
+      spd2010_vendor_config_t sp_vendor = {};
+      sp_vendor.flags.use_qspi_interface = 1;
+      panel_cfg.vendor_config = &sp_vendor;
+      if (!esp_ok(esp_lcd_new_panel_spd2010(io_, &panel_cfg, &panel_), TAG, "esp_lcd_new_panel_spd2010")) return false;
+    } else {
+      st_vendor.flags.use_qspi_interface = 1;
+      if (cfg.st77916_panel == St77916Panel::Vocat) {
+        st_vendor.init_cmds = kVocatPanel;
+        st_vendor.init_cmds_size = sizeof(kVocatPanel) / sizeof(kVocatPanel[0]);
+      } else {
+        st_vendor.init_cmds = newer ? kWs185PanelNew : kWs185PanelDefault;
+        st_vendor.init_cmds_size = newer ? sizeof(kWs185PanelNew) / sizeof(kWs185PanelNew[0]) :
+                                         sizeof(kWs185PanelDefault) / sizeof(kWs185PanelDefault[0]);
+      }
+      panel_cfg.vendor_config = &st_vendor;
+      if (!esp_ok(esp_lcd_new_panel_st77916(io_, &panel_cfg, &panel_), TAG, "esp_lcd_new_panel_st77916")) return false;
+    }
+  } else if (ili9341) {
     if (cfg.controller == LcdController::Box3) {
       vendor.init_cmds = kBox3PanelInit;
       vendor.init_cmds_size = sizeof(kBox3PanelInit) / sizeof(kBox3PanelInit[0]);
@@ -126,17 +263,39 @@ bool SpiDisplay::begin(const LcdConfig& cfg, i2c_master_bus_handle_t i2c_bus) {
       vendor.init_cmds_size = sizeof(kCoreS3EPanelInit) / sizeof(kCoreS3EPanelInit[0]);
       panel_cfg.vendor_config = &vendor;
     }
-    ESP_ERROR_CHECK(esp_lcd_new_panel_ili9341(io_, &panel_cfg, &panel_));
+    if (!esp_ok(esp_lcd_new_panel_ili9341(io_, &panel_cfg, &panel_), TAG, "esp_lcd_new_panel_ili9341")) return false;
+  } else if (gc9a01) {
+    if (!esp_ok(esp_lcd_new_panel_gc9a01(io_, &panel_cfg, &panel_), TAG, "esp_lcd_new_panel_gc9a01")) return false;
   } else {
-    ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_, &panel_cfg, &panel_));
+    if (!esp_ok(esp_lcd_new_panel_st7789(io_, &panel_cfg, &panel_), TAG, "esp_lcd_new_panel_st7789")) return false;
   }
-  ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_));
-  ESP_ERROR_CHECK(esp_lcd_panel_init(panel_));
-  ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_, cfg.invert));
-  ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_, cfg.swap_xy));
-  ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_, cfg.mirror_x, cfg.mirror_y));
-  ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_, cfg.gap_x, cfg.gap_y));
-  ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
+  if (!esp_ok(esp_lcd_panel_reset(panel_), TAG, "esp_lcd_panel_reset")) return false;
+  if (!esp_ok(esp_lcd_panel_init(panel_), TAG, "esp_lcd_panel_init")) return false;
+  if (!esp_ok(esp_lcd_panel_invert_color(panel_, cfg.invert), TAG, "esp_lcd_panel_invert_color")) return false;
+  if (cfg.controller != LcdController::Sh8601) {
+    // The SH8601 component rejects even no-op swap_xy/mirror calls (it drives
+    // orientation through its own init sequence), so skip them for that panel.
+    // esp_lcd_spd2010 returns ESP_ERR_NOT_SUPPORTED for every swap_xy call,
+    // including a request to leave the axes alone. Mirror still works.
+    if (cfg.controller == LcdController::Spd2010) {
+      if (cfg.swap_xy) {
+        ESP_LOGE(TAG, "SPD2010 does not support swap_xy");
+        return false;
+      }
+    } else if (!esp_ok(esp_lcd_panel_swap_xy(panel_, cfg.swap_xy), TAG, "esp_lcd_panel_swap_xy")) {
+      return false;
+    }
+    if (!esp_ok(esp_lcd_panel_mirror(panel_, cfg.mirror_x, cfg.mirror_y), TAG, "esp_lcd_panel_mirror")) return false;
+  }
+  if (!esp_ok(esp_lcd_panel_set_gap(panel_, cfg.gap_x, cfg.gap_y), TAG, "esp_lcd_panel_set_gap")) return false;
+  if (!esp_ok(esp_lcd_panel_disp_on_off(panel_, true), TAG, "esp_lcd_panel_disp_on_off")) return false;
+  if (gc9a01 && cfg.gc9a01_panel == Gc9a01Panel::SpotpearBox128) {
+    // The driver's default table leaves the inter-register commands enabled, so
+    // these land without another 0xFE/0xEF unlock.
+    for (const auto& c : kSpotpearBox128Panel) {
+      if (!esp_ok(esp_lcd_panel_io_tx_param(io_, c.cmd, c.data, c.data_bytes), TAG, "gc9a01 panel tuning")) return false;
+    }
+  }
 
   if (cfg.backlight >= 0) {
     ledc_timer_config_t timer = {};
@@ -145,14 +304,15 @@ bool SpiDisplay::begin(const LcdConfig& cfg, i2c_master_bus_handle_t i2c_bus) {
     timer.timer_num = LEDC_TIMER_0;
     timer.freq_hz = 5000;
     timer.clk_cfg = LEDC_AUTO_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&timer));
+    if (!esp_ok(ledc_timer_config(&timer), TAG, "ledc_timer_config")) return false;
     ledc_channel_config_t ch = {};
     ch.gpio_num = cfg.backlight;
     ch.speed_mode = LEDC_LOW_SPEED_MODE;
     ch.channel = kBlChannel;
     ch.timer_sel = LEDC_TIMER_0;
     ch.duty = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&ch));
+    ch.flags.output_invert = cfg.backlight_invert;
+    if (!esp_ok(ledc_channel_config(&ch), TAG, "ledc_channel_config")) return false;
     set_backlight(100);
   }
   if (board_backlight) board_backlight(100);
@@ -166,18 +326,28 @@ hg::DisplayInfo SpiDisplay::info() const {
   di.height = cfg_.height;
   di.swap_bytes = true;  // the panel wants big-endian RGB565
   di.has_backlight = cfg_.backlight >= 0 || static_cast<bool>(board_backlight);
+  di.round = cfg_.round;
+  di.font_scale = cfg_.font_scale;
   return di;
 }
 
 void SpiDisplay::flush(uint16_t y0, uint16_t y1) {
-  const int w = cfg_.width;
-  for (int y = y0; y < y1; y += bounce_rows_) {
-    int rows = std::min<int>(bounce_rows_, y1 - y);
-    std::memcpy(bounce_, fb_ + static_cast<size_t>(y) * w, static_cast<size_t>(rows) * w * 2);
-    esp_lcd_panel_draw_bitmap(panel_, 0, y, w, y + rows, bounce_);
-    // The bounce buffer is reused: wait until the DMA transfer has finished.
-    xSemaphoreTake(done_, pdMS_TO_TICKS(100));
+  if (!bands_) return;
+  // Flush takes panel rows; the band flush counts from the framebuffer's first row.
+  const hg::BandFlush::Event event =
+      bands_->flush(static_cast<int>(y0) - frame_origin_, static_cast<int>(y1) - frame_origin_);
+  if (frame_rows_ < cfg_.height) {
+    // A banded framebuffer holds no rows to resend, so the next frame repaints
+    // the whole screen rather than leave a band behind on the panel. While the
+    // late transfer is pending every flush is dropped, that repaint included, so
+    // keep asking until flushes reach the panel again. The resend on resuming
+    // pushes the whole band, and only the rows just drawn in it are current, so
+    // that asks for one more repaint as well.
+    if (event == hg::BandFlush::Event::TimedOut) paused_ = true;
+    if (event == hg::BandFlush::Event::Resumed) paused_ = false;
+    if (paused_ || event == hg::BandFlush::Event::Resumed) repaint_.store(true, std::memory_order_relaxed);
   }
+  report_band_event(TAG, event);
 }
 
 void SpiDisplay::set_backlight(uint8_t percent) {

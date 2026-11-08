@@ -54,6 +54,8 @@ To use a phone hotspot:
 
 If your phone cannot keep its hotspot active while joined to the setup network, use a second phone or computer for setup, or configure the gadget through USB.
 
+To keep Hermes off the internet entirely, the gadget can instead join your tailnet itself; see [Reach Hermes over your tailnet](tailnet.md). That needs firmware you build with the feature turned on.
+
 The board stores one Wi-Fi network. A successful setup replaces its Wi-Fi credentials; a failed connection check restores the previous settings. Re-enter your home Wi-Fi credentials when you return. The same Funnel address works on both networks, and changing Wi-Fi preserves the gadget's identity and pairing with the same Hermes host.
 
 ## Verify the connection
@@ -67,5 +69,12 @@ The plugin serves a WebSocket endpoint, not a website. Opening the bare Funnel U
 - Funnel terminates TLS on the Hermes computer and forwards traffic to the local service. The endpoint is reachable from the public internet, even by devices outside your tailnet.
 - Device pairing and the protocol's per-device authentication still apply. If you configured an access token, the gadget also needs that token. See [authentication](protocol.md#handshake).
 - For connection errors, check `tailscale funnel status`, the local port, the `wss://` scheme, and the complete path. Confirm that Hermes is running.
+- The gadget checks the server's certificate against the public root certificates built into its firmware. Funnel's certificates come from Let's Encrypt, which the gadget trusts. With another tunnel or reverse proxy, the certificate authority matters: if the serial log shows `No matching trusted root certificate found`, list the chain the server sends and check which root it ends at:
+
+  ```bash
+  openssl s_client -connect your-host.example:443 -servername your-host.example -showcerts
+  ```
+
+  Firmware 0.2.0 failed on chains whose last certificate is a cross-signature by a root that is no longer bundled, such as Cloudflare tunnels (GTS Root R4 cross-signed by GlobalSign Root CA). Newer firmware accepts them.
 - A successful phone setup check confirms Wi-Fi connectivity. **Ready** and a reply confirm the connection to Hermes.
 - The gadget cannot complete a captive portal login. Use a network that permits its connection, such as a phone hotspot.

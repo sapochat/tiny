@@ -2,6 +2,10 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <string_view>
 
 namespace hg::mascot {
 
@@ -36,5 +40,44 @@ struct Anchors {
   int16_t mouth_y0, mouth_y1;  // rows that change when talking
 };
 const Anchors& anchors();
+
+// The rows of a colour face that its blink or talk frame changes: `rows` rows of px pixels from row `y`,
+// drawn over the idle picture's. rows 0: the face has no such frame and stays still.
+struct Band {
+  const uint16_t* rgb565 = nullptr;
+  uint16_t y = 0, rows = 0;
+};
+
+// A face Hermes sent for the profile that answers (docs/protocol.md#faces). A one-colour face has the
+// mascot's sizes and frames; a colour face is a px*px picture, with the bands its blink and talk change.
+// It replaces the mascot while the app holds one.
+struct Face {
+  struct Free {
+    void operator()(void* p) const { std::free(p); }
+  };
+  std::string hash;
+  std::unique_ptr<uint8_t, Free> bits;  // one colour: every size, smallest first, each as idle, blink, talk
+  const uint16_t* rgb565 = nullptr;     // colour: px*px, row-major, 0x0000 transparent; the app owns it
+  uint16_t px = 0;
+  Band blink, talk;  // colour only
+  Anchors anchors;
+
+  // The band `frame` lays over a colour face's picture; no rows for the idle frame.
+  const Band& band(Frame frame) const {
+    static const Band none;
+    return frame == Frame::Blink ? blink : frame == Frame::Talk ? talk : none;
+  }
+};
+// The face message's `bits`: base64 of the bitmaps, then of the anchors as ten little-endian int16
+// in Anchors' field order. False, before allocating anything, when the length is not exactly that;
+// false when there is no memory for it, and when an anchor is outside 0..1000 or a row range is
+// upside down.
+bool parse(std::string_view base64, Face& out);
+// Anchors from ten values in Anchors' field order; false under the same rules as parse().
+bool make_anchors(const int64_t (&v)[10], Anchors& out);
+// pick() and anchors() for `face`, or for the mascot when it is null. A colour face picks the
+// mascot's size and bits: Ui draws its pixels instead.
+Bitmap pick(int max_size, Frame frame, const Face* face);
+const Anchors& anchors(const Face* face);
 
 }  // namespace hg::mascot

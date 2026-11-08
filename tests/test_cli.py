@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import argparse
 import json
 
@@ -79,9 +80,14 @@ def test_diag_saves_a_report_and_prints_a_summary(console, tmp_path, capsys):
     assert "firmware 0.1.0 on esp32s3-touch-amoled-1.75 (hg-0123456789abcdef)" in shown
     assert "reset reason: brownout, up 42 s" in shown
     assert "parts: display co5300, microphone es7210, speaker es8311, touch yes, key no" in shown
-    assert "I2C: 0x18 0x20 0x34 0x40 0x5a" in shown
+    assert "I2C: 0x18, 0x20, 0x34, 0x40, 0x5a" in shown
     assert "Wi-Fi: joined Home (-61 dBm), 192.168.1.42" in shown
     assert "Hermes: connecting, not paired, last connection ended: connection error" in shown
+
+
+def test_diag_summary_keeps_scan_notes_apart_from_addresses():
+    report = dict(REPORT, i2c=["0x18", "timeout at 0x19", "0x34", "bus stuck at 0x41"])
+    assert "I2C: 0x18, timeout at 0x19, 0x34, bus stuck at 0x41" in cli._diag_summary(report)
 
 
 def test_diag_explains_a_console_without_it(console, capsys):
@@ -129,3 +135,101 @@ def test_provision_refuses_what_the_console_would_drop(monkeypatch, capsys):
     assert _provision(monkeypatch, board, wifi_ssid="Café", wifi_pass="secret") == 2
     assert board.settings == {}
     assert "wifi_ssid: the board's console only takes printable ASCII" in capsys.readouterr().err
+
+
+def test_script_power_readings_use_native_status(devserver, tmp_path, capsys):
+    from hermes_gadget.sim import Simulator
+
+    _, _, url = devserver()
+    sim = Simulator(url=url, board="sim-240x240", state_dir=tmp_path / "device")
+    script = tmp_path / "power.script"
+    script.write_text(
+        'wait ready 20\n'
+        'console set battery_estimate liion\n'
+        'console set battery_display percentage\n'
+        'power {"battery_mv":3750,"charging":false}\n'
+        'sleep 5.2\n'
+        'status\n'
+        'power {}\n'
+        'sleep 5.2\n'
+        'status\n'
+        'power null\n'
+        'sleep 5.2\n'
+        'status\n',
+        encoding="utf-8",
+    )
+
+    assert cli.run_script(sim, script) == 0
+    captured = capsys.readouterr()
+    reports = [ast.literal_eval(line) for line in captured.out.splitlines() if line.startswith("{")]
+    assert [report["power"] for report in reports] == [
+        {"available": True, "battery_mv": 3750, "charging": False},
+        {"available": True},
+        {"available": False},
+    ]
+    assert sim.power_status is None
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize("reading", [
+    '{"battery_mv":',
+    '[]',
+    '42',
+    '{"battery_present":1}',
+    '{"charging":"yes"}',
+    '{"external_power":0}',
+    '{"battery_mv":true}',
+    '{"battery_mv":3750.5}',
+    '{"battery_mv":-1}',
+    '{"battery_mv":65536}',
+    '{"battery_percent":false}',
+    '{"battery_percent":-1}',
+    '{"battery_percent":101}',
+    '{"battery_pct":50}',
+])
+def test_script_invalid_power_preserves_native_reading(
+    reading, devserver, tmp_path, capsys, monkeypatch,
+):
+    from hermes_gadget.sim import Simulator
+
+    _, _, url = devserver()
+    sim = Simulator(url=url, board="sim-240x240", state_dir=tmp_path / "device")
+    previous = {"battery_present": True, "battery_mv": 3750, "battery_percent": 0,
+                "charging": False, "external_power": False}
+    script = tmp_path / "invalid-power.script"
+    script.write_text(
+        f"power {json.dumps(previous)}\npower {reading}\n", encoding="utf-8",
+    )
+    snapshot = {}
+    close = sim.close
+
+    def capture_before_close():
+        # Observe the actual HAL after its normal poll, before run_script destroys it.
+        try:
+            sim.run_for(5.2)
+            snapshot.update(sim.status())
+        finally:
+            close()
+
+    monkeypatch.setattr(sim, "close", capture_before_close)
+    assert cli.run_script(sim, script) == 1
+    captured = capsys.readouterr()
+    assert f"{script}:2: invalid power reading:" in captured.err
+    assert "Traceback" not in captured.err
+    assert sim.power_status == previous
+    assert snapshot["power"] == {"available": True, **previous}
+
+
+def test_live_audio_without_the_extra_stops_instead_of_running_silent(monkeypatch, capsys):
+    """--live-audio used to fall back to silence, so a recording captured nothing."""
+    monkeypatch.setattr("hermes_gadget.sim.audio_io.sounddevice_available", lambda: False)
+    args = argparse.Namespace(live_audio=True, headless=True, script=None, url="", board="sim-240x240",
+                              name="Test Gadget", token="", state_dir=None)
+
+    assert cli.cmd_sim(args) == 2
+    assert "audio extra" in capsys.readouterr().err
+
+
+def test_diag_summary_names_why_the_device_is_not_paired():
+    report = dict(REPORT, app=dict(REPORT["app"], phase="online", unpaired_reason="routed"))
+    assert "Hermes: online, not paired (routed), last connection ended: connection error" in cli._diag_summary(report)

@@ -15,11 +15,10 @@ your network and SSH access there, then boot the Pi with a suitable power supply
 The Linux client uses the OS network settings.
 
 Download the `hermes-gadget-VERSION-linux-arm64.tar.gz` archive and its `.sha256`
-file from a [release](https://github.com/Adolanium/hermes-gadget-sdk/releases) that
-includes the Pi package. Until the first such release is tagged, the same files
-are available in the `linux-arm64` artifact of a successful `main`
-[CI run](https://github.com/Adolanium/hermes-gadget-sdk/actions/workflows/ci.yml).
-Extract the artifact ZIP first if downloading from CI.
+file from a [release](https://github.com/Adolanium/hermes-gadget-sdk/releases).
+To try unreleased changes, the same files are in the `linux-arm64` artifact of a
+successful `main` [CI run](https://github.com/Adolanium/hermes-gadget-sdk/actions/workflows/ci.yml);
+extract the artifact ZIP first.
 
 In a directory containing just the chosen archive and checksum file:
 
@@ -35,8 +34,11 @@ sudoedit /etc/hermes-gadget/config.json
 
 Set `server` to your Hermes host, such as `ws://192.168.1.20:8765/gadget`, and
 choose a `name`. Add `token` if your gateway requires it. The installer downloads
-Python dependencies into a private environment, creates the `hermes-gadget`
-service account, and installs the native core. No compiler is needed on the Pi.
+the release's pinned Python dependencies into a private environment, checking
+each file against the hash recorded in the package's `requirements.txt`, so the
+Pi runs exactly what CI tested. It creates the `hermes-gadget` service account
+and installs the native core. No compiler is needed on the Pi; dependencies are
+installed as wheels only.
 Configuration and device state stay outside the installed release directory.
 
 ```bash
@@ -44,7 +46,7 @@ sudo systemctl enable --now hermes-gadget
 sudo hermes-gadget-device status
 ```
 
-Approve the pairing code on the Hermes host with `hermes gadget approve CODE`.
+Approve the pairing code on the Hermes host with `hermes gadget pair`.
 Then use the installed device:
 
 ```bash
@@ -54,8 +56,11 @@ sudo hermes-gadget-device messages
 
 `hermes-gadget-device` runs controls as the service account and selects the
 correct state directory. Use it in place of `hermes-gadget linux` in the examples
-below when working with a package installation. To diagnose startup, use
-`sudo journalctl -u hermes-gadget -n 50`.
+below when working with a package installation; its own `rollback` command is
+described under [Update or roll back](#update-or-roll-back). To diagnose startup,
+use `sudo journalctl -u hermes-gadget -n 50`. A release that keeps crashing at
+startup is retried five times in five minutes, then the service stays stopped
+until `sudo systemctl restart hermes-gadget`.
 
 ## Build from source
 
@@ -99,8 +104,8 @@ In another terminal with the environment activated:
 hermes-gadget linux status
 ```
 
-Approve the reported pairing code with `hermes gadget approve CODE` on your
-Hermes host. Then send a message and read the response:
+Approve the reported pairing code with `hermes gadget pair` on your Hermes
+host. Then send a message and read the response:
 
 ```bash
 hermes-gadget linux send "Hello from the kitchen"
@@ -205,6 +210,8 @@ to 4 in that case. Verify the header controller with `gpioinfo` before wiring.
 See [GPIO Zero's pin documentation](https://gpiozero.readthedocs.io/en/stable/api_pins.html)
 for the lgpio backend and permissions.
 
+To expose an existing lamp and temperature sensor instead of wired pins, use the [Home Assistant and MQTT examples](home-automation.md). They register named actions before pairing and perform network work outside the device loop.
+
 ## Add a screen
 
 Add `display` to the configuration to show the firmware's device screen:
@@ -228,7 +235,7 @@ counterclockwise. Use the same orientation as your touch input.
 On a Linux desktop, install `.[display]`, set `fullscreen` to `false` for a
 window, and start the client from your desktop terminal. Space is TALK, Escape
 is Cancel, and the arrow keys scroll. Touch or hold the screen to interact;
-swipe down from Home for quick controls (see [touch navigation](using-gadget.md#touch-navigation)). Closing the window stops the client. Omitting `display`
+swipe down to cancel. Closing the window stops the client. Omitting `display`
 keeps the service headless.
 
 On Raspberry Pi OS Lite, the optional screen needs an SDL build with KMS/DRM
@@ -253,13 +260,12 @@ start the client in the logged-in user's graphical session with its own state
 directory. Never run it alongside the system service with the same identity.
 
 The screen uses the existing firmware renderer for pairing, conversations,
-cards, prompts and images. Audio and GPIO still use the configured real
+cards, prompts and images. The resting clock, when turned on with `set clock`,
+shows the computer's local time. Audio and GPIO still use the configured real
 devices. Software rendering and touch mapping pass automated tests; monitor,
 touch-controller and direct-console behavior still need physical verification.
 
 ## State and recovery
-
-To expose an existing lamp and temperature sensor through this Linux client, use the [Home Assistant and MQTT examples](home-automation.md). They register named actions before pairing and perform network work outside the device loop.
 
 The default state directory is `$XDG_STATE_HOME/hermes-gadget`, or
 `~/.local/state/hermes-gadget`. To use another directory, put
@@ -293,17 +299,26 @@ reports no battery or ESP32 update slot.
 
 For a package installation, download and verify the new archive, extract it,
 then run its `install.sh` with sudo. The installer validates the new native
-library before stopping the current service. It switches the `current` link and
-restarts a previously running service. Reinstalling the same package is safe.
-The installer preserves `/etc/hermes-gadget/config.json` and
-`/var/lib/hermes-gadget/device.json`, including the pairing identity.
+library before stopping the current service, switches the `current` link, and
+starts a previously running service on the new release. The new release must
+then answer `hermes-gadget-device status` within 30 seconds; if it does not, the
+installer switches `current` back to the previous release, restarts the service
+on it, and exits with an error that points at the journal. Reinstalling the
+same package is safe. The installer preserves `/etc/hermes-gadget/config.json`
+and `/var/lib/hermes-gadget/device.json`, including the pairing identity.
 
 Back up those two files securely before updating. Installed releases remain in
-`/opt/hermes-gadget/releases`; the `previous` link identifies the prior release.
-To roll back, rerun the installer from the previous release's archive. Check
-`sudo hermes-gadget-device status` after either operation. An interrupted
-dependency installation leaves a named incomplete directory; move that specific
-directory aside before retrying, as the installer instructs.
+`/opt/hermes-gadget/releases`; the newest three are kept, plus whatever
+`current` and `previous` point at. To go back to the previous release by hand:
+
+```bash
+sudo hermes-gadget-device rollback
+```
+
+It swaps `current` and `previous` and restarts a running service, so a second
+`rollback` returns to the newer release. Check `sudo hermes-gadget-device status`
+after either operation. A dependency installation that fails is removed again,
+so the installer can simply be rerun once the cause is fixed.
 
 For a source checkout, stop the process, update the checkout, rebuild the native
 library, and restart with the same state directory.

@@ -1,9 +1,10 @@
 name: gadget
 label: Hermes Gadget
 kind: platform
-version: 0.2.0
+version: 0.5.0
 manifest_version: 2
 api_version: 1
+requires_hermes: ">=0.21.6"  # first Hermes release with the commit CI tests against (plugin/compat.py)
 description: >
   Connect small hardware devices (ESP32 boards with a screen, microphone and
   speaker) to Hermes. Devices hold a WebSocket to the gateway: voice requests
@@ -17,6 +18,15 @@ provides_tools:
   - gadget_devices
   - gadget_display
   - gadget_action
+provides_hooks:  # session state for the device's dashboard (dashboard.SessionBoard.HOOKS)
+  - on_session_start
+  - pre_llm_call
+  - on_session_end
+  - pre_approval_request
+  - post_approval_response
+  - on_session_finalize
+  - on_session_reset
+  - pre_transcription  # the language gadget speech is transcribed in (stt.py, stt_language)
 optional_env:
   - name: GADGET_ACCESS_TOKEN
     description: "Optional shared token every gadget must present (configure the same value on the device)"

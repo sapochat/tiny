@@ -1,8 +1,10 @@
 # Faces
 
 The device draws a face on its screen: three 1-bit frames, idle, blink and talk, at 64, 96,
-144 and 192 px. **A face is built into the firmware**, so the shipped one is the Hermes Agent
-mascot, and changing it means building your own firmware image. Once built, `hermes gadget
+144 and 192 px. Each Hermes profile can have a face of its own, which Hermes sends to the device
+with no firmware build; see [A face for each Hermes profile](#a-face-for-each-hermes-profile).
+Without one, the device shows **the face built into the firmware**: the Hermes Agent mascot.
+Changing that built-in face means building your own firmware image. Once built, `hermes gadget
 update` can install that image over the air. Release firmware, whether from
 `hermes gadget update --latest` or the browser installer, carries the default face, so a
 custom face comes back by rebuilding it.
@@ -88,6 +90,133 @@ and its device key.
 **Updates bring back the default face.** `hermes gadget update --latest` and the browser
 installer install release firmware, which carries the shipped mascot. To keep your face on a
 newer release, build that release with your `mascot_data.cpp` and install the build as above.
+
+## A face for each Hermes profile
+
+Write the face into the profile's folder instead of the firmware:
+
+```
+hermes-gadget face my-face.png --mask bright --out ~/.hermes/profiles/ops/gadget-face.bin
+```
+
+A `.bin` name makes the command write a face file. The default profile's folder is the Hermes
+home itself (`~/.hermes/gadget-face.bin`). The Hermes plugin sends the face of the profile that
+answers a device when the device connects and when it switches profile, so the face changes with
+the profile, and a firmware update keeps it. Devices whose firmware predates faces keep the
+mascot, and so do boards without PSRAM, which have no room for a second face.
+
+A profile without a face file shows its Hermes avatar (`assets/avatar.png`, `.jpg` or `.webp` in
+the profile's folder), made into a still face: the light parts of a picture on a dark background,
+or the dark parts of one on a light background, cut at the picture's own average brightness;
+transparency counts as a dark background. A drawing in one colour on transparency has no parts on
+either side of that cut, so its visible pixels are the shape instead. One colour means its fully
+opaque pixels differ by at most 16 brightness levels, so shades that close stay one whole body.
+
+On a board with PSRAM, the avatar shows in colour instead, as a still picture at the largest size the
+Ready screen draws the face at (at most 192 px on today's screens). Where a screen has less room, as Ready
+has while the device offers profiles to switch between, the device scales the picture down by dropping
+rows and columns, which looks rougher than the picture itself. A picture without transparency is cropped to a
+square from its middle. A picture with transparency is shown whole, and the screen's background shows
+through it: its pixels more than half transparent are left out, so its edge is hard, and its softened
+edge pixels are laid on black, which can leave a dark rim a pixel wide where the background is not
+black: an LCD's dark blue-grey, or the timer alarm's green flash.
+The listening waves and the thinking dots draw over the colour face where they would on a one-colour face
+made from the same outline. On the resting clock it moves a few pixels each minute and dims with the clock,
+like the mascot. Firmware from before colour faces, and boards without PSRAM, keep the one-colour face. A
+face file still wins over the avatar, in one colour. Colour faces need the plugin and firmware from the
+same release: an older plugin sends colour firmware no face at all, so it shows the mascot.
+
+A colour face blinks and talks when the avatar has a blink and a talk picture next to it:
+`assets/avatar-blink.png`, the avatar with its eyes closed, and `assets/avatar-talk.png`, with its mouth
+open (`.jpg` or `.webp` too, each found on its own). Draw each from the avatar with only the eyes or the
+mouth changed, and save it the way the avatar is saved: the plugin fits it like the avatar and sends only
+the rows where it differs from the avatar, by more than 16 levels in a colour or in whether it is
+transparent. Compression noise, as in a JPEG frame next to a PNG avatar, can widen those rows. The two
+frames share half the face's rows (72 at 144 px, 96 at 192): the rows from the first to the last that a
+frame changes count, whatever lies between them. A frame that needs more, two that need more together, or
+a file that cannot be read or is not a picture leaves the whole face still, and the log says so once for
+each file, for example:
+`/home/me/.hermes/assets/avatar-blink.png differs from avatar.png in 131 of 144 rows, more than the 72 the
+device has room for; draw it from the same picture with only the eyes changed`. A face with only one of the
+pictures keeps the other frame still. The colour face blinks and talks at the mascot's pace: a
+200 ms blink about every 4.5 s, and while it speaks the mouth opens and shuts every 200 ms. It stays still
+on the resting clock and the alarm. A board with room for the picture but not for the frames keeps a still
+colour face.
+
+Some drawings on transparency come out poorly in one colour; for those, make a face file:
+
+- A dark drawing with light eyes and mouth keeps only the eyes and mouth.
+- A drawing in two shades more than 16 levels apart keeps only the lighter shade.
+- A flat icon whose opaque pixels still vary by more than 16 levels, such as a yellow icon that
+  was antialiased by scaling it down, can come out blank.
+- Eyes or a mouth drawn semi-transparent on a one-colour body don't count as parts, so they are
+  filled in. Draw them fully opaque.
+
+A still face does not blink or move its mouth; the waves and dots still show. For a face that
+blinks and talks, add the blink and talk pictures on a colour board, or make a face file. Converting
+an avatar needs Pillow on the Hermes host; without it, the plugin uses face files only and says so
+once in the log.
+
+Which profile's face shows depends on how the device reaches that profile:
+
+- **The default profile:** once the device is paired, as for everything else.
+- **A profile the device switched to:** once the default profile trusts the device, the same gate
+  switching itself uses. The face shows while the device still displays that profile's
+  `hermes -p ops pairing approve gadget <code>` command, so you can see whom you picked. Revoking the
+  device in the default profile brings the mascot back.
+- **A profile a gadget route sends the device to:** once that profile accepts the device (its own
+  pairing approval or the gateway's allowlist). The face follows within a few seconds of the approval,
+  and the mascot comes back once that profile no longer accepts the device.
+
+A profile with neither a face file nor an avatar shows the mascot. To show the mascot for every
+profile, turn faces off in the default profile's `config.yaml`:
+
+```yaml
+platforms:
+  gadget:
+    extra:
+      profile_faces: false
+```
+
+The device keeps the face in memory, so it shows the mascot after a restart until it reconnects.
+An unchanged face stays through reconnects and gateway restarts. When you switch profiles, or a
+gadget route sends the device to another profile, it shows the mascot until the new profile's face
+arrives.
+
+A face is known by the files it comes from, not by the picture it makes. Any change to one of them,
+even one that draws the same face (a metadata edit in the avatar, or the avatar replaced by a face
+file made from it), sends the face once more. A device that reconnects after such a change shows
+the mascot for a moment, until the face arrives.
+
+A connected device follows those files without a reconnect. Every 2 seconds the plugin compares
+the size and modification time of the profile's face file, avatars, and blink and talk pictures with
+what its last lookup saw. When they have changed and then stay the same on two checks in a row, the
+plugin looks the face up again; if the files change again before or while it reads them, the device
+keeps its face and the files have to settle once more. The new face arrives about 2 to 4 seconds after
+the save.
+A one-colour face replaces the old one directly, with no mascot in between; for a colour face the
+mascot shows while its pixels arrive. When no source is left, the device gets the mascot. Two
+unchanged checks only debounce a write: a writer that pauses longer than that can be read before it
+has finished. A face with the hash the device already holds is not sent, so touching
+a file or saving the same picture again changes nothing. A file replaced by one of the same size
+and modification time, as a copy that keeps its timestamp can be, goes unnoticed until the device
+reconnects or switches profile.
+
+### Thumbnails in the profile grid
+
+On a touchscreen board with PSRAM, the [profile grid](using-gadget.md#device-settings-and-hardware-checks)
+shows each offered profile with a small picture of its face instead of its initial: the idle
+picture of its `gadget-face.bin`, in the colour the device draws one-colour faces in, or else its
+Hermes avatar in colour. A profile with neither keeps its initial, and so does every profile on a
+board without PSRAM. The current profile shows the face the device holds for it.
+
+The thumbnails follow the files the same way: every 2 seconds the plugin compares each offered
+profile's face file and avatars with what it last read, and reads them again once they have
+changed and then stayed the same on two checks in a row. Only the thumbnail that changed is sent;
+the device keeps the others, and keeps them all through a reconnect, so nothing unchanged is sent
+again. Removing a profile's face file and avatar brings its initial back. A picture that cannot be read keeps what
+the device shows, and is tried again only once the files change. A profile parked or taken off the offer
+since the device connected is not looked at again.
 
 ## Placing the eye and the mouth
 
@@ -191,7 +320,7 @@ exactly, so there is nothing to keep in sync.
 The frames are 1-bit bitmaps: row major, most significant bit first, rows padded to a whole
 byte, a set bit meaning ink. Four sizes exist so the UI can pick the largest one that fits the
 space it has, and three frames exist so the face can blink and talk. Between them they take
-about 27 KB of flash (none on the 466px round companion boards, which draw the expression video and build without them). See [architecture.md](architecture.md) for where they are drawn.
+about 27 KB of flash. See [architecture.md](architecture.md) for where they are drawn.
 
 The blink and talk frames are drawn on top of the idle frame: a blink covers each eye and cuts
 a closed lid into it, and a talking mouth is a hole cut into the ink. Both come from the

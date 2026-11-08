@@ -81,15 +81,6 @@ class SimulatorWindow:
         self.sim.peripherals.changed = self._refresh_peripherals
         self._refresh_peripherals()
 
-    @staticmethod
-    def _detach(sim: Simulator):
-        # A closed simulator stays in its own reference cycle with the native device. Drop the
-        # window's callbacks so the window's Tk objects are freed on this thread, not by a
-        # garbage collection on a network thread, where Tk waits for a main loop and fails.
-        sim.on_log = None
-        sim.on_message = None
-        sim.peripherals.changed = lambda: None
-
     def _build(self):
         self._history_revision = -1
         b = self.sim.board
@@ -229,9 +220,14 @@ class SimulatorWindow:
         self.net_var = tk.BooleanVar(value=self.sim.network_up)
         tk.Checkbutton(row, text="Wi-Fi", variable=self.net_var, selectcolor=BG, activebackground=PANEL,
                        command=lambda: self.sim.set_network(self.net_var.get())).pack(side="right")
+        if self.sim.board.motion:
+            self.face_down_var = tk.BooleanVar(value=self.sim.face_down)
+            tk.Checkbutton(row, text="Face down", variable=self.face_down_var, selectcolor=BG,
+                           activebackground=PANEL,
+                           command=lambda: self.sim.set_face_down(self.face_down_var.get())).pack(side="right")
         sensors = tk.Frame(device, bg=PANEL)
         sensors.pack(fill="x")
-        for key, label, low, high, value in [("battery_pct", "Battery %", 0, 100, self.sim.peripherals.battery),
+        for key, label, low, high, value in [("battery_pct", "Telemetry battery %", 0, 100, self.sim.peripherals.battery),
                                             ("temperature_c", "Temperature °C", -10, 45, self.sim.peripherals.temperature_c)]:
             scale = tk.Scale(sensors, from_=low, to=high, resolution=0.5, orient="horizontal", label=label,
                              bg=PANEL, fg=INK, troughcolor=BG, highlightthickness=0, length=170,
@@ -240,6 +236,40 @@ class SimulatorWindow:
             scale.pack(side="left", fill="x", expand=True)
         self._action(device, "Send button.long_press event",
                      lambda: self.sim.device.emit_event("button.long_press", {"button": "aux"}, False)).pack(anchor="w", pady=5)
+        power = tk.LabelFrame(device, text="Power (simulated)", bg=PANEL, fg=INK, padx=6, pady=4)
+        power.pack(fill="x", pady=(4, 0))
+        power.columnconfigure(0, weight=1, uniform="power")
+        power.columnconfigure(1, weight=1, uniform="power")
+        self.power_available_var = tk.BooleanVar(value=False)
+        self.power_available = tk.Checkbutton(power, text="Read available", variable=self.power_available_var,
+                                             selectcolor=BG, activebackground=PANEL)
+        self.power_available.grid(row=0, column=0, columnspan=2, sticky="w")
+        self.power_entries = {}
+        self.power_choices = {}
+        for index, (key, label) in enumerate((
+            ("battery_mv", "Battery mV"), ("battery_percent", "Battery %"),
+            ("battery_present", "Battery present"), ("charging", "Charging"),
+            ("external_power", "External power"),
+        )):
+            field = tk.Frame(power, bg=PANEL)
+            field.grid(row=1 + index // 2, column=index % 2, sticky="ew", padx=3, pady=2)
+            self._label(field, label, font=("Segoe UI", 8)).pack(anchor="w")
+            if key in ("battery_mv", "battery_percent"):
+                widget = self._entry(field)
+                widget.configure(width=12)
+                self.power_entries[key] = widget
+            else:
+                widget = ttk.Combobox(field, values=("Unknown", "Yes", "No"), state="readonly", width=10)
+                widget.set("Unknown")
+                self.power_choices[key] = widget
+            widget.pack(fill="x")
+        self.power_apply = self._action(power, "Apply power reading", self._apply_power)
+        self.power_apply.configure(padx=6, pady=4)
+        self.power_apply.grid(row=3, column=1, sticky="ew", padx=3, pady=(14, 2))
+        self.power_result_var = tk.StringVar()
+        self.power_result = self._label(power, textvariable=self.power_result_var, anchor="w", justify="left",
+                                        wraplength=310, font=("Segoe UI", 8))
+        self.power_result.grid(row=4, column=0, columnspan=2, sticky="ew")
         logs = tk.Frame(self.developer, bg=PANEL)
         logs.grid(row=1, column=0, sticky="nsew")
         self._label(logs, "Serial console · Enter sends a command", font=("Segoe UI", 9)).pack(anchor="w")
@@ -247,8 +277,26 @@ class SimulatorWindow:
         self.console_entry.pack(fill="x", ipady=4, pady=5)
         self.console_entry.insert(0, "help")
         self.console_entry.bind("<Return>", lambda e: self._console())
-        self.log = tk.Text(logs, height=7, width=40, bg="#0b1119", fg=MUTED, font=("Consolas", 9), wrap="word", relief="flat", state="disabled")
+        self.log = tk.Text(logs, height=3, width=40, bg="#0b1119", fg=MUTED, font=("Consolas", 9), wrap="word", relief="flat", state="disabled")
         self.log.pack(fill="both", expand=True)
+
+    def _apply_power(self):
+        try:
+            status = None
+            if self.power_available_var.get():
+                status = {}
+                for key, entry in self.power_entries.items():
+                    text = entry.get().strip()
+                    if text and (not text.isascii() or not text.isdecimal()):
+                        raise ValueError(f"{key} must be an integer or blank")
+                    status[key] = int(text) if text else None
+                for key, choice in self.power_choices.items():
+                    status[key] = {"Unknown": None, "Yes": True, "No": False}[choice.get()]
+            self.sim.set_power(status)
+        except ValueError as exc:
+            self.power_result_var.set(str(exc))
+        else:
+            self.power_result_var.set("Applied; device polls within 5 seconds.")
 
     def _toggle_developer(self):
         opening = not self.developer.winfo_ismapped()
@@ -444,7 +492,6 @@ class SimulatorWindow:
                                         state_dir=self.sim.state_dir, library=self.sim.library)
                 self._release_controls()
                 self.sim.close()
-                self._detach(self.sim)
                 self.sim = replacement
                 self._replay.abort()
                 # Keep the settings dialog until its Save handler closes it.
@@ -519,6 +566,7 @@ class SimulatorWindow:
         self.ready_var.set({"ready":"Ready for your next question.", "listening":"Listening. Release to send.",
                             "thinking":"Waiting for your Hermes...", "responding":"Your Hermes is replying.",
                             "pairing":"Approve the code on the device.", "prompt":"TALK for yes · CANCEL for no.",
+                            "alarm":"Timer done. Press TALK to stop it.",
                             "error":"Check the device screen for the error."}.get(st.get("screen"), "Connect your Hermes to begin."))
         self.status_var.set(f"{st.get('device_id')}  ·  {st.get('screen')}\n{st.get('server')}")
         self.net_var.set(self.sim.network_up)
@@ -551,7 +599,6 @@ class SimulatorWindow:
         self._release_controls()
         self._replay.abort()
         self.sim.close()
-        self._detach(self.sim)
         self.root.destroy()
 
     def run(self):

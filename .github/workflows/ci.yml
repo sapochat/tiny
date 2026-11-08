@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+    # A draft stays up for review. CI starts when the pull request is marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -14,14 +16,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changelog:
+    name: Changelog entry
+    # Every pull request adds a line to CHANGELOG.md's Unreleased section, or carries the
+    # no-changelog label (internal refactors, test-only fixes, dependency bumps).
+    # Dependabot's bumps are not user-facing; their PRs skip the check.
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 0
+      - name: Check
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Labels are read live, not from the event, so adding no-changelog and re-running the job works.
+          if gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels -q '.labels[].name' | grep -qx no-changelog; then
+            echo "no-changelog label: skipped"; exit 0
+          fi
+          if git diff --name-only "$BASE...HEAD" | grep -qx CHANGELOG.md; then
+            echo "CHANGELOG.md is updated"
+          else
+            echo "::error file=CHANGELOG.md::Add a line under '## Unreleased' in CHANGELOG.md, or label the PR no-changelog"
+            exit 1
+          fi
+
   boards:
     name: Discover firmware boards
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
       boards: ${{ steps.list.outputs.boards }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
         with:
           python-version: "3.12"
       - id: list
@@ -36,13 +69,15 @@ jobs:
 
   core:
     name: Firmware core (${{ matrix.os }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-latest]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - name: Configure
         run: cmake -S firmware -B build/host -DCMAKE_BUILD_TYPE=Release
       - name: Build
@@ -52,7 +87,9 @@ jobs:
 
   python:
     name: ${{ matrix.name }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -61,8 +98,8 @@ jobs:
           - {python: "3.12", os: ubuntu-24.04, name: "Python 3.12"}
           - {python: "3.12", os: ubuntu-24.04-arm, name: "Linux ARM64"}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -70,16 +107,18 @@ jobs:
         run: pip install -e ".[dev,images,display,mqtt]"
       - name: Build the simulator library
         run: hermes-gadget build-sim
-      - uses: actions/setup-node@v7  # the installer's console client runs against the simulator core
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7; the installer's console client runs against the simulator core
         with:
           node-version: 22
       - name: Install virtual display
-        run: sudo apt-get update && sudo apt-get install -y xvfb shellcheck
+        run: sudo apt-get update && sudo apt-get install -y xvfb shellcheck libopus0
       - name: Test
         # Tests that need a Hermes Agent checkout skip themselves here; hermes.yml runs them.
         env:
           HERMES_GADGET_UI_TESTS: "1"
-        run: xvfb-run -a pytest -q
+          # libopus is installed above, so test_opus fails instead of skipping if it can't load.
+          HG_REQUIRE_LIBOPUS: "1"
+        run: xvfb-run -a pytest -q -rs
       - name: Build the Linux installation package
         if: matrix.name == 'Linux ARM64'
         run: |
@@ -91,7 +130,7 @@ jobs:
         run: |
           archive=$(find dist -name '*-linux-arm64.tar.gz')
           docker run --rm -v "$PWD:/source:ro" debian:trixie-slim sh /source/linux/test_install.sh "/source/$archive"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         if: matrix.name == 'Linux ARM64'
         with:
           name: linux-arm64
@@ -100,10 +139,12 @@ jobs:
 
   site:
     name: Installer site
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
         with:
           node-version: 22
           cache: npm
@@ -127,22 +168,24 @@ jobs:
   esp32:
     name: ESP32 firmware (${{ matrix.board }})
     needs: boards
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         board: ${{ fromJSON(needs.boards.outputs.boards) }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
         with:
           python-version: "3.12"
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
         with:
           path: ~/.platformio
           key: platformio-${{ runner.os }}-${{ hashFiles('firmware/esp32/platformio.ini', 'firmware/esp32/main/idf_component.yml') }}
       - name: Install PlatformIO
-        run: pip install platformio
+        run: pip install platformio==6.2.0
       - name: Build
         working-directory: firmware/esp32
         run: pio run -e ${{ matrix.board }}
@@ -150,8 +193,53 @@ jobs:
         working-directory: firmware/esp32
         run: python tools/package_release.py --board ${{ matrix.board }} --out dist
       - name: Keep the images
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: firmware-${{ matrix.board }}
           path: firmware/esp32/dist/
           if-no-files-found: error
+  esp32p4:
+    name: ESP32-P4 firmware (ESP-IDF 6.1.0)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    container: espressif/idf:v6.1@sha256:f81b6e077e6af93c312181cd7d4e7936cfbafc5c7f77cbacba8fdd34994f218a
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - name: Build CrowPanel P4
+        shell: bash
+        working-directory: firmware/esp32
+        run: |
+          source /opt/esp/idf/export.sh
+          idf.py -B build/crowpanel-p4-101 -D SDKCONFIG=build/crowpanel-p4-101/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;boards/crowpanel-p4-101/sdkconfig.defaults" set-target esp32p4
+          idf.py -B build/crowpanel-p4-101 -D SDKCONFIG=build/crowpanel-p4-101/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;boards/crowpanel-p4-101/sdkconfig.defaults" build
+      - name: Build Waveshare P4 7B
+        shell: bash
+        working-directory: firmware/esp32
+        run: |
+          source /opt/esp/idf/export.sh
+          idf.py -B build/ws-p4-touch-lcd-7b -D SDKCONFIG=build/ws-p4-touch-lcd-7b/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;boards/ws-p4-touch-lcd-7b/sdkconfig.defaults" set-target esp32p4
+          idf.py -B build/ws-p4-touch-lcd-7b -D SDKCONFIG=build/ws-p4-touch-lcd-7b/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;boards/ws-p4-touch-lcd-7b/sdkconfig.defaults" build
+      - name: Package
+        # The same images and manifests a release ships, so a contributor can flash CI builds.
+        shell: bash
+        working-directory: firmware/esp32
+        run: |
+          source /opt/esp/idf/export.sh
+          python tools/stage_idf_build.py crowpanel-p4-101 build/crowpanel-p4-101
+          python tools/stage_idf_build.py ws-p4-touch-lcd-7b build/ws-p4-touch-lcd-7b
+          python tools/package_release.py --board crowpanel-p4-101 --board ws-p4-touch-lcd-7b --out dist
+      - name: Keep the images
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: firmware-esp32p4
+          path: firmware/esp32/dist/
+          if-no-files-found: error
+      - name: Build Waveshare P4 Touch-LCD-3.4C
+        # Built, not released: the board is experimental and not in IDF_BOARDS.
+        shell: bash
+        working-directory: firmware/esp32
+        run: |
+          source /opt/esp/idf/export.sh
+          idf.py -B build/ws-p4-touch-lcd-3.4c -D SDKCONFIG=build/ws-p4-touch-lcd-3.4c/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;boards/ws-p4-touch-lcd-3.4c/sdkconfig.defaults" set-target esp32p4
+          idf.py -B build/ws-p4-touch-lcd-3.4c -D SDKCONFIG=build/ws-p4-touch-lcd-3.4c/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;boards/ws-p4-touch-lcd-3.4c/sdkconfig.defaults" build

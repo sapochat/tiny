@@ -1,0 +1,39 @@
+# Waveshare ESP32-S3-Touch-AMOLED-2.06 watch: ESP32-S3R8 (8 MB octal PSRAM),
+# 32 MB flash, rectangular 410x502 CO5300 AMOLED, FT3168 touch, ES8311 + ES7210
+# codecs, AXP2101 PMIC. Pins: docs/hardware.md#esp32-s3-touch-amoled-206
+CONFIG_IDF_TARGET="esp32s3"
+# CONFIG_ESPTOOLPY_FLASHSIZE_4MB is not set
+CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+# The USB-C port is the S3's own USB Serial/JTAG; the console must live on USB.
+# CONFIG_ESP_CONSOLE_UART_DEFAULT is not set
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_HG_BOARD_AMOLED_206=y
+# Battery life: scale the CPU down to 80 MHz when idle (see app_main).
+CONFIG_PM_ENABLE=y
+# Light sleep while dozing (on battery, screen off, idle; see EspSystem::enable_doze).
+# The FT3168's INT wakes the CPU (TouchInput::arm_sleep_wake).
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+# And never while a USB host is connected: the serial console and JTAG stop
+# working under light sleep. The app's on-battery check is the main guard.
+CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
+# Wi-Fi wakes for each beacon from light sleep on the slow clock's timing; the
+# default 150 kHz RC drifts enough to miss beacons, so use the 17.5 MHz / 256 one.
+# CONFIG_RTC_CLK_SRC_INT_RC is not set
+CONFIG_RTC_CLK_SRC_INT_8MD256=y
+# Counts light sleep for the doze log line, and runs the touch wake hook.
+CONFIG_PM_LIGHT_SLEEP_CALLBACKS=y
+
+# TCP windows for links with a long round trip (a phone hotspot): 5,760 B capped
+# a connection near 33 KB/s at 175 ms, below 24 kHz audio's 48 KB/s.
+# Wi-Fi and lwIP buffers in PSRAM first, internal RAM when the module has none.
+# docs/porting.md#network-buffers
+CONFIG_LWIP_TCP_WND_DEFAULT=32768
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=32768
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=32
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y

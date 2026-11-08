@@ -1,6 +1,7 @@
 // Drawing primitives over an RGB565 framebuffer.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -16,8 +17,15 @@ class Canvas {
  public:
   // `stride` is the framebuffer's row length in pixels when this canvas is a
   // view into a wider framebuffer (0 = `width`).
-  Canvas(uint16_t* pixels, int width, int height, bool swap_bytes, int stride = 0)
-      : px_(pixels), w_(width), h_(height), stride_(stride > 0 ? stride : width), swap_(swap_bytes) {}
+  //
+  // Rows [base_y, base_y + rows) are the ones the framebuffer actually holds;
+  // drawing outside them is dropped. This is how a board with room for only a
+  // band of the panel keeps one coordinate space for the whole screen: it
+  // points `pixels` at the band and sets `base_y` to the first row in it.
+  // `base_y` 0 and `rows` 0 mean the framebuffer holds every row of `height`.
+  Canvas(uint16_t* pixels, int width, int height, bool swap_bytes, int stride = 0, int base_y = 0, int rows = 0)
+      : px_(pixels), w_(width), h_(height), stride_(stride > 0 ? stride : width), swap_(swap_bytes),
+        base_y_(base_y), rows_(rows > 0 ? rows : height) {}
 
   int width() const { return w_; }
   int height() const { return h_; }
@@ -25,6 +33,8 @@ class Canvas {
   // Restricts drawing to rows [y0, y1); everything outside is left untouched.
   void set_clip_rows(int y0, int y1);
   void reset_clip() { set_clip_rows(0, h_); }
+  int clip_y0() const { return clip_y0_; }
+  int clip_y1() const { return clip_y1_; }
 
   void pixel(int x, int y, uint16_t color);
   void fill_rect(int x, int y, int w, int h, uint16_t color);
@@ -45,13 +55,26 @@ class Canvas {
 
   // Copies a w*h RGB565 block (native byte order) into the framebuffer.
   void blit(int x, int y, int w, int h, const uint16_t* src);
+  // Draws the src_px*src_px RGB565 picture `src` (native byte order) as a size*size square, by
+  // nearest pixel. 0x0000 is transparent: those pixels are left untouched. Its rows band_y to
+  // band_y + band_rows - 1 come from `band`, band_rows rows of src_px pixels, instead.
+  void picture(int x, int y, int size, const uint16_t* src, int src_px, const uint16_t* band, int band_y,
+               int band_rows);
 
  private:
   uint16_t encode(uint16_t c) const { return swap_ ? static_cast<uint16_t>((c >> 8) | (c << 8)) : c; }
+  // The framebuffer rows this canvas can write: the clip rows clipped to the
+  // rows the buffer holds. `true` when the window is empty.
+  bool row_window(int& y0, int& y1) const {
+    y0 = std::max(clip_y0_, base_y_);
+    y1 = std::min(std::min(clip_y1_, h_), base_y_ + rows_);
+    return y0 >= y1;
+  }
 
   uint16_t* px_;
   int w_, h_, stride_;
   bool swap_;
+  int base_y_, rows_;
   int clip_y0_ = 0;
   int clip_y1_ = 1 << 30;
 };

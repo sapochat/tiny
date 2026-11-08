@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-gadget"
-version = "0.2.0"
+version = "0.5.0"
 description = "Build small Hermes-powered hardware devices: device protocol, Hermes platform plugin, desktop simulator and tooling."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -39,7 +39,9 @@ package-dir = { "hermes_gadget" = "python/hermes_gadget", "hermes_gadget_plugin"
 packages = ["hermes_gadget", "hermes_gadget.sim", "hermes_gadget.linux", "hermes_gadget_plugin"]
 
 [tool.setuptools.package-data]
-hermes_gadget_plugin = ["plugin.yaml"]
+# The dashboard tab and the Desktop page are data, not packages: Hermes loads dashboard/ and desktop/
+# from the installed plugin directory.
+hermes_gadget_plugin = ["plugin.yaml", "dashboard/manifest.json", "dashboard/plugin_api.py", "dashboard/dist/*.js", "desktop/plugin.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

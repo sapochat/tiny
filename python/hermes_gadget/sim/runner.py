@@ -38,28 +38,48 @@ class Board:
     backlight: bool = True
     scroll_buttons: bool = True
     round: bool = False  # circular panel: pixels outside the circle are not shown
-    touch: bool = False  # hold to talk; view-owned navigation and explicit approval controls
-    power: bool = False  # battery gauge + PMIC, scripted with Simulator.set_power
-    screen_timeout_s: int = 0  # screen defaults while nothing is stored (0: the core's)
-    brightness: int = 0
+    touch: bool = False  # touchscreen: hold to talk, tap to answer yes, swipe down to cancel
+    motion: bool = False  # accelerometer: face-down sleep
 
 
 BOARDS = {
     "sim-320x240": Board("sim-320x240", 320, 240),
     "sim-240x135": Board("sim-240x135", 240, 135),
+    # Geometry/audio only; physical keyboard/editor have separate host C++ tests.
+    "cardputer-adv": Board("cardputer-adv", 240, 135),
     "sim-480x320": Board("sim-480x320", 480, 320),
     "sim-240x240-nospeaker": Board("sim-240x240-nospeaker", 240, 240, speaker=False),
     # A 1.54" 240x240 SPI LCD with codecs (e.g. Waveshare ESP32-S3-LCD-1.54): no scroll buttons.
     "sim-240x240": Board("sim-240x240", 240, 240, scroll_buttons=False),
+    # A 1.83" 240x284 SPI LCD with touch (e.g. Waveshare ESP32-S3-Touch-LCD-1.83).
+    "sim-240x284": Board("sim-240x284", 240, 284, scroll_buttons=False, touch=True),
+    # A 1.28" round 240x240 LCD with touch (e.g. Spotpear ESP32-S3-1.28-BOX): no scroll buttons.
+    "sim-240x240-round": Board("sim-240x240-round", 240, 240, scroll_buttons=False, round=True, touch=True),
+    # Waveshare 1.85C V2: round LCD and touch, no scroll buttons.
+    "sim-360x360-round": Board("sim-360x360-round", 360, 360, scroll_buttons=False, round=True, touch=True),
+    # Waveshare ESP32-S3-Knob-Touch-LCD-1.8: same round 360x360 screen as the 1.85C V2,
+    # with an encoder for scrolling but no speaker (the port doesn't drive the DAC).
+    "sim-360x360-knob": Board("sim-360x360-knob", 360, 360, speaker=False, scroll_buttons=False,
+                              round=True, touch=True),
     # A 1.75" round 466x466 AMOLED touch board (e.g. ESP32-S3-Touch-AMOLED-1.75): no scroll buttons.
-    "sim-466x466-round": Board("sim-466x466-round", 466, 466, scroll_buttons=False, round=True, touch=True),
-    # The same panel with the AMOLED 1.75C's AXP2101 and screen defaults (T2-C8/C9): a scripted
-    # battery, screen rest after 60 s, 80% brightness.
-    "sim-466x466-amoled": Board("sim-466x466-amoled", 466, 466, scroll_buttons=False, round=True, touch=True,
-                                power=True, screen_timeout_s=60, brightness=80),
+    "sim-466x466-round": Board("sim-466x466-round", 466, 466, scroll_buttons=False, round=True, touch=True,
+                               motion=True),
+    # A 1.8" rectangular 368x448 AMOLED touch board (e.g. ESP32-S3-Touch-AMOLED-1.8): no scroll buttons.
+    "sim-368x448": Board("sim-368x448", 368, 448, scroll_buttons=False, touch=True),
+    # The 2.06" 410x502 AMOLED watch (ESP32-S3-Touch-AMOLED-2.06), as the firmware draws it:
+    # 486 rows, 8 rows clear of the rounded corners at the top and bottom.
+    "sim-410x486": Board("sim-410x486", 410, 486, scroll_buttons=False, touch=True),
+    # A 2.16" square 480x480 AMOLED touch board (e.g. ESP32-S3-Touch-AMOLED-2.16).
+    "sim-480x480": Board("sim-480x480", 480, 480, scroll_buttons=False, touch=True),
+    # A round 480x480 touch board with no microphone or speaker (the CrowPanel 2.1): timers show, silently.
+    "sim-480x480-round-nospeaker": Board("sim-480x480-round-nospeaker", 480, 480, mic=False, speaker=False,
+                                         scroll_buttons=False, round=True, touch=True),
     # A 1.9" 320x170 board with no audio hardware (e.g. LilyGO T-Display-S3).
     "sim-320x170-nospeaker": Board("sim-320x170-nospeaker", 320, 170, mic=False, speaker=False,
                                    scroll_buttons=False),
+    # A 5.0" 800x480 RGB touch board with no audio hardware (e.g. Elecrow CrowPanel 5.0).
+    "sim-800x480-nospeaker": Board("sim-800x480-nospeaker", 800, 480, mic=False, speaker=False,
+                                   scroll_buttons=False, touch=True),
 }
 
 
@@ -147,6 +167,7 @@ class Simulator:
         self.mic = Microphone(live=live_audio)
         self.speaker = Speaker(state_dir / "audio" if state_dir else None, live=live_audio)
         self.peripherals = VirtualPeripherals()
+        self.power_status: dict | None = None
         self.logs: list[tuple[int, str]] = []
         self.sent: list[dict] = []          # outbound JSON, newest last (for tests/UI)
         self.received: list[dict] = []      # inbound JSON
@@ -162,6 +183,9 @@ class Simulator:
         self.restarts = 0
         self._update_buf: bytearray | None = None
         self._restart_requested = False
+        self._fixed_time: time.struct_time | None = None
+        self.face_down = False
+        self._motion_at = 0
 
         b = self.board
         self.device = NativeDevice(
@@ -169,8 +193,7 @@ class Simulator:
             server_url=url, access_token=token, mic=b.mic, speaker=b.speaker, backlight=b.backlight,
             scroll_buttons=b.scroll_buttons, library=library, button_labels=button_labels,
             round_panel=b.round, touch_screen=b.touch, update_capacity=UPDATE_SLOT_BYTES,
-            update_pending=update_pending, power=b.power, screen_timeout_s=b.screen_timeout_s,
-            brightness=b.brightness)
+            update_pending=update_pending, power=True, motion=b.motion)
         self._round_spans = _circle_spans(b.width, b.height) if b.round else None
         self._register_actions()
 
@@ -286,6 +309,10 @@ class Simulator:
     def update_confirm(self) -> None:
         self.update_confirmed = True
 
+    def wall_time(self) -> time.struct_time | None:
+        """Local time for the clock face; set_wall_time() pins it for tests and screenshots."""
+        return self._fixed_time or time.localtime()
+
     # -- virtual peripherals -------------------------------------------------------------
 
     def _register_actions(self) -> None:
@@ -358,6 +385,10 @@ class Simulator:
         if self._wav_release_at is not None and time.monotonic() >= self._wav_release_at:
             self._wav_release_at = None
             self.release("talk")
+        if self.board.motion and self.now_ms() - self._motion_at >= 100:
+            # A steady 10 Hz accelerometer, like the board's: lying face up or face down.
+            self._motion_at = self.now_ms()
+            self.device.motion(0, 0, -1000 if self.face_down else 1000)
         self.device.tick()
         if self._restart_requested:
             self._restart_requested = False
@@ -399,6 +430,15 @@ class Simulator:
         """A touchscreen sample in screen pixels (touch boards only)."""
         self.device.touch(touching, x, y)
 
+    def set_face_down(self, down: bool) -> None:
+        """Lay the simulated board face down (or turn it back over); boards with motion only."""
+        self.face_down = down
+        self._motion_at = 0  # send the new orientation on the next step
+
+    def set_wall_time(self, when: time.struct_time | None) -> None:
+        """Pin the clock face's time (screenshots, tests); None follows the computer's clock."""
+        self._fixed_time = when
+
     def tap(self, button: str) -> None:
         self.press(button)
         self.release(button)
@@ -425,11 +465,10 @@ class Simulator:
     def set_sensor(self, name: str, value: float) -> None:
         self.device.set_sensor(name, value)
 
-    def set_power(self, *, percent: int, mv: int = 3900, usb: bool = False, charging: bool = False) -> None:
-        """What the battery gauge reports from its next read (boards with ``power``)."""
-        if not self.board.power:
-            raise ValueError(f"{self.board.name} has no battery gauge")
-        self.device.set_power(percent, mv, usb, charging)
+    def set_power(self, status: dict | None) -> None:
+        """Replace the power fixture; native validation rejects invalid inputs atomically."""
+        self.device.set_power(status)
+        self.power_status = dict(status) if status is not None else None
 
     def console(self, line: str) -> str:
         return self.device.console(line)

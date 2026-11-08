@@ -27,6 +27,7 @@ def _load(name: str):
 check_config = _load("check_config")
 check_size = _load("check_size")
 package_release = _load("package_release")
+stage_idf_build = _load("stage_idf_build")
 
 
 @pytest.fixture
@@ -148,7 +149,9 @@ def _partition_table(layout=LAYOUT) -> bytes:
 
 @pytest.fixture
 def project(tmp_path, monkeypatch):
-    """A firmware/esp32 directory with PlatformIO build outputs for the boards it is asked for."""
+    """A firmware/esp32 directory with PlatformIO build outputs for the boards it is asked for.
+
+    An `idf` board is left out of platformio.ini, as the boards in IDF_BOARDS are."""
     from fakes.fake_firmware import fake_image
 
     root = tmp_path / "esp32"
@@ -157,7 +160,8 @@ def project(tmp_path, monkeypatch):
     envs = []
 
     def build(env: str, *, board_dir: str | None = None, version: str = "0.2.0", flash: str = "4MB",
-              psram: str | None = "OCT", image_board: str | None = None, meta: dict | None = None):
+              psram: str | None = "OCT", image_board: str | None = None, meta: dict | None = None,
+              target: str = "esp32s3", idf: bool = False):
         board_dir = board_dir or env
         out = root / ".pio" / "build" / env
         out.mkdir(parents=True)
@@ -165,7 +169,7 @@ def project(tmp_path, monkeypatch):
         (out / "partitions.bin").write_bytes(_partition_table())
         (out / "ota_data_initial.bin").write_bytes(b"\xff" * 0x2000)
         (out / "firmware.bin").write_bytes(fake_image(board=image_board or env, version=version, size=0x30000))
-        sdk = ['CONFIG_IDF_TARGET="esp32s3"', "CONFIG_PARTITION_TABLE_OFFSET=0x8000",
+        sdk = [f'CONFIG_IDF_TARGET="{target}"', "CONFIG_PARTITION_TABLE_OFFSET=0x8000",
                f'CONFIG_ESPTOOLPY_FLASHSIZE="{flash}"']
         if psram:
             sdk += ["CONFIG_SPIRAM=y", f"CONFIG_SPIRAM_MODE_{psram}=y"]
@@ -173,6 +177,8 @@ def project(tmp_path, monkeypatch):
         (root / "boards" / board_dir).mkdir(exist_ok=True)
         if meta is not None:
             (root / "boards" / board_dir / "board.json").write_text(json.dumps(meta), encoding="utf-8")
+        if idf:
+            return out
         envs.append(f"[env:{env}]\nboard_build.cmake_extra_args =\n    "
                     f'-DSDKCONFIG_DEFAULTS="sdkconfig.defaults;boards/{board_dir}/sdkconfig.defaults"\n')
         (root / "platformio.ini").write_text("[env]\nframework = espidf\n\n" + "\n".join(envs), encoding="utf-8")
@@ -212,6 +218,79 @@ def test_release_image_puts_every_part_at_its_address(project, tmp_path):
     sums = (dist / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
     assert f"{hashlib.sha256(image).hexdigest()}  hermes-gadget-amoled-0.2.0.bin" in sums
     assert f"{hashlib.sha256(app).hexdigest()}  hermes-gadget-amoled-0.2.0-app.bin" in sums
+
+
+def test_esp32p4_image_has_its_bootloader_at_0x2000(project, tmp_path, monkeypatch):
+    """The ESP32-P4's ROM loads the bootloader from 0x2000; one written at 0 doesn't boot."""
+    monkeypatch.setattr(package_release, "IDF_BOARDS", {"p4": "a test"})
+    project("breadboard")
+    out_dir = project("p4", flash="16MB", psram="HEX", target="esp32p4", idf=True, meta={"title": "P4 panel"})
+    dist = tmp_path / "dist"
+    assert _package(project, "--all", "--board", "p4", "--out", str(dist)) == 0
+
+    image = (dist / "hermes-gadget-p4-0.2.0.bin").read_bytes()
+    bootloader = (out_dir / "bootloader.bin").read_bytes()
+    assert image[:0x2000] == b"\xff" * 0x2000
+    assert image[0x2000:0x2000 + len(bootloader)] == bootloader
+    assert image[0x8000:0x8000 + len(_partition_table())] == _partition_table()
+    assert image[0x20000:] == (out_dir / "firmware.bin").read_bytes()
+    builds = json.loads((dist / "manifest.json").read_text(encoding="utf-8"))["builds"]
+    assert [(b["board"], b["chip"], b["psram"]) for b in builds] == [
+        ("breadboard", "ESP32-S3", "octal"), ("p4", "ESP32-P4", "hex")]
+    sums = (dist / "SHA256SUMS").read_text(encoding="utf-8")
+    assert f"{hashlib.sha256(image).hexdigest()}  hermes-gadget-p4-0.2.0.bin" in sums
+
+
+def _idf_build(path: Path, chip: str = "esp32p4", bootloader: str = "0x2000") -> Path:
+    """An idf.py build directory: the files and the flasher_args.json that names them."""
+    from fakes.fake_firmware import fake_image
+
+    files = {"bootloader": ("bootloader/bootloader.bin", b"\xe9" + b"B" * 0x4000),
+             "partition-table": ("partition_table/partition-table.bin", _partition_table()),
+             "otadata": ("ota_data_initial.bin", b"\xff" * 0x2000),
+             "app": ("hermes_gadget.bin", fake_image(board="p4", version="0.2.0", size=0x30000))}
+    offsets = {"bootloader": bootloader, "partition-table": "0x8000", "otadata": "0xf000", "app": "0x20000"}
+    flasher = {"extra_esptool_args": {"chip": chip}}
+    for entry, (name, data) in files.items():
+        (path / name).parent.mkdir(parents=True, exist_ok=True)
+        (path / name).write_bytes(data)
+        flasher[entry] = {"offset": offsets[entry], "file": name}
+    (path / "flasher_args.json").write_text(json.dumps(flasher), encoding="utf-8")
+    (path / "sdkconfig").write_text('CONFIG_IDF_TARGET="esp32p4"\nCONFIG_ESPTOOLPY_FLASHSIZE="16MB"\n'
+                                    "CONFIG_SPIRAM=y\nCONFIG_SPIRAM_MODE_HEX=y\n", encoding="utf-8")
+    return path
+
+
+def test_idf_build_is_staged_and_packaged_like_a_platformio_one(project, tmp_path, monkeypatch):
+    monkeypatch.setattr(package_release, "IDF_BOARDS", {"p4": "a test"})
+    monkeypatch.setattr(stage_idf_build, "IDF_BOARDS", {"p4": "a test"})
+    project("breadboard")
+    driver = project.root / "managed_components" / "example__dsi"
+    driver.mkdir(parents=True)
+    (driver / "LICENSE").write_bytes(b"DSI driver license\n")
+    build = _idf_build(tmp_path / "idf-build")
+    notices = tmp_path / "notices"
+    assert stage_idf_build.main(["p4", str(build), "--project", str(project.root), "--notices", str(notices)]) == 0
+    assert (project.root / ".pio" / "build" / "p4" / "firmware.bin").read_bytes() == (build / "hermes_gadget.bin").read_bytes()
+    assert (notices / "p4" / "components" / "example__dsi" / "LICENSE").is_file()
+
+    dist = tmp_path / "dist"
+    assert _package(project, "--all", "--board", "p4", "--out", str(dist), "--notices", str(notices)) == 0
+    image = (dist / "hermes-gadget-p4-0.2.0.bin").read_bytes()
+    assert image[0x2000:0x6001] == (build / "bootloader" / "bootloader.bin").read_bytes()
+    manifest = json.loads((dist / "manifest.json").read_text(encoding="utf-8"))
+    assert [b["board"] for b in manifest["builds"]] == ["breadboard", "p4"]
+    with zipfile.ZipFile(dist / manifest["licenses"]["path"]) as archive:
+        assert archive.read("p4/components/example__dsi/LICENSE") == b"DSI driver license\n"
+
+
+def test_staging_refuses_a_bootloader_offset_the_packager_disagrees_with(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(stage_idf_build, "IDF_BOARDS", {"p4": "a test"})
+    build = _idf_build(tmp_path / "idf-build", bootloader="0x0")
+    assert stage_idf_build.main(["p4", str(build), "--project", str(tmp_path / "esp32")]) == 1
+    assert "fix BOOTLOADER_OFFSET" in capsys.readouterr().err
+    assert stage_idf_build.main(["breadboard", str(build), "--project", str(tmp_path / "esp32")]) == 1
+    assert "not in IDF_BOARDS" in capsys.readouterr().err
 
 
 def test_every_board_comes_from_platformio_ini(project, tmp_path):
@@ -258,21 +337,56 @@ def test_binary_release_keeps_driver_licenses_and_checksums(project, tmp_path, m
     assert f"{digest}  hermes-gadget-0.2.0-licenses.zip" in (dist / "SHA256SUMS").read_text()
 
 
+def _release_boards() -> dict[str, str]:
+    return package_release.environments(package_release.PROJECT_DIR) | {b: b for b in package_release.IDF_BOARDS}
+
+
 def test_every_real_board_has_what_the_installer_shows():
-    """Each board in platformio.ini: a title, a one-line summary and a "Pins and details" link that
+    """Each released board: a title, a one-line summary and a "Pins and details" link that
     lands on a heading. A ready-made board gets the installer's "Nothing to wire" badge, so its
     summary doesn't repeat it."""
     repo = TOOLS.parents[2]
     anchors = {re.sub(r"[^\w\- ]", "", line.lstrip("#").strip().lower()).replace(" ", "-")
                for line in (repo / "docs" / "hardware.md").read_text(encoding="utf-8").splitlines()
                if line.startswith("#")}
-    for board, board_dir in package_release.environments(package_release.PROJECT_DIR).items():
+    for board, board_dir in _release_boards().items():
         meta = json.loads((package_release.PROJECT_DIR / "boards" / board_dir / "board.json").read_text(encoding="utf-8"))
         assert meta.get("title") and meta.get("summary"), board
         page, _, anchor = meta["docs"].partition("#")
         assert page == "docs/hardware.md" and anchor in anchors, f"{board}: {meta['docs']} isn't a heading"
         if meta.get("ready_made"):
             assert "nothing to wire" not in meta["summary"].lower(), f"{board}: the badge already says it"
+
+
+def test_every_board_trusts_a_chain_at_any_bundled_root():
+    """Cloudflare sends GTS Root R4 cross-signed by GlobalSign Root CA, which ESP-IDF's bundle no
+    longer has. Without cross-signed verification only the last certificate's issuer is looked up,
+    and every Cloudflare tunnel failed validation although GTS Root R4 is bundled (#137)."""
+    want = {"CONFIG_MBEDTLS_CERTIFICATE_BUNDLE": "y", "CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY": "y"}
+    base = package_release.PROJECT_DIR / "sdkconfig.defaults"
+    for board, board_dir in _release_boards().items():
+        settings = {}
+        for path in (base, package_release.PROJECT_DIR / "boards" / board_dir / "sdkconfig.defaults"):
+            if path.exists():
+                settings.update((symbol, value) for _, symbol, value in check_config.parse(path))
+        assert {k: settings.get(k) for k in want} == want, board
+
+
+def test_every_board_with_psram_has_the_network_buffers():
+    """lwIP's 5,760-byte TCP window holds a connection below 24 kHz microphone audio on a slow
+    link (a phone hotspot), and recordings lose frames; every PSRAM board sets 32 KB windows with
+    the buffers in PSRAM (docs/porting.md#network-buffers). A new board copies them (#227)."""
+    want = {"CONFIG_LWIP_TCP_WND_DEFAULT": "32768", "CONFIG_LWIP_TCP_SND_BUF_DEFAULT": "32768",
+            "CONFIG_LWIP_TCP_RECVMBOX_SIZE": "32", "CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP": "y"}
+    boards = sorted((package_release.PROJECT_DIR / "boards").glob("*/sdkconfig.defaults"))
+    checked = 0
+    for path in boards:
+        settings = {symbol: value for _, symbol, value in check_config.parse(path)}
+        if settings.get("CONFIG_SPIRAM") != "y":
+            continue
+        checked += 1
+        assert {k: settings.get(k) for k in want} == want, path.parent.name
+    assert checked > 20
 
 
 def test_release_notes_pin_the_plugin_to_the_release_commit(project, tmp_path):
@@ -282,6 +396,21 @@ def test_release_notes_pin_the_plugin_to_the_release_commit(project, tmp_path):
     assert _package(project, "--all", "--out", str(tmp_path / "dist"), "--notes", str(notes), "--commit", commit) == 0
     assert (f"hermes plugins install https://github.com/Adolanium/hermes-gadget-sdk.git#plugin --ref {commit} --enable"
             in notes.read_text(encoding="utf-8"))
+
+
+def test_release_notes_open_with_the_changelog_section(project, tmp_path):
+    project("breadboard", version="0.2.0")
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(
+        "# Changelog\n\n## Unreleased\n\n- Not yet.\n\n## 0.2.0\n\n### Firmware\n\n- Fixed the thing.\n\n## 0.1.0\n\n- Older.\n",
+        encoding="utf-8")
+    notes = tmp_path / "notes.md"
+    assert _package(project, "--all", "--out", str(tmp_path / "dist"), "--notes", str(notes),
+                    "--changelog", str(changelog)) == 0
+    text = notes.read_text(encoding="utf-8")
+    assert text.startswith("Hermes Gadget firmware 0.2.0.\n\n### Firmware\n\n- Fixed the thing.\n")
+    assert "Not yet" not in text and "Older" not in text
+    assert package_release.changelog_section(changelog.read_text(encoding="utf-8"), "9.9.9") == ""
 
 
 def test_release_refuses_what_it_cannot_vouch_for(project, tmp_path, capsys):
@@ -295,11 +424,28 @@ def test_release_refuses_what_it_cannot_vouch_for(project, tmp_path, capsys):
     assert "reports 0.2.0, not 1.0.0" in capsys.readouterr().err
 
     assert _package(project, "--board", "three", "--out", dist) == 1
-    assert "not in platformio.ini: three" in capsys.readouterr().err
+    assert "not in platformio.ini or IDF_BOARDS: three" in capsys.readouterr().err
 
     (project.root / ".pio" / "build" / "one" / "firmware.bin").unlink()
     assert _package(project, "--board", "one", "--out", dist) == 1
     assert "run: pio run -e one" in capsys.readouterr().err
+
+    assert _package(project, "--board", "crowpanel-p4-101", "--out", dist) == 1
+    assert "then run tools/stage_idf_build.py" in capsys.readouterr().err
+
+
+def test_release_skips_a_nameless_copy_of_the_board_tag():
+    # Images built from main before the OTA board-tag fix (never released) hold "HGBOARD=\0" ahead of the real tag.
+    from fakes.fake_firmware import fake_image
+
+    app = bytearray(fake_image(board="amoled-1.75"))
+    app[1024:1033] = b"HGBOARD=\0"
+    assert package_release.app_identity(bytes(app)) == ("0.2.0", "amoled-1.75")
+
+    nameless = bytearray(fake_image(board=None))
+    nameless[1024:1033] = b"HGBOARD=\0"
+    with pytest.raises(package_release.PackageError, match="no board name"):
+        package_release.app_identity(bytes(nameless))
 
 
 def test_merge_refuses_overlapping_parts():

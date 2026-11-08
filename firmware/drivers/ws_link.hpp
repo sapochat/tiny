@@ -1,0 +1,182 @@
+// The WebSocket transport's bookkeeping, apart from ESP-IDF so it can be tested
+// on the host: which connection is current, whether it was lost, and what the
+// send task does with each queued item (firmware/esp32/main/port_ws.cpp).
+#pragma once
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+
+namespace hg::ws {
+
+/** Deliver a completed frame with storage owned for the entire callback.
+ * Detach before calling a potentially blocking receiver. A replacement client
+ * may reuse reassembly during that wait; neither its bytes nor its partial
+ * next frame are touched after delivery, including when admission fails.
+ */
+template <class Deliver>
+bool deliver_owned_message(std::string& reassembly, Deliver&& deliver) {
+  std::string message;
+  message.swap(reassembly);
+  return deliver(reinterpret_cast<const uint8_t*>(message.data()), message.size());
+}
+
+// Each connection gets a generation. Leaving a connection moves to the next
+// one, so whatever the old client still reports can be told apart and ignored.
+class Generations {
+ public:
+  uint32_t current() const { return current_.load(); }
+  bool is_current(uint32_t generation) const { return generation == current_.load(); }
+  // The app leaves the current connection (before connecting again, or for good).
+  void leave() { ++current_; }
+  // A client reports its connection lost (any task).
+  void lost(uint32_t generation) { lost_.store(generation); }
+  // True once per loss of the current connection; losses of connections the app
+  // has already left are not news.
+  bool take_lost() {
+    uint32_t g = lost_.exchange(0);
+    return g && g == current_.load();
+  }
+
+ private:
+  std::atomic<uint32_t> current_{0};
+  std::atomic<uint32_t> lost_{0};
+};
+
+constexpr uint8_t kText = 0x1;
+constexpr uint8_t kBinary = 0x2;
+constexpr uint8_t kClose = 0xFF;  // not a WebSocket opcode: close and destroy the client
+
+// The send queue holds messages plus a few slots only "close this client" may
+// use, so leaving a connection never waits for a slow link to drain. Of the
+// message slots, the last few are for text: when a slow uplink fills the queue
+// with microphone audio, the frames are refused first, so a control message such
+// as audio.end, which ends the recording, still gets through.
+constexpr size_t kTxMessages = 64;
+constexpr size_t kTxReserved = 4;
+constexpr size_t kTxControl = 8;
+inline bool may_queue_message(size_t free_slots, uint8_t opcode) {
+  return free_slots > kTxReserved + (opcode == kBinary ? kTxControl : 0);
+}
+
+// Every network wait has a limit. The library's own esp_websocket_client_close()
+// waits for its close frame without one and froze the app on a dead link.
+//
+// A send that fails or runs out of time makes esp_websocket_client abort the
+// whole connection (esp_websocket_client.c, send_with_exact_opcode), so this
+// limit is also the longest TCP stall the link survives. At 2 s, a Wi-Fi hiccup
+// in the middle of a recording, the one time the device uploads 32-48 KB/s, closed
+// the connection and lost the recording. 10 s rides out retransmissions and a
+// slow access point, and a link that is really dead is still found: a stalled
+// send gives up after 10 s, and an idle one is caught by the protocol heartbeat
+// (no message for 3 heartbeats, 60 s by default; App::tick, "server silent").
+constexpr uint32_t kSendTimeoutMs = 10000;
+constexpr uint32_t kCloseTimeoutMs = 1000;
+// The client's own reads and connects (esp_websocket_client_config_t::network_timeout_ms);
+// the same limit as a send, so a stall of the same length is survived both ways.
+constexpr uint32_t kNetworkTimeoutMs = kSendTimeoutMs;
+
+// Handing a client to the send task for closing waits at most this long for a
+// queue slot. The reserved slots normally make it immediate.
+constexpr uint32_t kHandoffTimeoutMs = 1000;
+
+// Each item has a limit: a send takes at most its lock wait and its write, and a
+// close also waits for the client's task to end, which is bounded by
+// kNetworkTimeoutMs. An item that takes longer than this has the send task stuck
+// in the client library: nothing can be sent or closed again, and the device
+// would answer nothing until someone reset it. Only a restart recovers.
+constexpr uint32_t kStuckMs = 60000;
+
+// Whether the send task is stuck on one item. The send task calls begin() and
+// end() around each item; any task may ask stuck().
+class TxWatch {
+ public:
+  void begin(uint32_t now_ms) {
+    since_.store(now_ms);
+    busy_.store(true);
+  }
+  void end() { busy_.store(false); }
+  // Signed: `now_ms` is read before since_, so an item the send task began in between on the
+  // other core is a few milliseconds in the future, not ~49 days old. Holds across the wrap.
+  bool stuck(uint32_t now_ms) const {
+    return busy_.load() && static_cast<int32_t>(now_ms - since_.load()) > static_cast<int32_t>(kStuckMs);
+  }
+
+ private:
+  std::atomic<bool> busy_{false};
+  std::atomic<uint32_t> since_{0};
+};
+
+// What the send task did in the current window, for its once-a-second "uplink:" line while a
+// turn runs. Turning metering on starts a fresh window: the send task waits without a limit
+// while it is off, and idle time before a turn must not count against that turn's rate.
+class UplinkMeter {
+ public:
+  struct Report {
+    uint32_t bytes_per_s, msgs, longest_ms, queue_peak, failed;
+  };
+  void set_on(bool on, uint32_t now_ms) {
+    if (on && !on_) restart(now_ms);
+    on_ = on;
+  }
+  bool on() const { return on_; }
+  // One queued item the send task handled: the queue's depth when it took it, how long it took,
+  // and whether it was sent or failed (neither: dropped, or a client closed).
+  void item(uint32_t queue_depth, uint32_t took_ms, size_t bytes, bool sent, bool failed) {
+    if (queue_depth > queue_peak_) queue_peak_ = queue_depth;
+    if (took_ms > longest_ms_) longest_ms_ = took_ms;
+    if (sent) {
+      bytes_ += bytes;
+      ++msgs_;
+    }
+    if (failed) ++failed_;
+  }
+  // Once a second has passed since the window began: fills `r` and starts the next window.
+  bool take(uint32_t now_ms, Report& r) {
+    const uint32_t span = now_ms - since_;
+    if (span < 1000) return false;
+    r = {static_cast<uint32_t>(bytes_ * 1000ull / span), msgs_, longest_ms_, queue_peak_, failed_};
+    restart(now_ms);
+    return true;
+  }
+
+ private:
+  void restart(uint32_t now_ms) {
+    since_ = now_ms;
+    bytes_ = msgs_ = longest_ms_ = queue_peak_ = failed_ = 0;
+  }
+  bool on_ = false;
+  uint32_t since_ = 0, msgs_ = 0, longest_ms_ = 0, queue_peak_ = 0, failed_ = 0;
+  uint64_t bytes_ = 0;
+};
+
+struct TxItem {
+  void* client;
+  uint32_t generation;
+  uint8_t opcode;  // kText, kBinary or kClose
+  const uint8_t* data;
+  size_t len;
+};
+
+enum class Outcome { Sent, Failed, Dropped, Destroyed };
+
+// What the send task does with one item. Ops supplies the client calls:
+//   bool is_connected(void* client)
+//   int  send(void* client, uint8_t opcode, const uint8_t* data, size_t len, uint32_t timeout_ms)
+//   void send_close(void* client, uint32_t timeout_ms)
+//   void destroy(void* client)
+// A failed send needs no handling here: the client aborts the connection and
+// reports it, which ends in Generations::lost().
+template <class Ops>
+Outcome process(const TxItem& item, uint32_t current_generation, Ops& ops) {
+  if (item.opcode == kClose) {
+    if (ops.is_connected(item.client)) ops.send_close(item.client, kCloseTimeoutMs);
+    ops.destroy(item.client);
+    return Outcome::Destroyed;
+  }
+  if (item.generation != current_generation || !ops.is_connected(item.client)) return Outcome::Dropped;
+  int sent = ops.send(item.client, item.opcode, item.data, item.len, kSendTimeoutMs);
+  return sent == static_cast<int>(item.len) ? Outcome::Sent : Outcome::Failed;
+}
+
+}  // namespace hg::ws

@@ -1,9 +1,65 @@
 dependencies:
   idf: ">=5.3"
-  espressif/esp_websocket_client: "^1.2.3"
+  espressif/esp_websocket_client: "^1.8.0"  # 1.8.0 reports the server's close code (port_ws.cpp)
+  # ESP32-P4 CrowPanel: Wi-Fi via the ESP32-C6 coprocessor over SDIO.
+  # Pinned to the ESP-IDF 6.1-compatible component releases.
+  espressif/esp_hosted:
+    version: "2.12.6"
+    rules:
+      - if: target in [esp32p4]
+  espressif/esp_wifi_remote:
+    version: "1.6.5"
+    rules:
+      - if: target in [esp32p4]
   # ES8311 / ES7210 / AW88298 codecs on boards that use them
   espressif/esp_codec_dev: "~1.5"
+  # Opus reply audio: Xiph libopus (BSD-3-Clause) packaged for ESP-IDF
+  78/esp-opus: "~1.0.5"
+  espressif/esp_lcd_st77916: "~2.0.2"
+  espressif/esp_lcd_sh8601: "^1"
   espressif/esp_lcd_ili9341: "^2.1.0"
+  espressif/esp_lcd_gc9a01: "~2.0.4"
+  # SPD2010 QSPI/SPI. 2.0.0~1 is the ESP-IDF 6 build of 2.0.0.
+  espressif/esp_lcd_spd2010: "2.0.0~1"
   espressif/esp_lcd_touch_tt21100: "^1"
   espressif/esp_lcd_touch_gt911: "^1"
   espressif/esp_lcd_touch_ft5x06: "^1"
+  # SPD2010 touch. 2.1.0 keeps a no-command-phase I2C read working on ESP-IDF 6.
+  espressif/esp_lcd_touch_spd2010: "2.1.0"
+  # 1.1.0 is what the CrowPanel 2.1 was tested with; its MIPI source only builds
+  # for the P4 (which needs it as well) on ESP-IDF 6.1 from 2.x. The component
+  # only publishes for esp32s3/esp32p4, so a classic-ESP32 build must not pull it
+  # in at all.
+  espressif/esp_lcd_st7701:
+    rules:
+      - if: target in [esp32s3, esp32p4]
+    matches:
+      - if: target in [esp32p4]
+        version: "2.0.2"
+      - if: target not in [esp32p4]
+        version: "1.1.0"
+  # RGB panels also use the 3-wire/expander panel IO helper (CrowPanel 2.1).
+  espressif/esp_lcd_panel_io_additions:
+    version: "1.0.1"
+    rules:
+      - if: target in [esp32s3, esp32p4]
+  # EK79007 MIPI-DSI panel bridge (CrowPanel Advanced P4).
+  espressif/esp_lcd_ek79007:
+    version: "2.0.2"
+    rules:
+      - if: target in [esp32p4]
+  # JD9365 MIPI-DSI panel (Waveshare ESP32-P4-WIFI6-Touch-LCD-3.4C). P4-only.
+  espressif/esp_lcd_jd9365:
+    version: "2.0.2"
+    rules:
+      - if: target in [esp32p4]
+  # ST7123 MIPI-DSI. 1.0.2 is the ESP-IDF 6 build. No board selects it yet.
+  espressif/esp_lcd_st7123:
+    version: "1.0.2"
+    rules:
+      - if: target in [esp32p4]
+  # OV5647 MIPI-CSI capture for the Waveshare P4 7B camera variant.
+  espressif/esp_video:
+    version: "2.5.0"
+    rules:
+      - if: target in [esp32p4]

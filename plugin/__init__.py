@@ -25,6 +25,9 @@ def check_requirements() -> bool:
 
 
 def _make_adapter(config):
+    from . import compat
+
+    compat.check()  # a clear error on an incompatible Hermes, before the adapter's imports fail obscurely
     from .adapter import GadgetAdapter
 
     return GadgetAdapter(config)
@@ -50,7 +53,8 @@ def _parse_target(raw: str):
 
 
 def register(ctx) -> None:
-    from . import cli
+    from . import cli, stt
+    from .dashboard import BOARD
     from .tools import register_tools
 
     ctx.register_platform(
@@ -64,6 +68,7 @@ def register(ctx) -> None:
         install_hint="websockets is a core Hermes dependency; reinstall Hermes if it is missing",
         allowed_users_env="GADGET_ALLOWED_USERS",
         allow_all_env="GADGET_ALLOW_ALL_USERS",
+        cron_deliver_env_var="GADGET_HOME_CHANNEL",
         max_message_length=4000,
         emoji="📟",
         pii_safe=True,
@@ -71,6 +76,8 @@ def register(ctx) -> None:
         platform_hint=PLATFORM_HINT,
     )
     register_tools(ctx)
+    BOARD.register(ctx)  # session state for the dashboard
+    stt.register(ctx)  # platforms.gadget.extra.stt_language for gadget recordings
     ctx.register_cli_command(
         name="gadget",
         help="Manage Hermes gadgets (ESP32 devices)",

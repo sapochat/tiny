@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import re
 import socket
 import sys
 import time
@@ -74,7 +75,8 @@ def _cmd_devices(args) -> None:
         seen = rec.get("last_seen")
         when = _dt.datetime.fromtimestamp(seen).strftime("%Y-%m-%d %H:%M") if seen else "-"
         print(f"{device_id}  {rec.get('name') or '-':<24} {rec.get('board') or '-':<28} "
-              f"{rec.get('firmware') or '-':<10} last seen {when}")
+              f"{rec.get('firmware') or '-':<10} last seen {when}"
+              + ("  waiting to pair" if rec.get("pending") else ""))
     print("\nApprove a new device: hermes gadget pair   |   Approved devices: hermes pairing list   |   "
           "Revoke: hermes pairing revoke gadget <device_id>")
 
@@ -98,8 +100,14 @@ def _cmd_forget(args) -> None:
     print(f"To also remove its chat approval: hermes pairing revoke gadget {device_id}")
 
 
+def _version_key(version: str | None) -> tuple[int, ...] | None:
+    """The leading MAJOR.MINOR.PATCH of a firmware version as numbers, or None when it has none."""
+    found = re.match(r"(\d+)\.(\d+)\.(\d+)", version or "")
+    return tuple(int(n) for n in found.groups()) if found else None
+
+
 def _latest_firmware(rec: dict, name: str, board: str | None, force: bool) -> tuple[bytes, str] | None:
-    """The newest release's app image for the device's board, or None when it already runs it."""
+    """The newest release's app image for the device's board, or None when it already runs it or a newer one."""
     from . import releases
 
     if not board:
@@ -108,9 +116,19 @@ def _latest_firmware(rec: dict, name: str, board: str | None, force: bool) -> tu
         manifest = releases.latest_manifest()
         build = releases.build_for(manifest, board)
         version = manifest["version"]
-        if rec.get("firmware") == version and not force:
-            print(f"{name} already runs {version}, the latest release. --force installs it again.")
-            return None
+        current = rec.get("firmware")
+        if not force:
+            key, release = _version_key(current), _version_key(version)
+            if key is None:
+                sys.exit(f"{name}'s firmware version is unknown ({current or 'not reported'}). --force installs {version} anyway.")
+            if release is None:
+                sys.exit(f"The latest release's version ({version}) can't be compared with {name}'s {current}. --force installs it anyway.")
+            if current == version:
+                print(f"{name} already runs {version}, the latest release. --force installs it again.")
+                return None
+            if key >= release:
+                print(f"{name} runs {current}, at least as new as the latest release ({version}). --force installs {version} anyway.")
+                return None
         print(f"Downloading firmware {version} for {build.get('title') or board}...")
         return releases.download_app(manifest, build), f"Release {version}"
     except releases.ReleaseError as exc:
@@ -225,6 +243,18 @@ def _cmd_pair(args) -> None:
             announced = True
         time.sleep(1)
 
+    if args.device:
+        chosen = [w for w in waiting
+                  if w[0] == args.device or (w[1].get("name") or "").lower() == args.device.lower()]
+        if not chosen:
+            sys.exit(f"{args.device} is not waiting to pair. Waiting: "
+                     + ", ".join(f"{rec.get('name') or device_id} ({device_id})" for device_id, rec, _ in waiting))
+        waiting = chosen
+    if args.yes and len(waiting) > 1:
+        # Blind approval admits one device, not whoever happens to be asking.
+        sys.exit("More than one gadget is waiting to pair; say which one:\n"
+                 + "\n".join(f"  hermes gadget pair --yes {device_id}   # {rec.get('name') or '-'}, code {code}"
+                             for device_id, rec, code in waiting))
     approved = 0
     for device_id, rec, code in waiting:
         name = rec.get("name") or device_id
@@ -242,15 +272,46 @@ def _cmd_pair(args) -> None:
         sys.exit(1)
 
 
+def _tiles():
+    from plugins.plugin_storage import plugin_data_dir
+
+    from .dashboard import TileStore
+
+    return TileStore(plugin_data_dir("gadget"))
+
+
+def _cmd_tile(args) -> None:
+    tiles = _tiles()
+    if args.tile_command == "set":
+        try:
+            tiles.set(args.name, args.value, state=args.state, label=args.label, ttl_s=args.ttl)
+        except ValueError as exc:
+            sys.exit(str(exc))
+        print(f"Set {args.name}: {args.value}" + (f" ({args.state})" if args.state else "")
+              + ". Gadgets showing the dashboard update within a few seconds.")
+    elif args.tile_command == "clear":
+        if not args.name and not args.all:
+            sys.exit("Give a tile name, or --all.")
+        if tiles.clear(None if args.all else args.name):
+            print("Cleared " + ("every tile." if args.all else f"{args.name}."))
+        else:
+            print("No such tile." if args.name else "There were no tiles.")
+    else:
+        shown = tiles.tiles()
+        if not shown:
+            print("No tiles. Add one: hermes gadget tile set nas up --state ok")
+        for tile in shown:
+            print(f"{tile['id']:<16} {tile['label']:<16} {tile['value']:<16} {tile.get('state', '-')}")
+
+
 def setup_argparse(parser) -> None:
-    from . import debug
     subs = parser.add_subparsers(dest="gadget_command")
-    debug.setup_argparse(subs.add_parser("debug", help="Local live diagnostics (JSON; Linux same-user IPC)"))
     subs.add_parser("devices", aliases=["ls"], help="List gadgets that have enrolled with this Hermes")
     forget = subs.add_parser("forget", help="Forget a gadget's key so it can re-enroll (after a factory reset)")
     forget.add_argument("device", help="Device id or name")
     subs.add_parser("info", help="Show the URL devices should connect to, and the installer link")
     pair = subs.add_parser("pair", help="Approve a gadget that shows a pairing code")
+    pair.add_argument("device", nargs="?", help="Only this gadget (id or name); needed with --yes when several wait")
     pair.add_argument("--yes", "-y", action="store_true", help="Approve without asking")
     pair.add_argument("--timeout", type=float, default=PAIR_TIMEOUT_S,
                       help=f"Seconds to wait for a gadget to ask (default {PAIR_TIMEOUT_S})")
@@ -261,19 +322,28 @@ def setup_argparse(parser) -> None:
     update.add_argument("--latest", action="store_true",
                         help="Download the newest release's firmware for the device's board instead")
     update.add_argument("--force", action="store_true",
-                        help="With --latest, install even if the device already runs that version")
+                        help="With --latest, install even if the device runs that version, a newer one, or an unknown one")
     update.add_argument("--no-wait", action="store_true", help="Stage it and return; the gateway installs it")
     update.add_argument("--timeout", type=float, default=600, help="Seconds to wait for the install (default 600)")
+    tile = subs.add_parser("tile", help="Set the status tiles the gadget dashboard shows")
+    tile_subs = tile.add_subparsers(dest="tile_command")
+    tile_set = tile_subs.add_parser("set", help="Add a tile or change its value")
+    tile_set.add_argument("name", help="The tile's name, e.g. nas")
+    tile_set.add_argument("value", help="What it shows, e.g. up")
+    tile_set.add_argument("--state", choices=["ok", "warn", "bad"], help="Colours its dot: green, yellow or red")
+    tile_set.add_argument("--label", help="Text to show instead of the name")
+    tile_set.add_argument("--ttl", type=float, help="Seconds until it disappears unless set again")
+    tile_clear = tile_subs.add_parser("clear", help="Remove a tile")
+    tile_clear.add_argument("name", nargs="?", help="The tile to remove")
+    tile_clear.add_argument("--all", action="store_true", help="Remove every tile")
+    tile_subs.add_parser("list", help="Show the tiles")
     parser.set_defaults(func=handle)
 
 
 _COMMANDS = {"devices": _cmd_devices, "ls": _cmd_devices, "forget": _cmd_forget, "info": _cmd_info,
-             "pair": _cmd_pair, "update": _cmd_update}
+             "pair": _cmd_pair, "update": _cmd_update, "tile": _cmd_tile}
 
 
 def handle(args) -> None:
-    if getattr(args, "gadget_command", None) == "debug":
-        from .debug import handle as debug_handle
-        return debug_handle(args)
     command = _COMMANDS.get(getattr(args, "gadget_command", None) or "info")
     command(args)

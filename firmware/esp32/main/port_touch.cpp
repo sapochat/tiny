@@ -1,15 +1,20 @@
-// Touch controllers and a key mirrored on a TCA9554 expander, polled over
-// I2C from their own task. Samples become Touch and Key events; the app task
-// turns them into gestures (hg::TouchGestures) and button presses.
+// Touch controllers, a key mirrored on a TCA9554 or PCF8574 expander and a
+// rotary encoder, polled from their own task. Samples become Touch, Key and
+// Encoder events; the app task turns them into gestures (hg::TouchGestures)
+// and button presses.
 #include "port.hpp"  // first: pulls in FreeRTOS.h ahead of task.h/queue.h
 
 #include <algorithm>
 
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
+#include "esp_timer.h"
+#include "cst816.hpp"
 #include "esp_lcd_touch_gt911.h"
 #include "esp_lcd_touch_tt21100.h"
 #include "esp_lcd_touch_ft5x06.h"
+#include "esp_lcd_touch_spd2010.h"
 #include "freertos/task.h"
 
 namespace hgp {
@@ -17,12 +22,17 @@ namespace {
 
 const char* TAG = "hg.touch";
 constexpr uint32_t kPollMs = 20;
+constexpr uint32_t kDozePollMs = 50;
+// Dozing with INT armed as a wake source: the sleep exit hook and nudge() end the wait, so the
+// task needs no poll of its own and the CPU stays in light sleep between Wi-Fi beacons.
+constexpr uint32_t kArmedDozeWaitMs = 1000;
 constexpr uint8_t kTca9554Input = 0x00;
 constexpr uint8_t kCstAck = 0xAB;
 
 }  // namespace
 
-bool TouchInput::begin(const TouchConfig& touch, const ExpanderKeyConfig& key, i2c_master_bus_handle_t bus) {
+bool TouchInput::begin(const TouchConfig& touch, const ExpanderKeyConfig& key, const EncoderConfig& encoder,
+                       i2c_master_bus_handle_t bus) {
   if (!bus) return false;
   touch_ = touch;
   key_ = key;
@@ -37,12 +47,36 @@ bool TouchInput::begin(const TouchConfig& touch, const ExpanderKeyConfig& key, i
     esp_lcd_touch_config_t cfg = {};
     cfg.x_max = touch.width;
     cfg.y_max = touch.height;
-    cfg.rst_gpio_num = GPIO_NUM_NC;  // The board's expander already released reset.
+    // CoreS3's expander has already released reset; the 2.06" watch wires it to a GPIO.
+    cfg.rst_gpio_num = touch.rst >= 0 ? static_cast<gpio_num_t>(touch.rst) : GPIO_NUM_NC;
     cfg.int_gpio_num = GPIO_NUM_NC;
     if (esp_lcd_new_panel_io_i2c(bus, &io_cfg, &io) == ESP_OK &&
         esp_lcd_touch_new_i2c_ft5x06(io, &cfg, &managed_touch_) != ESP_OK) esp_lcd_panel_io_del(io);
+    if (managed_touch_ && touch.int_gpio >= 0) gate_on_int();
+  } else if (touch.enabled && touch.controller == TouchController::Gt911) {
+    begin_gt911(bus);
   } else if (touch.enabled && touch.controller == TouchController::Box3) {
     begin_box_touch(bus);
+  } else if (touch.enabled && touch.controller == TouchController::Spd2010) {
+    esp_lcd_panel_io_i2c_config_t io_cfg = {};
+    io_cfg.dev_addr = touch.addr;
+    io_cfg.scl_speed_hz = 100000;
+    io_cfg.control_phase_bytes = 1;
+    io_cfg.lcd_cmd_bits = 0;
+    io_cfg.flags.disable_control_phase = 1;
+    esp_lcd_panel_io_handle_t io = nullptr;
+    esp_lcd_touch_config_t cfg = {};
+    cfg.x_max = touch.width;
+    cfg.y_max = touch.height;
+    // The expander pulse already released reset. INT is gated below.
+    cfg.rst_gpio_num = GPIO_NUM_NC;
+    cfg.int_gpio_num = GPIO_NUM_NC;
+    cfg.flags.swap_xy = touch.swap_xy;
+    cfg.flags.mirror_x = touch.mirror_x;
+    cfg.flags.mirror_y = touch.mirror_y;
+    if (esp_lcd_new_panel_io_i2c(bus, &io_cfg, &io) == ESP_OK &&
+        esp_lcd_touch_new_i2c_spd2010(io, &cfg, &managed_touch_) != ESP_OK) esp_lcd_panel_io_del(io);
+    if (managed_touch_ && touch.int_gpio >= 0) gate_on_int();
   } else if (touch.enabled) {
     if (touch.rst >= 0) {
       gpio_config_t rst = {};
@@ -59,9 +93,13 @@ bool TouchInput::begin(const TouchConfig& touch, const ExpanderKeyConfig& key, i
     dev.device_address = touch.addr;
     dev.scl_speed_hz = 400000;
     if (i2c_master_bus_add_device(bus, &dev, &touch_dev_) == ESP_OK) {
-      const uint8_t command_mode[2] = {0xD1, 0x01};
+      const uint8_t command_mode[2] = {touch.controller == TouchController::Cst816 ? uint8_t(0xFE) : uint8_t(0xD1), 0x01};
       if (i2c_master_transmit(touch_dev_, command_mode, sizeof(command_mode), 50) != ESP_OK) {
         ESP_LOGW(TAG, "touch controller at 0x%02x did not answer", touch.addr);
+        if (touch.controller == TouchController::Cst816) {
+          i2c_master_bus_rm_device(touch_dev_);
+          touch_dev_ = nullptr;
+        }
       }
       vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -72,10 +110,46 @@ bool TouchInput::begin(const TouchConfig& touch, const ExpanderKeyConfig& key, i
     dev.device_address = key.addr;
     dev.scl_speed_hz = 400000;
     if (i2c_master_bus_add_device(bus, &dev, &key_dev_) != ESP_OK) key_dev_ = nullptr;
+    if (key_dev_ && key.pcf8574) {
+      // A PCF8574 pin reads as an input only while its output latch is high.
+      const uint8_t release = 0xFF;
+      if (i2c_master_transmit(key_dev_, &release, 1, 50) != ESP_OK) ESP_LOGW(TAG, "PCF8574 at 0x%02x did not answer", key.addr);
+    }
   }
-  if (!has_touch() && !key_dev_) return false;
-  xTaskCreate(&TouchInput::task, "hg-touch", 3072, this, 5, nullptr);
-  ESP_LOGI(TAG, "touch %s, key %s", has_touch() ? "ready" : "off", key_dev_ ? "ready" : "off");
+  if (encoder.a >= 0 && encoder.b >= 0) {
+    encoder_pulse_per_detent_ = encoder.pulse_per_detent;
+    gpio_config_t pins = {};
+    pins.pin_bit_mask = (1ULL << encoder.a) | (1ULL << encoder.b);
+    pins.mode = GPIO_MODE_INPUT;
+    pins.pull_up_en = GPIO_PULLUP_ENABLE;
+    pins.intr_type = GPIO_INTR_ANYEDGE;  // the ISR decoder needs the edges enabled
+    if (gpio_config(&pins) == ESP_OK) {
+      encoder_a_ = static_cast<gpio_num_t>(encoder.a);
+      encoder_b_ = static_cast<gpio_num_t>(encoder.b);
+      encoder_state_ = static_cast<uint8_t>((gpio_get_level(encoder_a_) << 1) | gpio_get_level(encoder_b_));
+      // Edge-driven: polling loses most detents on fast turns (the quadrature
+      // table needs every edge). Each edge steps the decoder in the ISR; the
+      // task drains whole detents and posts them. The service may already be
+      // installed by gate_on_int().
+      const auto a_handler = encoder.pulse_per_detent ? &TouchInput::on_encoder_a_edge : &TouchInput::on_encoder_edge;
+      const auto b_handler = encoder.pulse_per_detent ? &TouchInput::on_encoder_b_edge : &TouchInput::on_encoder_edge;
+      const esp_err_t isr = gpio_install_isr_service(0);
+      if (isr == ESP_OK || isr == ESP_ERR_INVALID_STATE) {
+        gpio_isr_handler_add(encoder_a_, a_handler, this);
+        gpio_isr_handler_add(encoder_b_, b_handler, this);
+      } else {
+        ESP_LOGW(TAG, "encoder ISR unavailable (%s); detents may drop on fast turns", esp_err_to_name(isr));
+      }
+    }
+  }
+  const bool has_encoder = encoder_a_ != GPIO_NUM_NC;
+  if (!has_touch() && !key_dev_ && !has_encoder) return false;
+  if (xTaskCreate(&TouchInput::task, "hg-touch", 3072, this, 5, nullptr) != pdPASS) {
+    ESP_LOGE(TAG, "could not start the touch task");
+    return false;
+  }
+  ESP_LOGI(TAG, "touch %s, key %s, encoder %s", has_touch() ? "ready" : "off", key_dev_ ? "ready" : "off",
+           has_encoder ? "ready" : "off");
   return true;
 }
 
@@ -86,6 +160,19 @@ bool TouchInput::read_touch(TouchSample& out) {
     uint8_t points = 0;
     const bool down = esp_lcd_touch_get_coordinates(managed_touch_, &x, &y, nullptr, &points, 1);
     out = {down && points > 0, static_cast<int16_t>(x), static_cast<int16_t>(y)};
+    return true;
+  }
+  if (touch_.controller == TouchController::Cst816) {
+    const uint8_t reg = 0x02;
+    uint8_t data[5] = {};
+    if (i2c_master_transmit_receive(touch_dev_, &reg, 1, data, sizeof(data), 20) != ESP_OK) return false;
+    if (!hg::cst816_touch(data, touch_.width, touch_.height, out.touching, out.x, out.y)) return false;
+    // Native panel coordinates. A board that rotates the glass sets these so
+    // the touch lands on the pixel that was drawn there.
+    if (out.touching) {
+      if (touch_.mirror_x && touch_.width) out.x = static_cast<int16_t>(touch_.width - 1 - out.x);
+      if (touch_.mirror_y && touch_.height) out.y = static_cast<int16_t>(touch_.height - 1 - out.y);
+    }
     return true;
   }
   const uint8_t reg[2] = {0xD0, 0x00};
@@ -101,7 +188,62 @@ bool TouchInput::read_touch(TouchSample& out) {
   int y = (buf[2] << 4) | (buf[3] & 0x0F);
   if (touch_.mirror_x && touch_.width) x = touch_.width - 1 - x;
   if (touch_.mirror_y && touch_.height) y = touch_.height - 1 - y;
+  if (touch_.swap_xy) std::swap(x, y);
   out = {down, static_cast<int16_t>(x), static_cast<int16_t>(y)};
+  return true;
+}
+
+bool TouchInput::begin_gt911(i2c_master_bus_handle_t bus) {
+  if (touch_.rst >= 0) {
+    gpio_config_t rst = {};
+    rst.pin_bit_mask = 1ULL << touch_.rst;
+    rst.mode = GPIO_MODE_OUTPUT;
+    rst.pull_up_en = GPIO_PULLUP_ENABLE;
+    if (gpio_config(&rst) != ESP_OK) {
+      ESP_LOGE(TAG, "GT911 reset GPIO%d could not be configured", touch_.rst);
+      return false;
+    }
+    gpio_set_level(static_cast<gpio_num_t>(touch_.rst), 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level(static_cast<gpio_num_t>(touch_.rst), 1);
+    vTaskDelay(pdMS_TO_TICKS(60));
+  }
+  if (touch_.int_gpio >= 0) {
+    gpio_config_t int_line = {};
+    int_line.pin_bit_mask = 1ULL << touch_.int_gpio;
+    int_line.mode = GPIO_MODE_INPUT;
+    int_line.pull_up_en = GPIO_PULLUP_DISABLE;
+    int_line.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&int_line);
+  }
+  const bool at_5d = i2c_master_probe(bus, ESP_LCD_TOUCH_IO_I2C_GT911_ADDRESS, 50) == ESP_OK;
+  const bool at_14 = i2c_master_probe(bus, ESP_LCD_TOUCH_IO_I2C_GT911_ADDRESS_BACKUP, 50) == ESP_OK;
+  if (!at_5d && !at_14) {
+    ESP_LOGE(TAG, "no GT911 answered at 0x5D or 0x14 on the touch I2C bus");
+    return false;
+  }
+  const uint8_t addr = at_14 ? ESP_LCD_TOUCH_IO_I2C_GT911_ADDRESS_BACKUP : ESP_LCD_TOUCH_IO_I2C_GT911_ADDRESS;
+  esp_lcd_panel_io_i2c_config_t io_cfg = {};
+  io_cfg.dev_addr = addr;
+  io_cfg.scl_speed_hz = 400000;
+  io_cfg.control_phase_bytes = 1;
+  io_cfg.lcd_cmd_bits = 16;
+  io_cfg.flags.disable_control_phase = 1;
+  esp_lcd_panel_io_handle_t io = nullptr;
+  if (esp_lcd_new_panel_io_i2c(bus, &io_cfg, &io) != ESP_OK) return false;
+  esp_lcd_touch_config_t cfg = {};
+  cfg.x_max = touch_.width;
+  cfg.y_max = touch_.height;
+  cfg.rst_gpio_num = GPIO_NUM_NC;
+  cfg.int_gpio_num = GPIO_NUM_NC;
+  cfg.flags.swap_xy = touch_.swap_xy;
+  cfg.flags.mirror_x = touch_.mirror_x;
+  cfg.flags.mirror_y = touch_.mirror_y;
+  if (esp_lcd_touch_new_i2c_gt911(io, &cfg, &managed_touch_) != ESP_OK) {
+    esp_lcd_panel_io_del(io);
+    return false;
+  }
+  ESP_LOGI(TAG, "GT911 ready at 0x%02x, %ux%u", addr, touch_.width, touch_.height);
   return true;
 }
 
@@ -127,8 +269,12 @@ bool TouchInput::begin_box_touch(i2c_master_bus_handle_t bus) {
   cfg.x_max = touch_.width;
   cfg.y_max = touch_.height;
   cfg.rst_gpio_num = GPIO_NUM_NC;  // Display initialization already reset the shared line.
-  cfg.int_gpio_num = GPIO_NUM_3;
-  cfg.flags.mirror_x = tt21100;
+  cfg.int_gpio_num = touch_.int_gpio >= 0 ? static_cast<gpio_num_t>(touch_.int_gpio) : GPIO_NUM_NC;
+  // TT21100 on BOX and BOX-3 mirrors X even when the board leaves the flag
+  // clear. A board that sets mirror_x (Korvo-2) applies it to GT911 as well.
+  cfg.flags.swap_xy = touch_.swap_xy;
+  cfg.flags.mirror_x = tt21100 || touch_.mirror_x;
+  cfg.flags.mirror_y = touch_.mirror_y;
   const esp_err_t err = tt21100 ? esp_lcd_touch_new_i2c_tt21100(io, &cfg, &managed_touch_)
                               : esp_lcd_touch_new_i2c_gt911(io, &cfg, &managed_touch_);
   if (err != ESP_OK) { esp_lcd_panel_io_del(io); return false; }
@@ -137,21 +283,202 @@ bool TouchInput::begin_box_touch(i2c_master_bus_handle_t bus) {
 
 bool TouchInput::read_key(bool& pressed) {
   uint8_t reg = kTca9554Input, value = 0;
-  if (i2c_master_transmit_receive(key_dev_, &reg, 1, &value, 1, 20) != ESP_OK) return false;
+  const esp_err_t err = key_.pcf8574 ? i2c_master_receive(key_dev_, &value, 1, 20)
+                                     : i2c_master_transmit_receive(key_dev_, &reg, 1, &value, 1, 20);
+  if (err != ESP_OK) return false;
   bool high = (value >> key_.bit) & 1;
   pressed = key_.active_high ? high : !high;
   return true;
 }
 
+// A quadrature step table: four steps make one detent.
+// Runs on every A/B edge: one quadrature step toward the next detent; the
+// fourth step is a whole detent, parked for the task to post. Polling at the
+// task's 20 ms cadence skipped edges on fast turns and dropped most detents.
+void IRAM_ATTR TouchInput::on_encoder_edge(void* arg) {
+  auto* self = static_cast<TouchInput*>(arg);
+  static constexpr int8_t kStep[16] = {0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0};
+  const uint8_t state = static_cast<uint8_t>((gpio_get_level(self->encoder_a_) << 1) | gpio_get_level(self->encoder_b_));
+  int8_t accum = static_cast<int8_t>(self->encoder_accumulator_ + kStep[(self->encoder_state_ << 2) | state]);
+  self->encoder_state_ = state;
+  BaseType_t woken = pdFALSE;
+  if (accum >= 4 || accum <= -4) {
+    self->encoder_pending_ += accum > 0 ? 1 : -1;
+    accum = 0;
+    if (self->task_) vTaskNotifyGiveFromISR(static_cast<TaskHandle_t>(self->task_), &woken);
+    if (woken) portYIELD_FROM_ISR();
+  }
+  self->encoder_accumulator_ = accum;
+}
+
+// Mouse-wheel style encoders (the Knob-1.8 ring): every detent emits a full low
+// pulse on one channel and then, ~100-160 ms later, a full pulse on the other —
+// the leading channel picks the direction (CW: A then B; CCW: B then A). A naive
+// pulse-per-edge count cancels itself (each detent = +1 then -1), and a quadrature
+// table sums to zero on the 11→01→11→10→11 walk, which is why both previous
+// decoders never scrolled. So: the first assert edge arms the detent, the partner
+// channel's assert edge completes it, and a 200 ms timeout posts solo pulses
+// (fast spins blur the pairs together). Channel A leads = clockwise, B = counter-
+// clockwise (mapping validated by the owner on hardware).
+void TouchInput::encoder_pulse(int8_t channel) {
+  auto* self = this;
+  const gpio_num_t pin = channel > 0 ? self->encoder_a_ : self->encoder_b_;
+  if (gpio_get_level(pin) != 0) return;  // only the assert edge
+  const int64_t now = esp_timer_get_time();
+  if (self->last_edge_us_ != INT64_MIN && now - self->last_edge_us_ < 20000) return;  // contact bounce
+  self->last_edge_us_ = now;
+  BaseType_t woken = pdFALSE;
+  if (self->encoder_first_ == 0) {
+    self->encoder_first_ = channel;  // leading edge: direction is decided here
+    self->encoder_pair_deadline_us_ = now + 200000;
+    return;                          // wait for the partner pulse or the task's timeout
+  }
+  if (channel != self->encoder_first_) {  // partner arrived: one full detent
+    self->encoder_pending_ += self->encoder_first_ > 0 ? -1 : 1;  // A-led = CW
+    self->encoder_first_ = 0;
+    self->encoder_pair_deadline_us_ = 0;
+    if (self->task_) vTaskNotifyGiveFromISR(static_cast<TaskHandle_t>(self->task_), &woken);
+    if (woken) portYIELD_FROM_ISR();
+  }
+}
+
+void IRAM_ATTR TouchInput::on_encoder_a_edge(void* arg) {
+  static_cast<TouchInput*>(arg)->encoder_pulse(1);
+}
+
+void IRAM_ATTR TouchInput::on_encoder_b_edge(void* arg) {
+  static_cast<TouchInput*>(arg)->encoder_pulse(-1);
+}
+
+// The 2.06's FT3168 dozes after idling: it then refuses most reads (every 20 ms poll failed for
+// seconds at a time, each logging an error), and the touch that wakes it shows up only as one
+// short INT pulse whose report is gone ~20 ms later (a polled task lost that tap). Its power
+// registers (G_CTRL 0x86, the monitor delay 0x87) don't stay written. So, with INT wired, an
+// interrupt on its falling edge wakes the task to read at once, and without a finger the chip is
+// read only after an edge.
+void TouchInput::gate_on_int() {
+  gpio_config_t pin = {};
+  pin.pin_bit_mask = 1ULL << touch_.int_gpio;
+  pin.mode = GPIO_MODE_INPUT;
+  pin.pull_up_en = GPIO_PULLUP_ENABLE;
+  pin.intr_type = GPIO_INTR_NEGEDGE;
+  if (gpio_config(&pin) != ESP_OK || !gpio_isr_service() ||
+      gpio_isr_handler_add(static_cast<gpio_num_t>(touch_.int_gpio), &TouchInput::on_int, this) != ESP_OK) {
+    ESP_LOGW(TAG, "touch INT on GPIO %d unavailable; polling the chip", touch_.int_gpio);
+    return;
+  }
+  int_gated_ = true;
+  ESP_LOGI(TAG, "touch read on INT (GPIO %d)", touch_.int_gpio);
+  // SPD2010 holds INT low from reset until the first read sends the CPU-start
+  // command. A falling-edge handler installed after that misses the level, the
+  // task never reads, and the controller stays in BIOS. Sample once. The task
+  // does not exist yet, so the flag is enough. An idle FT3168 sits high.
+  if (gpio_get_level(static_cast<gpio_num_t>(touch_.int_gpio)) == 0) int_pending_ = true;
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+  if (touch_.int_wakes) {
+    // The pin keeps its input and pull-up through light sleep, so a low INT can wake the chip.
+    gpio_sleep_sel_dis(static_cast<gpio_num_t>(touch_.int_gpio));
+    esp_pm_sleep_cbs_register_config_t cbs = {};
+    cbs.exit_cb = &TouchInput::on_sleep_exit;
+    cbs.exit_cb_user_arg = this;
+    sleep_wake_ = esp_pm_light_sleep_register_cbs(&cbs) == ESP_OK;
+    if (sleep_wake_) ESP_LOGI(TAG, "touch INT wakes light sleep");
+  }
+#endif
+}
+
+// While dozing, light sleep stops the edge ISR from running, and the FT3168's report is gone
+// ~20 ms after its INT pulse. So INT becomes a low-level wake source instead (sharing the pin's
+// interrupt type register, so the edge ISR is off meanwhile), and the sleep exit hook sends the
+// task to read when INT is low after a wake. Awake again, the edge ISR comes back. With the
+// touch_wake setting off, a doze leaves INT quiet: no wake, no read, only a key lights the screen.
+// A touch_wake change during a doze (set_wakes nudges the task) re-arms with the new setting.
+void TouchInput::arm_sleep_wake(bool dozing) {
+  if (!sleep_wake_) return;
+  if (dozing && sleep_wake_armed_ && quiet_ == wakes_.load()) arm_sleep_wake(false);
+  if (dozing == sleep_wake_armed_) return;
+  const auto pin = static_cast<gpio_num_t>(touch_.int_gpio);
+  sleep_wake_armed_ = dozing;
+  if (dozing) {
+    quiet_ = !wakes_;
+    gpio_intr_disable(pin);
+    if (quiet_) return;
+    gpio_wakeup_enable(pin, GPIO_INTR_LOW_LEVEL);
+    esp_sleep_enable_gpio_wakeup();
+    return;
+  }
+  if (!quiet_) gpio_wakeup_disable(pin);
+  gpio_set_intr_type(pin, GPIO_INTR_NEGEDGE);
+  gpio_intr_enable(pin);
+  if (gpio_get_level(pin) == 0) int_pending_ = true;  // a report may be waiting
+}
+
+esp_err_t IRAM_ATTR TouchInput::on_sleep_exit(int64_t, void* arg) {
+  auto* self = static_cast<TouchInput*>(arg);
+  if (!self->sleep_wake_armed_ || self->quiet_ || gpio_get_level(static_cast<gpio_num_t>(self->touch_.int_gpio)) != 0) return ESP_OK;
+  self->int_pending_ = true;
+  BaseType_t woken = pdFALSE;
+  if (self->task_) vTaskNotifyGiveFromISR(static_cast<TaskHandle_t>(self->task_), &woken);
+  return ESP_OK;
+}
+
+void IRAM_ATTR TouchInput::on_int(void* arg) {
+  auto* self = static_cast<TouchInput*>(arg);
+  self->int_pending_ = true;
+  BaseType_t woken = pdFALSE;
+  if (self->task_) vTaskNotifyGiveFromISR(static_cast<TaskHandle_t>(self->task_), &woken);
+  if (woken) portYIELD_FROM_ISR();
+}
+
+// Without INT every poll reads; with it, only a pending report, a finger still
+// down, or a line that is still low. SPD2010 leaves INT low until a read
+// clears it. may_read consumes the pending flag before that read, so a failed
+// status read would otherwise never be retried: the line never rises, and no
+// second falling edge arrives. An idle FT3168 sits high and is not polled.
+bool TouchInput::may_read(bool was_touching) {
+  if (!int_gated_) return true;
+  if (int_pending_.exchange(false) || was_touching) return true;
+  return gpio_get_level(static_cast<gpio_num_t>(touch_.int_gpio)) == 0;
+}
+
+void TouchInput::nudge() {
+  if (task_) xTaskNotifyGive(static_cast<TaskHandle_t>(task_));
+}
+
+// Waits out the poll period, or less: an INT edge or an encoder detent ends
+// the wait at once (both notify this task).
+void TouchInput::wait(uint32_t ms) {
+  ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(ms));
+}
+
 void TouchInput::task(void* arg) {
   auto* self = static_cast<TouchInput*>(arg);
+  self->task_ = xTaskGetCurrentTaskHandle();
   bool was_touching = false, key_down = false;
+  hg::Cst816Fault fault;
+  TouchSample last{};
   for (;;) {
     TouchSample s{};
-    if (self->has_touch() && self->read_touch(s)) {
+    if (self->has_touch() && self->may_read(was_touching) && self->read_touch(s)) {
+      // Glass rows above the UI inset still belong to the top bar, not off-screen.
+      s.y = static_cast<int16_t>(std::max(0, s.y - self->touch_.offset_y));
+      fault.valid();
       // Every sample while the finger is down (gestures need the motion), plus the lift.
-      if (s.touching || was_touching) events::post(EventType::Touch, &s, sizeof(s));
-      was_touching = s.touching;
+      if (s.touching || was_touching) {
+        const bool posted = events::post(EventType::Touch, &s, sizeof(s));
+        // CST816: keep the delivered state until enqueue succeeds, including a lift.
+        if (posted || self->touch_.controller != TouchController::Cst816) was_touching = s.touching;
+      }
+      last = s;
+    } else if (self->touch_.controller == TouchController::Cst816 &&
+               fault.release_due(was_touching)) {
+      // Five failed polls (~100–200 ms plus scheduler delay): release once.
+      // Retry if the event queue is full; do not silently lose the release.
+      last.touching = false;
+      if (events::post(EventType::Touch, &last, sizeof(last))) {
+        was_touching = false;
+        ESP_LOGW(TAG, "CST816 fault: held touch released after five failed polls");
+      }
     }
     bool pressed = false;
     if (self->key_dev_ && self->read_key(pressed) && pressed != key_down) {
@@ -159,7 +486,31 @@ void TouchInput::task(void* arg) {
       KeySample k{pressed};
       events::post(EventType::Key, &k, sizeof(k));
     }
-    vTaskDelay(pdMS_TO_TICKS(kPollMs));
+    // Encoder detents arrive from the ISR (one per quadrature cycle); post each.
+    int8_t pending = self->encoder_pending_.exchange(0);
+    while (pending != 0) {
+      const int8_t step = pending > 0 ? 1 : -1;
+      pending = static_cast<int8_t>(pending - step);
+      EncoderSample e{step};
+      events::post(EventType::Encoder, &e, sizeof(e));
+    }
+    // Solo-pulse timeout: a detent whose partner never showed (fast spin or
+    // a stop mid-pair) posts from its leading channel once 200 ms pass quiet.
+    if (self->encoder_first_ != 0 && self->encoder_pair_deadline_us_ != 0 &&
+        esp_timer_get_time() > self->encoder_pair_deadline_us_) {
+      self->encoder_pending_ += self->encoder_first_ > 0 ? -1 : 1;  // A-led = CW
+      self->encoder_first_ = 0;
+      self->encoder_pair_deadline_us_ = 0;
+    }
+    // Dozing (screen off, on battery), poll less often so the chip can light-sleep
+    // between polls; a touch still wakes the screen within about 50 ms. With INT armed
+    // as a wake source and nothing else to poll, only a wake or nudge() ends the wait.
+    // While a Wi-Fi join attempt holds the chip awake, the doze has no light sleep to wake
+    // from, so INT stays on its edge interrupt and a tap is read as when awake.
+    const bool dozing = EspSystem::dozing_now();
+    self->arm_sleep_wake(dozing && !EspSystem::sleep_held_now());
+    const bool int_only = self->sleep_wake_armed_ && !self->key_dev_ && self->encoder_a_ == GPIO_NUM_NC;
+    self->wait(!dozing ? kPollMs : int_only ? kArmedDozeWaitMs : kDozePollMs);
   }
 }
 

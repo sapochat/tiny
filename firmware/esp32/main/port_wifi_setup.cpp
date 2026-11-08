@@ -136,6 +136,17 @@ std::string Wifi::start_setup() {
          "\nOpen http://192.168.4.1\nAvailable for 10 minutes.";
 }
 
+// The temporary network's credentials. Returns empty fields when setup is not
+// running, so the setup screen simply shows no code.
+hg::WifiSetupAp Wifi::setup_ap() {
+  std::lock_guard<std::mutex> lock(setup_mutex_);
+  hg::WifiSetupAp ap;
+  if (!accepting_setup_) return ap;
+  ap.ssid = ap_name_;
+  ap.password = ap_password_;
+  return ap;
+}
+
 void Wifi::stop_setup() {
   {
     std::lock_guard<std::mutex> lock(setup_mutex_);
@@ -173,6 +184,13 @@ esp_err_t Wifi::setup_http(httpd_req_t* req) {
     }
     result.set("ssid", self->storage_->get("wifi_ssid").value_or(CONFIG_HG_DEFAULT_WIFI_SSID));
     result.set("server", self->storage_->get("server").value_or(CONFIG_HG_DEFAULT_SERVER_URL));
+    if (TailnetLink::supported()) {
+      // Whether the board can reach Hermes over a tailnet, as the settings stand; never the key.
+      auto tailnet = hg::json::Value::object();
+      tailnet.set("on", self->storage_->get("tailnet").value_or("off") == "on")
+          .set("key", !self->storage_->get("ts_key").value_or("").empty());
+      result.set("tailnet", tailnet);
+    }
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, result.dump().c_str());
   }

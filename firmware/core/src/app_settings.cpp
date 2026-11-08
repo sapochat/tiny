@@ -3,285 +3,62 @@
 #include <algorithm>
 #include <vector>
 
+#include "hg/console_args.hpp"
+#include "hg/wifi_networks.hpp"
+
 namespace hg {
 
-TouchView App::touch_view() const {
-  if (mode_ == Mode::Listening) return TouchView::Recording;
-  if (prompt_showing()) return TouchView::Approval;
-#ifdef HG_ROUND_UI
-  if (profile_.touch_screen && alarm_showing()) return TouchView::Alarm;
-#endif
-  if (settings_open() || wifi_setup_open() || !can_talk() || ota_busy() ||
-      ota_ == Ota::Restarting || !fatal_.empty()) return TouchView::Other;
-  if (overlay_ != Overlay::None) return TouchView::Other;
-  if (navigation_ == Navigation::Recent) return TouchView::Recent;
-  if (navigation_ == Navigation::Result) return TouchView::Result;
-  if (navigation_ == Navigation::Controls) return TouchView::Controls;
-  if (navigation_ == Navigation::Home) return TouchView::Home;
-  if (navigation_ == Navigation::Response || (!model_.hero &&
-      (model_.screen == Screen::Responding || model_.screen == Screen::Ready))) return TouchView::Response;
-  return TouchView::Home;
-}
-
-TouchControl App::touch_hit(int x, int y) const {
-  return ui_ ? ui_->control_hit(x, y, model_) : TouchControl::None;
-}
-
-void App::touch_swipe(TouchView owner, int dx, int dy, TouchControl control) {
-  const auto previous_navigation = navigation_;
-  if (mode_ == Mode::Listening || !ui_) return;
-  if (owner == TouchView::Alarm) return;  // only Dismiss ends an alarm; a swipe never does
-  // Preserve the separate, explicit legacy setup/check workflow. Quick controls
-  // never enter this menu and never use its Cancel/new-session button path.
-  if (owner == TouchView::Other && wifi_setup_open()) {
-    if (dy > 0) close_wifi_setup();
-    return;
-  }
-  if (owner == TouchView::Other && settings_open()) {
-    if (dy) settings_input(dy > 0 ? Button::Down : Button::Up, true);
-    update_model();
-    return;
-  }
-  if (owner == TouchView::Other && overlay_ != Overlay::None && !prompt_showing()) {
-    if (dy > 0) dismiss_overlay();
-    update_model();
-    return;
-  }
-  if (prompt_showing()) {
-    if (owner != TouchView::Approval || !dy) return;
-    int total = static_cast<int>(ui_->body_lines(prompt_text_, model_).size());
-    int last = std::max(0, total - ui_->body_rows(model_));
-    prompt_scroll_ = std::clamp(prompt_scroll_ + (dy < 0 ? 3 : -3), 0, last);
-    prompt_read();
-  } else if (!can_talk() || ota_busy() || ota_ == Ota::Restarting) return;
-  else if (owner == TouchView::Result) {
-    if (dx > 0) navigation_ = Navigation::Recent;
-    else if (dy) {
-      const int last = std::max(0, int(ui_->body_lines(reading_work_.glance, model_).size()) - ui_->body_rows(model_));
-      reading_work_.scroll = std::clamp(reading_work_.scroll + (dy < 0 ? 3 : -3), 0, last);
-      for (auto& item : recent_)
-        if (item.id == reading_work_.id && item.revision == reading_work_.revision) item.scroll = reading_work_.scroll;
-    }
-  } else if (owner == TouchView::Recent) {
-    if (dx > 0) navigation_ = Navigation::Controls;
-  } else if (owner == TouchView::Home) {
-    if (dy > 0) navigation_ = Navigation::Controls;
-    else if (dy < 0 && !reply_.empty()) navigation_ = Navigation::Response;
-  } else if (owner == TouchView::Response) {
-    if (dx > 0) navigation_ = Navigation::Home;
-    else if (dy) {
-      navigation_ = Navigation::Response;
-      scroll_body(dy < 0 ? 3 : -3);
-    }
-  } else if (owner == TouchView::Controls && navigation_ == Navigation::Controls) {
-    if (dx > 0) navigation_ = Navigation::Home;
-    else if (dy && control == TouchControl::Volume && hal_.speaker)
-      console("set volume " + std::to_string(std::clamp(int(volume_) - dy / 4, 0, 100)));
-    else if (dy && control == TouchControl::Brightness && hal_.display && hal_.display->info().has_backlight)
-      console("set brightness " + std::to_string(std::clamp(int(brightness_) - dy / 4, 10, 100)));
-  }
-  if (navigation_ != previous_navigation) ++model_.navigation;
-  update_model();
-}
-
-void App::touch_press(TouchControl control) {
-  if (control == pressed_) return;
-  pressed_ = control;
-  update_model();
-}
-
-bool App::touch_slide(TouchView owner, TouchControl control, int y, bool done) {
-#ifdef HG_ROUND_UI
-  const bool volume = control == TouchControl::Volume && hal_.speaker;
-  const bool light = control == TouchControl::Brightness && hal_.display && hal_.display->info().has_backlight;
-  if (done) {  // the lift: save the value the finger left, once
-    if (volume) console("set volume " + std::to_string(volume_));
-    else if (light) console("set brightness " + std::to_string(brightness_));
-    return true;
-  }
-  if (!ui_ || !ui_->round_companion() || owner != TouchView::Controls || owner != touch_view() ||
-      navigation_ != Navigation::Controls || !(volume || light))
-    return false;
-  // The same mapping the track draws: its inner span (8px insets) is 0..100%.
-  const UiRect r = ui_->control_rect(control, model_);
-  const int inner = r.h - 16;
-  if (inner <= 0) return false;
-  const int v = std::clamp((r.y + 8 + inner - y) * 100 / inner, light ? 10 : 0, 100);
-  if (volume && v != volume_) {
-    volume_ = static_cast<uint8_t>(v);
-    hal_.speaker->set_volume(volume_);
-  } else if (light && v != brightness_) {
-    brightness_ = static_cast<uint8_t>(v);
-    hal_.display->set_backlight(brightness_);
-  }
-  update_model();
-  return true;
-#else
-  (void)owner; (void)control; (void)y; (void)done;
-  return false;
-#endif
-}
-
-uint32_t App::control_revision(TouchControl control) const {
-  if (control >= TouchControl::Recent && control <= TouchControl::Next) return shelf_epoch_;
-  if (control == TouchControl::LastTask) return shelf_epoch_ * 31u + work_epoch_;
-#ifdef HG_ROUND_UI
-  if (control == TouchControl::Dismiss) return timer_epoch_;
-#endif
-  switch (control) {
-    case TouchControl::Reply: return reply_epoch_;
-    case TouchControl::Silence: return output_epoch_;
-    case TouchControl::Stop:
-    case TouchControl::NewChat: return work_epoch_;  // new work under the finger voids the hold
-    case TouchControl::Discard:
-    case TouchControl::Finish: return capture_epoch_;
-    default: return 0;
-  }
-}
-
-void App::on_touch_talk(bool pressed) {
-  if (pressed && prompt_showing()) return;  // touch Talk asks or clarifies; it never answers Yes
-  touch_talk_ = true;
-  on_button(Button::Talk, pressed);
-  touch_talk_ = false;
-}
-
-void App::touch_tap(TouchView owner, TouchControl control, uint32_t pressed_at) {
-  const auto previous_navigation = navigation_;
-  if (owner != touch_view()) return;
-#ifdef HG_ROUND_UI
-  if (owner == TouchView::Alarm || (owner == TouchView::Home && control == TouchControl::Dismiss)) {
-    if (control == TouchControl::Dismiss && (owner == TouchView::Alarm || model_.timer_done)) dismiss_timers();
-    return;
-  }
-#endif
-  if (owner == TouchView::Other && settings_open()) {
-    if (control == TouchControl::Done) close_settings();  // visible exit (R-09)
-    else settings_input(Button::Talk, false);
-  } else if (owner == TouchView::Other && control == TouchControl::Retry) {
-    retry_connection();
-  } else if (owner == TouchView::Other && control == TouchControl::Settings) {
-    open_settings();  // the visible route to local recovery on the connection screens
-  } else if (owner == TouchView::Approval) {
-    if (prompt_read() && prompt_armed(pressed_at) && (control == TouchControl::Yes || control == TouchControl::No))
-      answer_prompt(control == TouchControl::Yes);
-  } else if (owner == TouchView::Recording) {
-    // Only a free hand can tap: tap mode, or a physical TALK hold. A touch hold owns the screen.
-    if (control == TouchControl::Discard && model_.capture >= 2) discard_capture();
-    else if (control == TouchControl::Finish && model_.capture == 3 && hands_free_) finish_listening();
-  } else if (control == TouchControl::Recent && work_available_) {
-    navigation_ = Navigation::Recent;
-  } else if (owner == TouchView::Recent) {
-    if (control == TouchControl::Home) navigation_ = Navigation::Controls;
-    else if (control == TouchControl::Next) {
-      work_page_ = work_page_ + 3 < recent_.size() ? work_page_ + 3 : 0;
-      ++shelf_epoch_;
-    } else if (control >= TouchControl::Work0 && control <= TouchControl::Work2) {
-      unsigned i = work_page_ + unsigned(control) - unsigned(TouchControl::Work0);
-      if (i < recent_.size()) { reading_work_ = recent_[i]; navigation_ = Navigation::Result; }
-    }
-  } else if (owner == TouchView::Result && control == TouchControl::Home) {
-    navigation_ = Navigation::Recent;
-  } else if (control == TouchControl::Silence) {
-    if (model_.can_silence) silence();
-  } else if (control == TouchControl::Stop) {
-    if (model_.can_stop) request_stop();
-    // A pending stop is already shown on the target; a second tap sends nothing.
-  } else if (owner == TouchView::Home && control == TouchControl::Controls) {
-    navigation_ = Navigation::Controls;
-  } else if ((owner == TouchView::Response || owner == TouchView::Controls) && control == TouchControl::Home) {
-    navigation_ = Navigation::Home;
-  } else if (owner == TouchView::Controls && control == TouchControl::Settings) {
-    open_settings();
-  } else if (owner == TouchView::Controls && control == TouchControl::NewChat) {
-    new_chat_hint_until_ = now() + 2000;  // a tap never starts over; the target says to hold
-  } else if (owner == TouchView::Response && control == TouchControl::Talk) {
-    if (model_.talk_control && talk_mode_ == TalkMode::Tap) {
-      on_touch_talk(true);
-      on_touch_talk(false);
-    }  // hold mode: the target itself says "Hold to talk"; a tap does nothing
-  } else if (owner == TouchView::Home && control == TouchControl::LastTask && model_.last_task) {
-    if (const WorkItem* item = last_task_item()) { reading_work_ = *item; navigation_ = Navigation::Result; }
-  } else if (owner == TouchView::Home && control == TouchControl::Reply && model_.unread_reply) {
-    navigation_ = Navigation::Response;
-  } else if (owner == TouchView::Home && control == TouchControl::None && mode_ == Mode::Idle &&
-             talk_mode_ == TalkMode::Tap) {
-    on_touch_talk(true);
-    on_touch_talk(false);
-  }
-  if (navigation_ != previous_navigation) ++model_.navigation;
-  update_model();
-}
-
-bool App::new_chat_allowed() const {
-  return settings_allowed() && can_talk() && !speaking();
-}
-
-void App::touch_hold(TouchView owner, TouchControl control) {
-  // Only New chat acts on a hold, and only while it is still offered: idle, connected,
-  // nothing speaking, recording or asking. Anything else under the finger does nothing.
-  if (owner != TouchView::Controls || owner != touch_view() || control != TouchControl::NewChat) return;
-  if (navigation_ != Navigation::Controls || !new_chat_allowed()) return;
-  new_chat_hint_until_ = 0;
-  start_new_session();
-  navigation_ = Navigation::Home;  // Home shows the fresh start; quick controls never linger
-  ++model_.navigation;
-  update_model();
+bool App::settings_hold_live() const {
+  return !prompt_showing() && !ota_busy() && !wifi_setup_open() && !phone_pairing_ && !alarm_;
 }
 
 bool App::settings_title_hit(int x, int y) const {
-  // The title opens Settings on Home, and on the offline, connecting and pairing screens,
-  // where it is the only on-device route to local recovery. Reading and quick controls
-  // use that area for navigation. Settings never cancel or replay remote work.
-  if (!ui_ || mode_ != Mode::Idle || speaking() || prompt_showing() || ota_busy() || wifi_setup_open())
-    return false;
-#ifdef HG_ROUND_UI
-  if (alarm_showing()) return false;  // the alarm keeps the screen until Dismiss
-#endif
-  const bool local_only = !can_talk() && overlay_ == Overlay::None;
-  return (local_only || (navigation_ != Navigation::Controls &&
-                         (settings_open() || touch_view() == TouchView::Home))) && ui_->title_hit(x, y);
+  return ui_ && settings_hold_live() && ui_->title_hit(x, y);
 }
 
-bool App::settings_allowed() const {
-  return !work_active() && !speaking() && mode_ != Mode::Listening && !prompt_showing() && !ota_busy() &&
-         ota_ != Ota::Restarting && wifi_setup_text_.empty() && !stop_pending_current();
+// Steps over the items this board can't offer.
+bool App::menu_offered(Menu item) const {
+  switch (item) {
+    case Menu::Profile: return agent_profiles_.size() > 1;
+    case Menu::ProfileGrid: return profile_.touch_screen && agent_profiles_.size() > 1 && hal_.display != nullptr;
+    case Menu::Power: return hal_.power != nullptr;
+    case Menu::BatteryAlert: return hal_.power != nullptr && hal_.display != nullptr;
+    case Menu::BatteryAlertSound: return hal_.power != nullptr && hal_.display != nullptr && hal_.speaker != nullptr;
+    case Menu::ChargingNotice: return hal_.power != nullptr && hal_.display != nullptr;
+    case Menu::ChargingSound: return hal_.power != nullptr && hal_.speaker != nullptr;
+    case Menu::ChargedNotice: return hal_.power != nullptr && hal_.display != nullptr;
+    case Menu::ChargedSound: return hal_.power != nullptr && hal_.speaker != nullptr;
+    case Menu::WifiDeepSleep: return hal_.power != nullptr && static_cast<bool>(current_wifi);
+    case Menu::TouchTalk: return profile_.touch_screen && profile_.talk_key;
+    case Menu::TouchWake: return profile_.touch_screen && profile_.wake_key && hal_.display != nullptr;
+    case Menu::DoubleHome: return profile_.talk_key;
+    case Menu::WakeTalk: return profile_.talk_key && hal_.mic != nullptr && hal_.display != nullptr;
+    case Menu::FaceDownSleep: return can_sleep_face_down();
+    case Menu::Clock: return hal_.display != nullptr;
+    case Menu::PowerOff: return hal_.power && hal_.power->can_power_off();
+    case Menu::WifiSetup: return static_cast<bool>(on_wifi_setup);
+    case Menu::Phone: return static_cast<bool>(on_phone_pair);
+    case Menu::Closed: return false;
+    default: return true;
+  }
 }
 
 bool App::open_settings() {
-  if (prompt_showing() || ota_busy() || ota_ == Ota::Restarting || !wifi_setup_text_.empty()) return false;
-#ifdef HG_ROUND_UI
-  if (alarm_showing()) return false;
-#endif
+  // The alarm too: a hold that began just before it rang must not cover it and silence it.
+  if (face_down_ || prompt_showing() || ota_busy() || ota_ == Ota::Restarting || !wifi_setup_text_.empty() ||
+      phone_pairing_ || alarm_)
+    return false;
   wake_display();
   if (settings_open()) { close_settings(); return true; }
-  // Settings never cancel a recording, a reply or remote work: they open when idle.
-  if (!settings_allowed()) {
-    if (!(ui_ && ui_->round_companion())) set_hint_flash("Settings open when idle");
-    update_model();
-    return false;
-  }
+  if (mode_ == Mode::Listening) cancel_listening("local settings");
+  else if (mode_ == Mode::Thinking || mode_ == Mode::Responding) cancel_turn();
   stop_playback();
   dismiss_overlay();
   menu_ = Menu::Volume;
-  power_off_armed_ = restart_armed_ = false;
+  power_off_armed_ = false;
   check_result_.clear();
   update_model();
   return true;
-}
-
-bool App::menu_offered(Menu row) const {
-  switch (row) {
-    case Menu::Closed: return false;
-    case Menu::Power: return hal_.power != nullptr;
-    case Menu::PowerOff: return hal_.power && hal_.power->can_power_off();
-    case Menu::Restart: return static_cast<bool>(on_restart);
-    case Menu::WifiSetup: return static_cast<bool>(on_wifi_setup);
-#ifdef HG_ROUND_UI
-    case Menu::IdleFace: return ui_ && ui_->round_companion();
-#endif
-    default: return true;
-  }
 }
 
 void App::stop_hardware_check() {
@@ -294,6 +71,11 @@ void App::stop_hardware_check() {
 void App::close_settings() {
   stop_hardware_check();
   menu_ = Menu::Closed;
+  // The next visit starts at the top.
+  settings_scroll_ = settings_target_ = 0;
+  settings_follow_ = true;
+  sliding_ = false;
+  slide_level_ = -1;
   check_result_.clear();
   if (ui_) ui_->invalidate();
   update_model();
@@ -303,7 +85,7 @@ void App::settings_input(Button button, bool pressed) {
   if (hardware_check_ == HardwareCheck::Inputs) {
     if (pressed) {
       const char* labels[] = {"TALK", "CANCEL", "UP", "DOWN"};
-      check_result_ = std::string(labels[static_cast<unsigned>(button)]) + " pressed";
+      check_result_ = tr(i18n::Msg::ButtonPressed, {labels[static_cast<unsigned>(button)]});
       return;
     }
     if (button != Button::Cancel) return;
@@ -312,22 +94,20 @@ void App::settings_input(Button button, bool pressed) {
       ((button == Button::Up || button == Button::Down) && pressed)) {
     stop_hardware_check();
     check_result_.clear();
-    power_off_armed_ = restart_armed_ = false;
-    // Next (or previous) row this board offers, wrapping; Back is always offered.
-    const int first = static_cast<int>(Menu::Volume), last = static_cast<int>(Menu::Back);
-    int item = static_cast<int>(menu_);
+    power_off_armed_ = false;
+    settings_follow_ = true;
     do {
-      item += button == Button::Up ? -1 : 1;
-      if (item < first) item = last;
-      if (item > last) item = first;
-    } while (!menu_offered(static_cast<Menu>(item)));
-    menu_ = static_cast<Menu>(item);
+      int item = static_cast<int>(menu_) + (button == Button::Up ? -1 : 1);
+      if (item < static_cast<int>(Menu::Volume)) item = static_cast<int>(Menu::Back);
+      if (item > static_cast<int>(Menu::Back)) item = static_cast<int>(Menu::Volume);
+      menu_ = static_cast<Menu>(item);
+    } while (!menu_offered(menu_));
     return;
   }
   if (button != Button::Talk || pressed) return;
   if (hardware_check_ != HardwareCheck::None) {
     stop_hardware_check();
-    check_result_ = "Check stopped";
+    check_result_ = tr(i18n::Msg::CheckStopped);
     return;
   }
   check_result_.clear();
@@ -344,29 +124,39 @@ void App::settings_input(Button button, bool pressed) {
     case Menu::TalkMode:
       if (hal_.mic) console(talk_mode_ == TalkMode::Hold ? "set talk_mode tap" : "set talk_mode hold");
       break;
-#ifdef HG_ROUND_UI
-    case Menu::IdleFace:
-      console(idle_face_ == IdleFace::PortraitTime ? "set idle_face clock" :
-              idle_face_ == IdleFace::Clock ? "set idle_face portrait" : "set idle_face portrait_time");
+    case Menu::TouchTalk:
+      console(touch_talk_ ? "set touch_talk off" : "set touch_talk on");
       break;
-#endif
+    case Menu::Profile:
+      if (!(profile_.touch_screen ? open_profile_picker() : next_agent_profile()))
+        check_result_ = tr(i18n::Msg::ProfileCantSwitch);
+      break;
+    case Menu::ProfileGrid:
+      console("set profile_grid " + std::to_string(profile_grid_ == 4 ? 6 : profile_grid_ == 6 ? 9 : profile_grid_ == 9 ? 16 : 4));
+      break;
     case Menu::Microphone:
       if (hal_.mic && hal_.mic->start(profile_.mic_rate)) hardware_check_ = HardwareCheck::Microphone;
-      else check_result_ = "Microphone unavailable";
+      else check_result_ = tr(i18n::Msg::MicUnavailable);
       break;
     case Menu::Speaker:
-      if (play_tone(900, 250)) {  // a quiet quarter-second square tone, entirely local
+      if (hal_.speaker && hal_.speaker->begin(profile_.speaker_rate)) {
+        // A quiet quarter-second square tone, entirely local to the device.
+        std::vector<int16_t> tone(profile_.speaker_rate / 4);
+        const uint32_t half_period = std::max<uint32_t>(1, profile_.speaker_rate / 1000);
+        for (size_t i = 0; i < tone.size(); ++i) tone[i] = (i / half_period) % 2 ? 900 : -900;
+        hal_.speaker->write(tone.data(), tone.size());
+        hal_.speaker->end();
         hardware_check_ = HardwareCheck::Speaker;
-        check_result_ = "Listen for a short tone";
-      } else check_result_ = "Speaker unavailable";
+        check_result_ = tr(i18n::Msg::ListenForTone);
+      } else check_result_ = tr(i18n::Msg::SpeakerUnavailable);
       break;
     case Menu::Display:
       if (hal_.display) hardware_check_ = HardwareCheck::Display;
-      else check_result_ = "Display unavailable";
+      else check_result_ = tr(i18n::Msg::DisplayUnavailable);
       break;
     case Menu::Inputs:
       hardware_check_ = HardwareCheck::Inputs;
-      check_result_ = "Press a button. Release Cancel to leave.";
+      check_result_ = tr(i18n::Msg::InputCheckRunning);
       break;
     case Menu::IdleTimer: {
       const uint32_t seconds = screen_timeout_ms_ / 1000;
@@ -374,222 +164,493 @@ void App::settings_input(Button button, bool pressed) {
       console("set screen_timeout " + std::to_string(next));
       break;
     }
-    case Menu::Restart:
-      if (!restart_armed_) {
-        restart_armed_ = true;
-        check_result_ = profile_.touch_screen ? "Tap again to restart." : "Select again to restart. Cancel goes back.";
-      } else {
-        restart_armed_ = false;
-        check_result_ = "Restarting…";
-        update_model();
-        on_restart();
-      }
+    case Menu::BatteryAlert: {
+      // The presets in turn, then Off again; another list set from the console goes to Off.
+      static const char* const kPresets[] = {"off", "10", "10,5", "15,10,5", "20,10"};
+      constexpr size_t kCount = sizeof(kPresets) / sizeof(kPresets[0]);
+      std::string current;
+      for (uint8_t level : battery_alert_levels_)
+        if (level) current += (current.empty() ? "" : ",") + std::to_string(level);
+      if (current.empty()) current = "off";
+      size_t next = 0;  // Off, unless the current list is a preset
+      for (size_t i = 0; i < kCount; ++i)
+        if (current == kPresets[i]) next = (i + 1) % kCount;
+      console(std::string("set battery_alert ") + kPresets[next]);
       break;
+    }
+    case Menu::BatteryAlertSound:
+      console(battery_alert_sound_ ? "set battery_alert_sound off" : "set battery_alert_sound on");
+      break;
+    case Menu::ChargingNotice:
+      console(charging_notice_enabled_ ? "set charging_notice off" : "set charging_notice on");
+      break;
+    case Menu::ChargingSound:
+      console(charging_sound_ ? "set charging_sound off" : "set charging_sound on");
+      break;
+    case Menu::ChargedNotice:
+      console(charged_notice_enabled_ ? "set charged_notice off" : "set charged_notice on");
+      break;
+    case Menu::ChargedSound:
+      console(charged_sound_ ? "set charged_sound off" : "set charged_sound on");
+      break;
+    case Menu::TouchWake:
+      console(touch_wake_ ? "set touch_wake off" : "set touch_wake on");
+      break;
+    case Menu::WifiDeepSleep:
+      console(wifi_deep_sleep_ ? "set wifi_deep_sleep off" : "set wifi_deep_sleep on");
+      break;
+    case Menu::DoubleHome:
+      console(double_home_ ? "set double_home off" : "set double_home on");
+      break;
+    case Menu::WakeTalk:
+      console(wake_talk_ ? "set wake_talk off" : "set wake_talk on");
+      break;
+    case Menu::FaceDownSleep:
+      console(face_down_sleep_ ? "set face_down_sleep off" : "set face_down_sleep on");
+      break;
+    case Menu::Clock: {
+      // Off, then the same steps as the screen timeout, then Off again.
+      const uint32_t seconds = clock_after_ms_ / 1000;
+      const uint32_t next = seconds == 0 ? 30 : seconds < 60 ? 60 : seconds < 120 ? 120 : seconds < 300 ? 300 : 0;
+      console("set clock " + std::to_string(next));
+      break;
+    }
     case Menu::PowerOff:
       if (!power_off_armed_) {
         power_off_armed_ = true;
-        check_result_ = profile_.touch_screen ? "Tap again to power off." : "Select again to power off. Cancel goes back.";
+        check_result_ = tr(i18n::Msg::PowerOffConfirm);
       } else {
         power_off_armed_ = false;
-        check_result_ = hal_.power->power_off() ? "Power-off requested" : "Power-off failed. Try the physical PWR key.";
+        check_result_ = tr(hal_.power->power_off() ? i18n::Msg::PowerOffRequested : i18n::Msg::PowerOffFailed);
       }
       break;
+    case Menu::Language: {
+      // English, each translation, then auto (follow Hermes), then English again.
+      const bool last = static_cast<size_t>(lang_) + 1 >= i18n::kLangCount;
+      console(std::string("set language ") +
+              (lang_auto_ ? "en" : last ? "auto" : i18n::info(i18n::next(lang_)).code));
+      break;
+    }
     case Menu::Back: close_settings(); break;
     case Menu::WifiSetup: start_wifi_setup(); break;
+    case Menu::Phone: start_phone_pairing(); break;
     case Menu::Power:
+      if (battery_readable()) {
+        static const char* const kNext[] = {"percentage", "both", "off", "icon"};  // after Icon, Percentage, Both, Off
+        console(std::string("set battery_display ") + kNext[static_cast<int>(battery_display_)]);
+      }
+      break;
     case Menu::Info:
     case Menu::Closed: break;
   }
 }
 
 void App::settings_tick() {
+  // The list eases toward its target: half the way each step, about 60 steps a second.
+  constexpr uint32_t kScrollStepMs = 16;
+  if (settings_open() && settings_scroll_ != settings_target_ && now() - settings_step_at_ >= kScrollStepMs) {
+    settings_step_at_ = now();
+    const int d = settings_target_ - settings_scroll_;
+    settings_scroll_ += d > 0 ? (d + 1) / 2 : (d - 1) / 2;
+    update_model();
+  }
   if (talk_held_ && cancel_held_ && !settings_chord_fired_ &&
       now() - talk_down_at_ >= 1000 && now() - cancel_down_at_ >= 1000) {
-    // The chord is consumed even when settings refuse (busy, question, update), so its
-    // release can never fall through to Stop work or a prompt answer.
-    open_settings();
-    settings_chord_fired_ = true;
-    cancel_long_fired_ = true;
+    if (open_settings()) {
+      settings_chord_fired_ = true;
+      cancel_long_fired_ = true;
+    }
   }
   if (hardware_check_ == HardwareCheck::Speaker && !hal_.speaker->busy()) {
     hardware_check_ = HardwareCheck::None;
-    check_result_ = "Tone finished. Did you hear it?";
+    check_result_ = tr(i18n::Msg::ToneFinished);
     update_model();
   }
 }
 
+bool App::battery_readable() const {
+  return display_battery_percent().has_value();
+}
+
 void App::settings_model() {
+  using i18n::Msg;
   UiModel& m = model_;
   m.screen = Screen::Settings;
-  m.headline = "Settings";
+  m.headline = tr(Msg::Settings);
   m.scroll = 0;
   m.speaking = false;
-  m.hint = profile_.touch_screen ? "Tap: change | Swipe: next"
-                                : profile_.talk_label + ": change | " + profile_.cancel_label + ": next";
-  switch (menu_) {
+  const std::string talk = control(profile_.talk_label);
+  m.hint = profile_.touch_screen ? std::string(tr(Msg::SettingsHintTouch))
+                                : tr(Msg::SettingsHintButtons, {talk, control(profile_.cancel_label)});
+  // Every item the board offers is a row; the selected one also fills detail and body.
+  m.settings.clear();
+  m.settings_sel = 0;
+  UiModel item_text;
+  for (int i = static_cast<int>(Menu::Volume); i <= static_cast<int>(Menu::Back); ++i) {
+    const Menu item = static_cast<Menu>(i);
+    if (!menu_offered(item)) continue;
+    item_text.detail.clear();
+    item_text.body.clear();
+    item_text.color_test = false;
+    settings_item(item, item_text);
+    m.settings.push_back(settings_row(item, item_text.detail, item_text.body));
+    if (item != menu_) continue;
+    m.settings_sel = static_cast<int>(m.settings.size()) - 1;
+    m.detail = std::move(item_text.detail);
+    m.body = std::move(item_text.body);
+    m.color_test = item_text.color_test;
+  }
+  if (!check_result_.empty()) m.body += "\n" + check_result_;
+  if (!ui_) settings_scroll_ = settings_target_ = 0;
+  else if (settings_follow_) settings_target_ = ui_->settings_scroll_for(m, settings_target_);
+  m.settings_scroll = settings_scroll_;
+}
+
+// The state at the right of an item's row: by default the first line of its text.
+SettingRow App::settings_row(Menu item, const std::string& label, const std::string& body) const {
+  using Icon = SettingRow::Icon;
+  using Kind = SettingRow::Kind;
+  SettingRow row;
+  row.label = label;
+  row.value = body.substr(0, body.find('\n'));
+  switch (item) {
     case Menu::Volume:
-      m.detail = "Speaker volume";
-      m.body = hal_.speaker ? std::to_string(volume_) + "%\nChanges are saved." : "No speaker driver is active.";
+      row.icon = Icon::Volume;
+      if (hal_.speaker) { row.kind = Kind::Slider; row.level = static_cast<uint8_t>(volume_); }
+      if (row.kind == Kind::Slider && item == menu_ && item == slide_item_ && slide_level_ >= 0) row.level = static_cast<uint8_t>(slide_level_);
       break;
     case Menu::Brightness:
-      m.detail = "Screen brightness";
-      m.body = hal_.display && hal_.display->info().has_backlight ? std::to_string(brightness_) + "%\nChanges are saved."
-                                                               : "Brightness control is unavailable.";
+      row.icon = Icon::Sun;
+      if (hal_.display && hal_.display->info().has_backlight) { row.kind = Kind::Slider; row.level = static_cast<uint8_t>(brightness_); }
+      if (row.kind == Kind::Slider && item == menu_ && item == slide_item_ && slide_level_ >= 0) row.level = static_cast<uint8_t>(slide_level_);
       break;
     case Menu::TalkMode:
-      m.detail = "Talk mode";
-      m.body = !hal_.mic ? "No microphone driver is active." : talk_mode_ == TalkMode::Hold ? "Hold to record; release to send."
-                                                                                         : "Tap to record; pause or tap to send.";
+      row.icon = Icon::Talk;
+      row.value = hal_.mic ? tr(talk_mode_ == TalkMode::Hold ? i18n::Msg::TalkHold : i18n::Msg::TalkTap) : "";
       break;
-#ifdef HG_ROUND_UI
-    case Menu::IdleFace:
-      m.detail = "Idle face";
+    case Menu::Profile: row.icon = Icon::Person; break;
+    case Menu::ProfileGrid: row.icon = Icon::Grid; break;
+    case Menu::Microphone: row.icon = Icon::Mic; row.kind = Kind::Action; break;
+    case Menu::Speaker: row.icon = Icon::Note; row.kind = Kind::Action; break;
+    case Menu::Display: row.icon = Icon::Screen; row.kind = Kind::Action; break;
+    case Menu::Inputs: row.icon = Icon::Keys; row.kind = Kind::Action; break;
+    case Menu::Info: row.icon = Icon::Info; row.kind = Kind::Action; break;
+    case Menu::Power:
+      row.icon = Icon::Battery;
+      row.value.clear();
+      if (const auto percent = display_battery_percent()) row.value = std::to_string(*percent) + "%";
       break;
-#endif
+    case Menu::BatteryAlert: row.icon = Icon::Bell; break;
+    case Menu::BatteryAlertSound: row.icon = Icon::Volume; row.kind = Kind::Toggle; row.level = battery_alert_sound_; break;
+    case Menu::ChargingNotice: row.icon = Icon::Bolt; row.kind = Kind::Toggle; row.level = charging_notice_enabled_; break;
+    case Menu::ChargingSound: row.icon = Icon::Volume; row.kind = Kind::Toggle; row.level = charging_sound_; break;
+    case Menu::ChargedNotice: row.icon = Icon::Check; row.kind = Kind::Toggle; row.level = charged_notice_enabled_; break;
+    case Menu::ChargedSound: row.icon = Icon::Volume; row.kind = Kind::Toggle; row.level = charged_sound_; break;
+    case Menu::WifiDeepSleep: row.icon = Icon::Wifi; row.kind = Kind::Toggle; row.level = wifi_deep_sleep_; break;
+    case Menu::IdleTimer: row.icon = Icon::Timer; break;
+    case Menu::TouchTalk: row.icon = Icon::Touch; row.kind = Kind::Toggle; row.level = touch_talk_; break;
+    case Menu::TouchWake: row.icon = Icon::Touch; row.kind = Kind::Toggle; row.level = touch_wake_; break;
+    case Menu::FaceDownSleep: row.icon = Icon::FaceDown; row.kind = Kind::Toggle; row.level = face_down_sleep_; break;
+    case Menu::Clock: row.icon = Icon::Clock; break;
+    case Menu::PowerOff: row.icon = Icon::Power; row.kind = Kind::Action; break;
+    case Menu::WifiSetup: row.icon = Icon::Wifi; row.kind = Kind::Action; break;
+    case Menu::Phone: row.icon = Icon::Phone; row.kind = Kind::Action; break;
+    case Menu::Language: row.icon = Icon::Globe; break;
+    case Menu::DoubleHome: row.icon = Icon::Back; row.kind = Kind::Toggle; row.level = double_home_; break;
+    case Menu::WakeTalk: row.icon = Icon::Talk; row.kind = Kind::Toggle; row.level = wake_talk_; break;
+    case Menu::Back: row.icon = Icon::Back; row.kind = Kind::Action; break;
+    case Menu::Closed: break;
+  }
+  if (row.kind == Kind::Action) row.value.clear();
+  if (row.kind == Kind::Slider) row.value = std::to_string(row.level) + "%";
+  return row;
+}
+
+bool App::settings_list_live() const {
+  return ui_ && settings_open() && hardware_check_ == HardwareCheck::None;
+}
+
+App::Menu App::settings_item_at(int row) const {
+  for (int i = static_cast<int>(Menu::Volume); i <= static_cast<int>(Menu::Back); ++i) {
+    const Menu item = static_cast<Menu>(i);
+    if (menu_offered(item) && row-- == 0) return item;
+  }
+  return Menu::Closed;
+}
+
+void App::settings_select(Menu item) {
+  stop_hardware_check();
+  check_result_.clear();
+  power_off_armed_ = false;
+  menu_ = item;
+  settings_follow_ = true;
+}
+
+// Slider levels land on steps of 5, the steps a finger can pick on a small screen.
+void App::settings_set_level(int level) {
+  level = (level + 2) / 5 * 5;
+  if (menu_ == Menu::Volume) console("set volume " + std::to_string(level));
+  else if (menu_ == Menu::Brightness) console("set brightness " + std::to_string(std::max(5, level)));
+}
+
+void App::settings_press(int x, int y) {
+  // The list stops where it is: a tap acts on the row under the finger at touch-down.
+  if (settings_scroll_ != settings_target_) {
+    settings_target_ = settings_scroll_;
+    settings_follow_ = false;
+  }
+  press_y_ = y;
+  press_scroll_ = settings_scroll_;
+  slide_level_ = -1;
+  sliding_ = settings_list_live() && ui_->settings_slider_at(model_, x, y, false) >= 0;
+  slide_item_ = menu_;
+}
+
+void App::settings_drag(int x, int y) {
+  if (!settings_list_live()) return;
+  if (sliding_ && menu_ != slide_item_) {  // a knob or a key moved the selection: the slide ends unsaved,
+    slide_level_ = -1;                      // and the rest of this drag does nothing
+  } else if (sliding_) {
+    slide_level_ = ui_->settings_slider_at(model_, x, y, true);
+  } else {
+    // The list follows the finger, within its ends.
+    settings_follow_ = false;
+    settings_scroll_ = settings_target_ =
+        std::max(0, std::min(press_scroll_ - (y - press_y_), ui_->settings_max_scroll(model_)));
+  }
+  update_model();
+}
+
+void App::settings_tap(int x, int y) {
+  sliding_ = false;
+  if (!settings_list_live()) return;
+  const int level = ui_->settings_slider_at(model_, x, y, false);
+  if (level >= 0) {
+    settings_set_level(level);
+    update_model();
+    return;
+  }
+  const int row = ui_->settings_row_hit(model_, x, y);
+  if (row < 0) return;
+  const Menu item = settings_item_at(row);
+  if (item == Menu::Closed) return;
+  if (item != menu_) {
+    const bool slider = model_.settings[static_cast<size_t>(row)].kind == SettingRow::Kind::Slider;
+    settings_select(item);
+    if (slider) {  // the first tap opens the slider; the next ones on the bar set it
+      update_model();
+      return;
+    }
+  }
+  settings_input(Button::Talk, false);
+  update_model();
+}
+
+void App::settings_lift() {
+  sliding_ = false;
+  if (slide_level_ >= 0) {
+    const int level = slide_level_;
+    slide_level_ = -1;
+    if (menu_ == slide_item_) settings_set_level(level);  // a knob moved off the slider meanwhile: no save
+  }
+  update_model();
+}
+
+void App::settings_item(Menu item, UiModel& m) const {
+  using i18n::Msg;
+  const std::string talk = control(profile_.talk_label);
+  switch (item) {
+    case Menu::Volume:
+      m.detail = tr(Msg::SpeakerVolume);
+      m.body = hal_.speaker ? std::to_string(volume_) + "%\n" + tr(Msg::ChangesSaved) : std::string(tr(Msg::NoSpeakerDriver));
+      break;
+    case Menu::Brightness:
+      m.detail = tr(Msg::ScreenBrightness);
+      m.body = hal_.display && hal_.display->info().has_backlight ? std::to_string(brightness_) + "%\n" + tr(Msg::ChangesSaved)
+                                                               : std::string(tr(Msg::BrightnessUnavailable));
+      break;
+    case Menu::TalkMode:
+      m.detail = tr(Msg::TalkMode);
+      m.body = tr(!hal_.mic ? Msg::NoMicDriver : talk_mode_ == TalkMode::Hold ? Msg::TalkModeHold : Msg::TalkModeTap);
+      break;
+    case Menu::TouchTalk:
+      m.detail = tr(Msg::TouchTalk);
+      m.body = touch_talk_ ? std::string(tr(Msg::TouchTalkOn)) : tr(Msg::TouchTalkOff, {talk});
+      break;
+    case Menu::Profile:
+      m.detail = tr(Msg::ProfileSetting);
+      m.body = tr(profile_.touch_screen ? Msg::ProfileSettingChoose : Msg::ProfileSettingNext, {agent_profile_name()});
+      break;
+    case Menu::ProfileGrid: {
+      const int cols = profile_grid_ == 16 ? 4 : profile_grid_ == 9 ? 3 : 2;
+      m.detail = tr(Msg::ProfileGridSetting);
+      m.body = tr(Msg::ProfileGridValue, {std::to_string(cols) + " x " + std::to_string(profile_grid_ / cols)});
+      break;
+    }
     case Menu::Microphone:
-      m.detail = "Microphone check";
-      m.body = hardware_check_ == HardwareCheck::Microphone ? "Speak now. Level: " + std::to_string(level_) + "%\nLocal only. Nothing is sent."
-                                                          : "Start to check the microphone level. No recording is saved or sent.";
+      m.detail = tr(Msg::MicCheck);
+      m.body = hardware_check_ == HardwareCheck::Microphone ? tr(Msg::MicCheckLive, {std::to_string(level_)})
+                                                          : std::string(tr(Msg::MicCheckIntro));
       break;
     case Menu::Speaker:
-      m.detail = "Speaker check";
-      m.body = "Start to play a short tone at the current volume.";
+      m.detail = tr(Msg::SpeakerCheck);
+      m.body = tr(Msg::SpeakerCheckIntro);
       break;
     case Menu::Display:
-      m.detail = "Display check";
-      m.body = "Start to show red, green, blue, white and black bands.";
+      m.detail = tr(Msg::DisplayCheck);
+      m.body = tr(Msg::DisplayCheckIntro);
       m.color_test = hardware_check_ == HardwareCheck::Display;
       break;
     case Menu::Inputs:
-      m.detail = "Input check";
-      m.body = "Start to check the controls. Cancel leaves this check.";
+      m.detail = tr(Msg::InputCheck);
+      m.body = tr(Msg::InputCheckIntro);
       break;
     case Menu::Info:
-      m.detail = "Device information";
-      m.body = profile_.board + "\nFirmware " + profile_.firmware + "\n" + device_id_ + "\nMicrophone: " +
-               (hal_.mic ? "available" : "unavailable") + "\nSpeaker: " + (hal_.speaker ? "available" : "unavailable");
+      m.detail = tr(Msg::DeviceInfo);
+      m.body = tr(Msg::DeviceInfoBody, {profile_.board, profile_.firmware, device_id_,
+                                        tr(hal_.mic ? Msg::Available : Msg::Unavailable),
+                                        tr(hal_.speaker ? Msg::Available : Msg::Unavailable)});
       break;
     case Menu::Power:
-      m.detail = "Battery and power";
-      if (!power_status_) m.body = "Power readings unavailable.";
+      m.detail = tr(Msg::BatteryAndPower);
+      if (!power_status_) m.body = tr(Msg::PowerUnavailable);
       else {
         const auto& p = *power_status_;
-        if (p.battery_present && !*p.battery_present) m.body = "No battery detected.\n";
-        if (p.battery_percent) m.body += std::to_string(*p.battery_percent) + "% (gauge estimate)\n";
+        if (p.battery_present && !*p.battery_present) m.body = std::string(tr(Msg::NoBattery)) + "\n";
+        if (const auto percent = display_battery_percent()) {
+          const bool on_charger = p.charging == true || p.external_power == true;
+          const Msg kind = !battery_is_estimated() ? Msg::PercentGauge
+                           : on_charger            ? Msg::PercentVoltageCharger
+                                                   : Msg::PercentVoltage;
+          m.body += tr(kind, {std::to_string(*percent)}) + "\n";
+        }
         if (p.battery_mv) m.body += std::to_string(*p.battery_mv) + " mV\n";
-        if (p.charging) m.body += *p.charging ? "Charging\n" : "Not charging\n";
-        if (p.external_power) m.body += *p.external_power ? "USB power\n" : "No USB power\n";
-        if (p.battery_percent && *p.battery_percent <= 10 && p.external_power == false) m.body += "Low battery: connect USB.";
+        if (p.charging) m.body += std::string(tr(*p.charging ? Msg::Charging : Msg::NotCharging)) + "\n";
+        if (p.external_power) m.body += std::string(tr(*p.external_power ? Msg::UsbPower : Msg::NoUsbPower)) + "\n";
+        if (p.battery_percent && *p.battery_percent <= 10 && p.external_power == false)
+          m.body += std::string(tr(Msg::LowBatteryConnectUsb)) + "\n";
+        if (!battery_estimate_enabled_ && !p.battery_percent && p.battery_present != false &&
+            p.battery_mv && *p.battery_mv >= 2000 && *p.battery_mv <= 4500)
+          m.body += "set battery_estimate liion\n" + std::string(tr(Msg::BatteryMustBeFitted)) + "\n";
+        else if (battery_is_estimated())
+          m.body += std::string(tr(Msg::BatteryMustBeFitted)) + "\n";
       }
+    if (battery_readable()) {  // nothing to choose when no percentage can appear
+      static constexpr Msg kShown[] = {Msg::IndicatorIcon, Msg::IndicatorPercent, Msg::IndicatorBoth, Msg::IndicatorOff};
+      m.body += tr(Msg::Indicator, {tr(kShown[static_cast<int>(battery_display_)])}) + "\n" +
+                (profile_.touch_screen ? std::string(tr(Msg::TapToChange)) : tr(Msg::ButtonToChange, {talk}));
+    }
       break;
     case Menu::IdleTimer:
-      m.detail = "Screen timeout";
-      m.body = screen_timeout_ms_ ? std::to_string(screen_timeout_ms_ / 1000) + " seconds\nDims halfway; first input wakes."
-                                 : "Always on\nSelect to enable automatic dimming and screen sleep.";
+      m.detail = tr(Msg::ScreenTimeout);
+      m.body = screen_timeout_ms_ ? tr(Msg::TimeoutSeconds, {std::to_string(screen_timeout_ms_ / 1000)})
+                                 : std::string(tr(Msg::TimeoutAlwaysOn));
       break;
-    case Menu::Restart:
-      m.detail = "Restart";
-      m.body = "Restart the board. It reconnects to Hermes on its own.";
+    case Menu::BatteryAlert: {
+      m.detail = tr(Msg::BatteryAlert);
+      std::string levels;
+      for (uint8_t level : battery_alert_levels_)
+        if (level) levels += (levels.empty() ? "" : ", ") + std::to_string(level) + "%";
+      m.body = levels.empty() ? std::string(tr(Msg::BatteryAlertOff)) : tr(Msg::BatteryAlertAt, {levels});
+      break;
+    }
+    case Menu::BatteryAlertSound:
+      m.detail = tr(Msg::BatteryAlertSound);
+      m.body = tr(battery_alert_sound_ ? Msg::BatteryAlertSoundOn : Msg::BatteryAlertSoundOff);
+      break;
+    case Menu::ChargingNotice:
+      m.detail = tr(Msg::ChargingNotice);
+      m.body = tr(charging_notice_enabled_ ? Msg::ChargingNoticeOn : Msg::ChargingNoticeOff);
+      break;
+    case Menu::ChargingSound:
+      m.detail = tr(Msg::ChargingSound);
+      m.body = tr(charging_sound_ ? Msg::ChargingSoundOn : Msg::ChargingSoundOff);
+      break;
+    case Menu::ChargedNotice:
+      m.detail = tr(Msg::ChargedNotice);
+      m.body = tr(charged_notice_enabled_ ? Msg::ChargedNoticeOn : Msg::ChargedNoticeOff);
+      break;
+    case Menu::ChargedSound:
+      m.detail = tr(Msg::ChargedSound);
+      m.body = tr(charged_sound_ ? Msg::ChargedSoundOn : Msg::ChargedSoundOff);
+      break;
+    case Menu::WifiDeepSleep:
+      m.detail = tr(Msg::WifiDeepSleep);
+      m.body = tr(wifi_deep_sleep_ ? Msg::WifiDeepSleepOn : Msg::WifiDeepSleepOff);
+      break;
+    case Menu::TouchWake:
+      m.detail = tr(Msg::TouchWake);
+      m.body = tr(touch_wake_ ? Msg::TouchWakeOn : Msg::TouchWakeOff);
+      break;
+    case Menu::DoubleHome:
+      m.detail = tr(Msg::DoubleHome);
+      m.body = tr(double_home_ ? Msg::DoubleHomeOn : Msg::DoubleHomeOff, {control(profile_.talk_label)});
+      break;
+    case Menu::WakeTalk:
+      m.detail = tr(Msg::WakeTalk);
+      m.body = tr(wake_talk_ ? Msg::WakeTalkOn : Msg::WakeTalkOff, {control(profile_.talk_label)});
+      break;
+    case Menu::FaceDownSleep:
+      m.detail = tr(Msg::FaceDownSleep);
+      m.body = tr(face_down_sleep_ ? Msg::FaceDownSleepOn : Msg::FaceDownSleepOff);
+      break;
+    case Menu::Clock:
+      m.detail = tr(Msg::ClockFace);
+      // The body says when the face is off, or why it has not appeared yet.
+      if (!clock_after_ms_) m.body = tr(Msg::ClockOff);
+      else m.body = tr(wall_valid_ ? Msg::ClockAfterSeconds : Msg::ClockNoTime, {std::to_string(clock_after_ms_ / 1000)});
       break;
     case Menu::PowerOff:
-      m.detail = "Power off";
-      m.body = "Shut down the board. Use its PWR key to turn it on again.";
+      m.detail = tr(Msg::PowerOff);
+      m.body = tr(Msg::PowerOffIntro);
       break;
     case Menu::WifiSetup:
-      m.detail = "Wi-Fi setup";
-      m.body = "Start a temporary network to configure this device with your phone.";
+      m.detail = tr(Msg::WifiSetup);
+      m.body = tr(Msg::WifiSetupIntro);
       break;
+    case Menu::Phone:
+      m.detail = tr(Msg::PhoneApp);
+      m.body = phones_paired_ == 0 ? std::string(tr(Msg::NoPhonePaired))
+                                   : std::string(tr(phone_connected_ ? Msg::PhoneConnected : Msg::PhonePairedOffline)) +
+                                         "\n" + tr(Msg::SelectToPairAnother);
+      break;
+    case Menu::Language: {
+      // The English word stays beside the translation: someone who picked a
+      // language they can't read can still find the way back.
+      m.detail = lang_ == i18n::Lang::En ? std::string(tr(Msg::Language))
+                                         : std::string(tr(Msg::Language)) + " / " + i18n::english(Msg::Language);
+      const std::string name = i18n::info(lang_).name;  // the font draws Latin-1 (#172)
+      m.body = tr(Msg::LanguageBody, {lang_auto_ ? tr(Msg::LanguageAuto, {name}) : name});
+      break;
+    }
     case Menu::Back:
-      m.detail = "Back to Hermes";
-      m.body = "Select to close settings.";
+      m.detail = tr(Msg::BackToHermes);
+      m.body = tr(Msg::SelectToClose);
       break;
     case Menu::Closed: break;
   }
-  if (ui_ && ui_->round_companion()) round_settings_model();
-  if (!check_result_.empty()) m.body += "\n" + check_result_;
-}
-
-void App::round_settings_model() {
-  // Same rows and input semantics as the legacy menu; the round face shows the current
-  // value large, a one-line description, the row position and the row's own action.
-  UiModel& m = model_;
-  const bool checking = hardware_check_ != HardwareCheck::None;
-  std::string action = "Tap to change";
-  switch (menu_) {
-    case Menu::Volume:
-      if (hal_.speaker) { m.value = std::to_string(volume_) + "%"; m.body = "Changes are saved."; }
-      break;
-    case Menu::Brightness:
-      if (hal_.display && hal_.display->info().has_backlight) {
-        m.value = std::to_string(brightness_) + "%";
-        m.body = "Changes are saved.";
-      }
-      break;
-    case Menu::TalkMode:
-      if (hal_.mic) {
-        m.value = talk_mode_ == TalkMode::Hold ? "Hold" : "Tap";
-        m.body = talk_mode_ == TalkMode::Hold ? "Hold to record; release to send." : "Tap to record; pause or tap to send.";
-      }
-      break;
-#ifdef HG_ROUND_UI
-    case Menu::IdleFace:
-      m.value = idle_face_ == IdleFace::Portrait ? "Portrait" : idle_face_ == IdleFace::Clock ? "Clock" : "Portrait + time";
-      m.body = idle_face_ == IdleFace::Portrait ? "Just the face, no time." :
-               idle_face_ == IdleFace::Clock ? "Large time, small face." : "The time sits above the face.";
-      break;
-#endif
-    case Menu::Microphone:
-      if (hardware_check_ == HardwareCheck::Microphone) {
-        m.value = "Level " + std::to_string(level_) + "%";
-        m.body = "Speak now. Local only; nothing is sent.";
-      }
-      action = checking ? "Tap to stop" : "Tap to start";
-      break;
-    case Menu::Speaker:
-    case Menu::Display:
-      action = checking ? "Tap to stop" : "Tap to start";
-      break;
-    case Menu::Inputs:
-      action = checking ? "Tap Done to leave" : "Tap to start";
-      break;
-    case Menu::IdleTimer:
-      m.value = screen_timeout_ms_ ? std::to_string(screen_timeout_ms_ / 1000) + " seconds" : "Always on";
-      m.body = screen_timeout_ms_ ? "Dims halfway; first input wakes." : "Tap to enable dimming and screen sleep.";
-      break;
-    case Menu::Restart: action = restart_armed_ ? "Tap again to restart" : "Tap to restart"; break;
-    case Menu::PowerOff: action = power_off_armed_ ? "Tap again to power off" : "Tap to power off"; break;
-    case Menu::WifiSetup: action = "Tap to start"; break;
-    case Menu::Back: action = "Tap to close"; m.body = "Return to Hermes."; break;
-    case Menu::Info:
-    case Menu::Power: action.clear(); break;
-    case Menu::Closed: break;
-  }
-  m.hint = action.empty() ? "Swipe for next" : action + " · Swipe for next";
-  // Row position among the rows this board actually offers.
-  unsigned index = 0, count = 0;
-  for (int i = static_cast<int>(Menu::Volume); i <= static_cast<int>(Menu::Back); ++i) {
-    const auto row = static_cast<Menu>(i);
-    if (!menu_offered(row)) continue;
-    if (row == menu_) index = count;
-    ++count;
-  }
-  m.work_page = static_cast<uint8_t>(index);
-  m.work_pages = static_cast<uint8_t>(count);
 }
 
 bool App::start_wifi_setup() {
   if (!on_wifi_setup || prompt_showing() || ota_busy() || ota_ == Ota::Restarting) return false;
   if (mode_ == Mode::Listening) cancel_listening("Wi-Fi setup");
-  else if (work_active()) request_stop();  // explicit console action; outcome stays honest
+  else if (mode_ != Mode::Idle) cancel_turn();
   stop_playback();
   close_settings();
+  close_phone_pairing();
   wake_display();
   talk_held_ = false;
   cancel_held_ = false;
   settings_chord_fired_ = false;
   wake_buttons_ = 0;
   wifi_setup_text_ = on_wifi_setup();
-  if (wifi_setup_text_.empty()) set_hint_flash("Wi-Fi setup unavailable; use USB");
+  // Encode the code once here: the model is rebuilt on every frame.
+  wifi_setup_qr_ = {};
+  if (on_wifi_setup_ap) {
+    const WifiSetupAp ap = on_wifi_setup_ap();
+    if (!ap.ssid.empty()) wifi_setup_qr_ = qr::encode(qr::payload(ap.ssid, ap.password));
+  }
+  if (wifi_setup_text_.empty()) set_hint_flash(tr(i18n::Msg::WifiSetupUnavailable));
   update_model();
   return !wifi_setup_text_.empty();
 }
@@ -597,8 +658,53 @@ bool App::start_wifi_setup() {
 void App::close_wifi_setup() {
   if (wifi_setup_text_.empty()) return;
   wifi_setup_text_.clear();
+  wifi_setup_qr_ = {};
   if (on_wifi_setup_close) on_wifi_setup_close();
   update_model();
+}
+
+// `wifi [list | add <ssid> [password] | join <ssid> | forget <ssid>]`. Arguments
+// with spaces or quotes go in double quotes (hg/console_args.hpp).
+std::string App::wifi_command(std::string_view line) {
+  static const char* const kUsage = "@error usage: wifi [list | add <ssid> [password] | join <ssid> | forget <ssid>]";
+  if (!hal_.storage) return "@error no storage";
+  const std::vector<std::string> args = split_args(line);
+  const std::string sub = args.empty() ? "list" : args[0];
+  WifiNetworks networks = WifiNetworks::load(*hal_.storage);
+  if (sub == "list") {
+    if (args.size() > 1) return kUsage;
+    json::Value list = json::Value::array();
+    for (const auto& w : networks.all()) {
+      json::Value e = json::Value::object();
+      e.set("ssid", w.ssid).set("tested", w.tested).set("open", w.password.empty());
+      list.push(std::move(e));
+    }
+    json::Value out = json::Value::object();
+    out.set("networks", list).set("max", static_cast<unsigned>(WifiNetworks::kMax));
+    if (current_wifi) {
+      const std::string current = current_wifi();
+      if (!current.empty()) out.set("current", current);
+    }
+    return "@wifi " + out.dump();
+  }
+  if (args.size() < 2 || args.size() > (sub == "add" ? 3u : 2u)) return kUsage;
+  const std::string& ssid = args[1];
+  if (sub == "add") {
+    const std::string password = args.size() > 2 ? args[2] : std::string();
+    const std::string error = wifi_network_error(ssid, password);
+    if (!error.empty()) return "@error " + error;
+    if (networks.add(ssid, password) == WifiNetworks::Added::Full)
+      return "@error " + std::to_string(WifiNetworks::kMax) + " networks saved; forget one first";
+  } else if (sub == "join" || sub == "forget") {
+    if (networks.find(ssid) == networks.size()) return "@error no saved network " + ssid;
+    if (sub == "join") networks.move_first(ssid);
+    else networks.forget(ssid);
+  } else {
+    return kUsage;
+  }
+  if (!networks.save(*hal_.storage)) return "@error could not save the network list";
+  if (on_setting_changed) on_setting_changed("wifi_nets");
+  return "@ok wifi " + sub;
 }
 
 }  // namespace hg

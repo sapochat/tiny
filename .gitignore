@@ -6,10 +6,15 @@ __pycache__/
 venv/
 .pytest_cache/
 dist/
+# The dashboard tab's bundle ships with the plugin (built from plugin/dashboard/src).
+!plugin/dashboard/dist/
 build/
 
 # Host (CMake) builds
 /build/
+
+# The Desktop page's build tools (its bundle, plugin/desktop/plugin.js, ships with the plugin)
+plugin/desktop-src/node_modules/
 
 # Installer site
 site/node_modules/
@@ -19,6 +24,7 @@ site/playwright-report/
 
 # ESP-IDF / PlatformIO outputs
 firmware/esp32/build/
+firmware/esp32/build-*/
 firmware/esp32/.pio/
 firmware/esp32/managed_components/
 firmware/esp32/dependencies.lock
@@ -32,15 +38,3 @@ firmware/esp32/sdkconfig.*-*
 .idea/
 .DS_Store
 Thumbs.db
-
-# Private operator state and generated evidence (checkpoint uses explicit allowlist)
-.env
-.env.*
-!.env.example
-.hermes/
-config.before.yaml
-*.pem
-*.key
-node_modules/
-.pio/
-artifacts/

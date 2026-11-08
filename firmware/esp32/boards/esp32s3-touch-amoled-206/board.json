@@ -1,0 +1,6 @@
+{
+  "title": "Waveshare ESP32-S3-Touch-AMOLED-2.06 (watch)",
+  "summary": "2.06\" AMOLED touch watch with two microphones and a speaker. Experimental.",
+  "docs": "docs/hardware.md#esp32-s3-touch-amoled-206",
+  "ready_made": true
+}

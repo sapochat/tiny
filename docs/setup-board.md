@@ -14,10 +14,13 @@ Have these ready:
 | Supported board | Controls and audio |
 |---|---|
 | [Waveshare ESP32-S3-LCD-1.54](hardware.md#waveshare-esp32-s3-lcd-154) | BOOT to talk, PLUS to cancel; onboard microphones and speaker |
-| [Waveshare ESP32-S3-Touch-AMOLED-1.75](hardware.md#esp32-s3-touch-amoled-175) | Hold the screen to talk, swipe down from Home for quick controls; microphones and a speaker output |
-| [Waveshare ESP32-S3-Touch-AMOLED-1.75C](hardware.md#esp32-s3-touch-amoled-175c) | Hold the screen to talk, swipe down from Home for quick controls; onboard microphones and speaker; experimental |
-| [Espressif ESP32-S3-BOX-3](hardware.md#esp32-s3-box-3) | Hold the screen or BOOT to talk, swipe down from Home for quick controls; onboard microphones and speaker; experimental |
-| [M5Stack CoreS3](hardware.md#m5stack-cores3) | Hold the screen to talk, swipe down from Home for quick controls; onboard audio and battery management; experimental |
+| [Waveshare ESP32-S3-Touch-AMOLED-1.75](hardware.md#esp32-s3-touch-amoled-175) | Hold the screen to talk, swipe down to cancel; microphones and a speaker output |
+| [Waveshare ESP32-S3-Touch-AMOLED-1.75C](hardware.md#esp32-s3-touch-amoled-175c) | Hold the screen to talk, swipe down to cancel; onboard microphones and speaker; experimental |
+| [Waveshare ESP32-S3-Touch-AMOLED-2.06](hardware.md#esp32-s3-touch-amoled-206) | Hold the screen or BOOT to talk, swipe down to cancel; onboard microphones and speaker; experimental |
+| [Espressif ESP32-S3-BOX](hardware.md#esp32-s3-box) | Hold the screen or BOOT to talk, swipe down to cancel; onboard microphones and speaker; experimental |
+| [Espressif ESP32-S3-Korvo-2](hardware.md#esp32-s3-korvo-2) | Hold the screen to talk, swipe down to cancel; onboard microphones and speaker; needs the LCD sub-board; experimental |
+| [Espressif ESP32-S3-BOX-3](hardware.md#esp32-s3-box-3) | Hold the screen or BOOT to talk, swipe down to cancel; onboard microphones and speaker; experimental |
+| [M5Stack CoreS3](hardware.md#m5stack-cores3) | Hold the screen to talk, swipe down to cancel; onboard audio and battery management; experimental |
 | [ESP32-S3 breadboard build](hardware.md) | Wire the display, microphone, buttons, and optional speaker first |
 
 Match the exact model printed on the board. For another model, read [Add a board](porting.md).
@@ -50,19 +53,19 @@ hermes gadget devices
 hermes gadget update "Kitchen" --latest
 ```
 
-For a custom build, follow [Build and flash](hardware.md#build-and-flash). For USB configuration from the SDK checkout, install the serial extra with `python -m pip install -e ".[serial]"` and use `hermes-gadget provision --help`.
+`--latest` installs the newest release only on a device that runs an older version. A device on that version or a newer one, including a source build such as `0.4.0-12-gabc1234`, is left alone, and a device whose version can't be read is refused; `hermes gadget update "Kitchen" --latest --force` installs the release anyway. The plugin and the device both refuse an image built for another board, so a wrong `--board` or file cannot be installed. For a custom build, follow [Build and flash](hardware.md#build-and-flash). For USB configuration from the SDK checkout, install the serial extra with `python -m pip install -e ".[serial]"` and use `hermes-gadget provision --help`.
 
 ## Set up Wi-Fi with your phone
 
 Phone setup configures a board that already runs the firmware. A board without a saved Wi-Fi network opens setup automatically at startup. To change an existing connection, open [device settings](using-gadget.md#device-settings-and-hardware-checks) and select **Wi-Fi setup**.
 
-1. Join the `Hermes-XXXX` network shown on the gadget. Enter its temporary password, also shown on the screen. Each setup session gets a new password.
+1. Join the `Hermes-XXXX` network shown on the gadget. Enter its temporary password, also shown on the screen. Each setup session gets a new password. Where the screen has room, it also shows a QR code: point your phone's camera at it to join the network without typing, then continue with the next step.
 2. Keep this network selected if your phone warns that it has no internet. Open `http://192.168.4.1` in the phone's browser.
 3. Enter your 2.4 GHz network name, its password, and the device URL from `hermes gadget info`. Leave the password empty only for an open network.
 4. Choose **Check connection and save**. The board allows up to 30 seconds to connect. If your phone disconnects during the check, rejoin the gadget's network and reload the page.
 5. After the page reports success, reconnect your phone to its usual network. The gadget connects to Hermes; approve its pairing code if this is its first setup.
 
-The board saves the new Wi-Fi credentials only after it receives an IP address on that network. A failed attempt restores the previous settings and lets you try again. This check confirms Wi-Fi connectivity; Hermes must also be running at the address you entered. Pairing and device identity stay in place.
+The board saves the new Wi-Fi credentials only after it receives an IP address on that network. It saves the network first and keeps the others it knows, up to five. A failed attempt restores the previous settings and lets you try again. To save networks that are out of range, such as a phone hotspot, use the [console's `wifi` commands](hardware.md#saved-wi-fi-networks). This check confirms Wi-Fi connectivity; Hermes must also be running at the address you entered. Pairing and device identity stay in place.
 
 The temporary network closes ten seconds after success, after ten minutes, or when you press CANCEL or swipe down on the gadget. If the new network overlaps the setup subnet, setup closes immediately after saving and the phone may not show a success message. Setup uses a local page and needs no phone app. Saved Wi-Fi passwords are never sent back to the page. The temporary password is absent from diagnostics and is discarded when setup closes.
 
@@ -72,6 +75,6 @@ USB remains available if phone setup cannot connect. The console accepts `wifi-s
 
 Open **Troubleshooting** in the browser installer. Under **Something else**, choose **Save a diagnostics report**. Attach the file to a [bug report](https://github.com/Adolanium/hermes-gadget-sdk/issues).
 
-Taking the gadget away from home? See [Using Tailscale Funnel for remote access](tailscale-funnel.md): the funnel URL works as the Hermes address on any network, including a phone's personal hotspot.
+Taking the gadget away from home? See [Using Tailscale Funnel for remote access](tailscale-funnel.md): the funnel URL works as the Hermes address on any network, including a phone's personal hotspot. If Hermes is only reachable on your tailnet, firmware built with the experimental [tailnet support](tailnet.md) can join the tailnet itself.
 
 Next: [Talk, type, and interrupt](using-gadget.md) or [troubleshooting](troubleshooting.md).
