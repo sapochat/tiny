@@ -537,6 +537,15 @@ extern "C" void app_main(void) {
   }
   profile.extra_settings.push_back("timezone");  // the port keeps its own time
   profile.motion_sensor = imu;
+#if CONFIG_HG_BOARD_AMOLED_175C
+  // Tiny: the AMOLED rests by default (lit pixels cost battery and age the panel; a stored
+  // setting, including always on, wins), powers off cleanly at 5% on battery, and its PWR
+  // key is Silence while something sounds.
+  profile.default_screen_timeout_s = 60;
+  profile.default_brightness = 80;
+  profile.shutdown_percent = 5;
+  profile.pwr_silence = true;
+#endif
 #if !CONFIG_HG_BOARD_ESP32_CYD
   if (hal.mic == &g_codec_mic) {
     profile.mic_rate = hgp::CodecAudio::kRate;

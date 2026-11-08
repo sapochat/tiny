@@ -10,6 +10,7 @@ import ctypes
 import json
 import logging
 import time
+from dataclasses import dataclass
 from ctypes import (
     CFUNCTYPE, POINTER, Structure, c_char, c_char_p, c_double, c_int, c_size_t, c_uint8, c_uint16,
     c_uint32, c_void_p, c_int16,
@@ -21,10 +22,11 @@ from .. import paths
 
 log = logging.getLogger("hermes_gadget.sim")
 
-ABI_VERSION = 8
+ABI_VERSION = 9
 
-BUTTON_TALK, BUTTON_CANCEL, BUTTON_UP, BUTTON_DOWN = 0, 1, 2, 3
-BUTTONS = {"talk": BUTTON_TALK, "cancel": BUTTON_CANCEL, "up": BUTTON_UP, "down": BUTTON_DOWN}
+BUTTON_TALK, BUTTON_CANCEL, BUTTON_UP, BUTTON_DOWN, BUTTON_POWER = 0, 1, 2, 3, 4
+BUTTONS = {"talk": BUTTON_TALK, "cancel": BUTTON_CANCEL, "up": BUTTON_UP, "down": BUTTON_DOWN,
+           "power": BUTTON_POWER}
 
 _TRANSPORT_CONNECT = CFUNCTYPE(None, c_void_p, c_char_p, c_char_p)
 _SEND_TEXT = CFUNCTYPE(c_int, c_void_p, POINTER(c_char), c_size_t)
@@ -86,6 +88,19 @@ class _Host(Structure):
     ]
 
 
+@dataclass(frozen=True)
+class TinyDefaults:
+    """Tiny's board behaviour (hg::DeviceProfile): screen rest, battery-empty shutdown, PWR Silence."""
+
+    screen_timeout_s: int = 60
+    brightness: int = 80
+    shutdown_percent: int = 5
+    pwr_silence: bool = True
+
+    def as_config(self) -> tuple[int, int, int, int]:
+        return (self.screen_timeout_s, self.brightness, self.shutdown_percent, int(self.pwr_silence))
+
+
 class _Config(Structure):
     _fields_ = [
         ("width", c_int),
@@ -109,6 +124,10 @@ class _Config(Structure):
         ("update_pending", c_int),
         ("has_power", c_int),
         ("motion", c_int),
+        ("default_screen_timeout_s", c_int),
+        ("default_brightness", c_int),
+        ("shutdown_percent", c_int),
+        ("pwr_silence", c_int),
     ]
 
 
@@ -194,6 +213,8 @@ def load_library(path: Path | None = None) -> ctypes.CDLL:
     lib.hgsim_set_power.argtypes = [c_void_p, c_int, c_int, c_int, c_int, c_int, c_int]
     lib.hgsim_set_power.restype = c_int
     lib.hgsim_emit_event.argtypes = [c_void_p, c_char_p, c_char_p, c_int]
+    lib.hgsim_power_offs.argtypes = [c_void_p]
+    lib.hgsim_power_offs.restype = c_int
     lib.hgsim_console.argtypes = [c_void_p, c_char_p, c_char_p, c_size_t]
     lib.hgsim_console.restype = c_int
     lib.hgsim_status.argtypes = [c_void_p, c_char_p, c_size_t]
@@ -221,7 +242,8 @@ class NativeDevice:
                  speaker_rate: int = 16000, library: Path | None = None,
                  button_labels: tuple[str, str] | None = None, round_panel: bool = False,
                  touch_screen: bool = False, update_capacity: int = 0, update_pending: bool = False,
-                 motion: bool = False, audio_host: AudioHost | None = None, power: bool = False):
+                 motion: bool = False, audio_host: AudioHost | None = None, power: bool = False,
+                 tiny: "TinyDefaults | None" = None):
         self._lib = load_library(library)
         self._host_obj = host
         self.width, self.height = width, height
@@ -229,7 +251,8 @@ class NativeDevice:
         self._strings += [s.encode() for s in button_labels] if button_labels else [None, None]
         self._config = _Config(width, height, int(mic), int(speaker), int(backlight), int(scroll_buttons),
                                mic_rate, speaker_rate, *self._strings, int(round_panel), int(touch_screen),
-                               update_capacity, int(update_pending), int(power), int(motion))
+                               update_capacity, int(update_pending), int(power), int(motion),
+                               *(tiny.as_config() if tiny else (0, 0, 0, 0)))
         self._callbacks = self._make_callbacks(host, audio_host or host)
         self._handle = self._lib.hgsim_create(ctypes.byref(self._config), ctypes.byref(self._callbacks))
         if not self._handle:
@@ -440,6 +463,10 @@ class NativeDevice:
                 values.append(int(value))
         if not self._lib.hgsim_set_power(self._handle, int(status is not None), *values):
             raise ValueError("power reading rejected (power device not configured or invalid reading)")
+
+    def power_offs(self) -> int:
+        """How many times the core powered the simulated board off."""
+        return int(self._lib.hgsim_power_offs(self._handle))
 
     def emit_event(self, name: str, data: Any = None, notify: bool = False) -> None:
         self._lib.hgsim_emit_event(self._handle, name.encode(), json.dumps(data or {}).encode(), int(notify))

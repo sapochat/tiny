@@ -65,6 +65,16 @@ struct DeviceProfile {
   // the touchscreen be left out of talking (`touch_talk`); it can double-press home (`double_home`)
   // and talk from a dark screen (`wake_talk`). Boards without one hide all three.
   bool talk_key = true;
+  // Tiny: what the screen does before the user stores a value. An AMOLED rests by default
+  // (lit pixels cost battery and age the panel); a stored setting, including 0 (always on), wins.
+  uint16_t default_screen_timeout_s = 0;
+  uint8_t default_brightness = 100;
+  // Tiny: on battery at this charge (two readings in a row) the device warns, then powers
+  // off cleanly; USB during the countdown cancels it. 0 turns it off.
+  uint8_t shutdown_percent = 0;
+  // Tiny: a PWR press while something sounds is Silence (speech, a ringing timer); otherwise
+  // it does what it does upstream.
+  bool pwr_silence = false;
   // Board-specific settings the console accepts besides the core ones. Changes
   // reach the port through App::on_setting_changed.
   std::vector<std::string> extra_settings;
@@ -233,6 +243,8 @@ class App {
   // the settings menu it is Back: the menu closes and the screen stays lit.
   // Wi-Fi and the Hermes connection stay up.
   void on_power_key();
+  // Tiny: quiets speech or a ringing timer; false when nothing was sounding.
+  bool silence();
   // Dozing (System::set_dozing): the port's loop may wait this long for events.
   static constexpr uint32_t kDozeWaitMs = 100;
   // The longest recording; the recording buffer holds this much (RecordingBuffer::bytes_for).
@@ -536,7 +548,7 @@ class App {
   bool lang_auto_ = false;
   std::optional<i18n::Lang> hermes_lang_;  // from the last `welcome` that named one this firmware has
   enum class Menu : uint8_t { Closed, Volume, Brightness, TalkMode, TouchTalk, Profile, ProfileGrid, Microphone, Speaker, Display, Inputs,
-                              Info, Power, BatteryAlert, BatteryAlertSound, ChargingNotice, ChargingSound, ChargedNotice, ChargedSound, WifiDeepSleep, IdleTimer, TouchWake, FaceDownSleep, Clock, PowerOff, WifiSetup, Phone, Language, DoubleHome, WakeTalk, Back };
+                              Info, Power, BatteryAlert, BatteryAlertSound, ChargingNotice, ChargingSound, ChargedNotice, ChargedSound, WifiDeepSleep, IdleTimer, TouchWake, FaceDownSleep, Clock, PowerOff, Restart, WifiSetup, Phone, Language, DoubleHome, WakeTalk, Back };
   enum class HardwareCheck : uint8_t { None, Microphone, Speaker, Display, Inputs };
   Menu menu_ = Menu::Closed;
   // The settings list's scroll in pixels, and where it eases to. It follows the
@@ -805,6 +817,17 @@ class App {
   bool timer_due_ = false;      // reached zero; the alarm starts once the device is free
   bool alarm_ = false;          // TIMER DONE is on screen
   bool alarm_ringing_ = false;  // beeping, for a minute at most
+  // Tiny: PWR Silence, the battery-empty shutdown and Settings > Restart.
+  void shutdown_check();
+  static constexpr uint32_t kShutdownWarnMs = 10000;   // the "Battery empty" card, then power-off
+  static constexpr uint32_t kShutdownGraceMs = 10000;  // at most this much longer for a turn in flight
+  bool silenced_ = false;      // speech for silenced_turn_ stays quiet
+  std::string silenced_turn_;
+  std::string speech_turn_;  // the turn the last speech stream belongs to
+  uint8_t empty_reads_ = 0;
+  uint32_t shutdown_at_ = 0;
+  bool shutdown_sent_ = false;
+  uint32_t restart_at_ = 0;
   uint32_t timer_end_ = 0;      // the clock value at zero
   uint32_t timer_total_ms_ = 0;
   uint32_t ring_since_ = 0;     // ages are signed: see timer_tick()

@@ -36,6 +36,7 @@ bool App::menu_offered(Menu item) const {
     case Menu::FaceDownSleep: return can_sleep_face_down();
     case Menu::Clock: return hal_.display != nullptr;
     case Menu::PowerOff: return hal_.power && hal_.power->can_power_off();
+    case Menu::Restart: return hal_.updater != nullptr;
     case Menu::WifiSetup: return static_cast<bool>(on_wifi_setup);
     case Menu::Phone: return static_cast<bool>(on_phone_pair);
     case Menu::Closed: return false;
@@ -232,6 +233,18 @@ void App::settings_input(Button button, bool pressed) {
       break;
     }
     case Menu::Back: close_settings(); break;
+    case Menu::Restart:
+      if (!power_off_armed_) {
+        power_off_armed_ = true;  // one arm flag: any other selection disarms it
+        check_result_ = tr(i18n::Msg::RestartConfirm);
+      } else {
+        power_off_armed_ = false;
+        log(LogLevel::Warn, "restart requested from Settings");
+        restart_at_ = now() + 300;  // done from tick(), once the screen shows it
+        if (!restart_at_) restart_at_ = 1;
+        check_result_ = tr(i18n::Msg::Restarting);
+      }
+      break;
     case Menu::WifiSetup: start_wifi_setup(); break;
     case Menu::Phone: start_phone_pairing(); break;
     case Menu::Power:
@@ -353,6 +366,7 @@ SettingRow App::settings_row(Menu item, const std::string& label, const std::str
     case Menu::FaceDownSleep: row.icon = Icon::FaceDown; row.kind = Kind::Toggle; row.level = face_down_sleep_; break;
     case Menu::Clock: row.icon = Icon::Clock; break;
     case Menu::PowerOff: row.icon = Icon::Power; row.kind = Kind::Action; break;
+    case Menu::Restart: row.icon = Icon::Power; row.kind = Kind::Action; break;
     case Menu::WifiSetup: row.icon = Icon::Wifi; row.kind = Kind::Action; break;
     case Menu::Phone: row.icon = Icon::Phone; row.kind = Kind::Action; break;
     case Menu::Language: row.icon = Icon::Globe; break;
@@ -603,6 +617,10 @@ void App::settings_item(Menu item, UiModel& m) const {
     case Menu::PowerOff:
       m.detail = tr(Msg::PowerOff);
       m.body = tr(Msg::PowerOffIntro);
+      break;
+    case Menu::Restart:
+      m.detail = tr(Msg::RestartItem);
+      m.body = tr(Msg::RestartIntro);
       break;
     case Menu::WifiSetup:
       m.detail = tr(Msg::WifiSetup);

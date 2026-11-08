@@ -96,7 +96,67 @@ void App::set_dozing(bool dozing) {
   if (hal_.system) hal_.system->set_dozing(dozing);
 }
 
+// Tiny: on a board whose PWR is Silence, a press while something sounds quiets it and
+// does nothing else. Speech stops (the turn and its text go on; later audio for that turn
+// stays quiet) and a ringing timer stops beeping and stays up. The screen stays as it is.
+bool App::silence() {
+  if (alarm_ringing_) {
+    alarm_ringing_ = false;  // quiet now; the alarm stays until dismissed
+    stop_playback();
+    log(LogLevel::Info, "PWR: alarm silenced");
+    update_model();
+    return true;
+  }
+  if (!speaking()) return false;
+  silenced_ = true;
+  silenced_turn_ = speech_turn_;
+  stop_playback();
+  log(LogLevel::Info, "PWR: speech silenced");
+  update_model();
+  return true;
+}
+
+void App::shutdown_check() {
+  if (!profile_.shutdown_percent || !power_status_) return;  // a failed read changes nothing
+  const auto& p = *power_status_;
+  const bool battery = p.external_power == false && p.battery_percent && p.battery_present != false;
+  if (!battery) {
+    empty_reads_ = 0;
+    if (shutdown_at_) {  // plugged in during the countdown: stay on
+      shutdown_at_ = 0;
+      shutdown_sent_ = false;
+      if (overlay_ == Overlay::Card && card_title_ == tr(i18n::Msg::BatteryEmptyTitle)) dismiss_overlay();
+      notice_ = tr(i18n::Msg::ChargingStayingOn);
+      notice_until_ = now() + 5000;
+      log(LogLevel::Info, "battery empty: USB connected, staying on");
+      wake_display();
+      update_model();
+    }
+    return;
+  }
+  // One reading can be a gauge glitch; two in a row (5 s apart) start the countdown.
+  empty_reads_ = *p.battery_percent <= profile_.shutdown_percent ? static_cast<uint8_t>(std::min(2, empty_reads_ + 1)) : 0;
+  if (empty_reads_ < 2 || shutdown_at_) return;
+  shutdown_at_ = now() + kShutdownWarnMs;
+  if (!shutdown_at_) shutdown_at_ = 1;
+  if (alarm_) dismiss_alarm();
+  if (settings_open()) close_settings();
+  card_title_ = tr(i18n::Msg::BatteryEmptyTitle);
+  card_body_ = tr(i18n::Msg::BatteryEmptyBody, {std::to_string(kShutdownWarnMs / 1000)});
+  card_scroll_ = 0;
+  page_at_ = now() + page_dwell_ms();
+  overlay_ = Overlay::Card;
+  overlay_until_ = shutdown_at_ + kShutdownGraceMs;
+  wake_display();
+  update_model();
+  log(LogLevel::Warn, "battery empty: power-off in 10 s unless USB is connected");
+}
+
 void App::on_power_key() {
+  if (profile_.pwr_silence && silence()) {
+    activity_at_ = now();
+    return;
+  }
   if (!hal_.display || !hal_.display->info().has_backlight) return;
   // Turning the screen off is an answer to what was on it, before anything closes: a reply
   // under a notice or a card the press closes stays unread. A press that only wakes reads nothing.
@@ -310,6 +370,25 @@ void App::power_tick() {
       note_supply(power_status_->external_power);
       charged_check();
     }
+    shutdown_check();
+  }
+  if (shutdown_at_ && !shutdown_sent_ && static_cast<int32_t>(now() - shutdown_at_) >= 0) {
+    // Never mid-turn: a recording, open work or speech gets up to kShutdownGraceMs more.
+    const bool busy = mode_ == Mode::Listening || in_turn() || speaking();
+    if (!busy || static_cast<int32_t>(now() - shutdown_at_) >= static_cast<int32_t>(kShutdownGraceMs)) {
+      shutdown_sent_ = true;
+      log(LogLevel::Warn, "battery empty: powering off");
+      if (!hal_.power->power_off()) {
+        notice_ = tr(i18n::Msg::PowerOffFailed);
+        notice_until_ = now() + 10000;
+        update_model();
+      }
+    }
+  }
+  if (restart_at_ && static_cast<int32_t>(now() - restart_at_) >= 0) {
+    restart_at_ = 0;
+    if (settings_open()) close_settings();  // a restart boots to the home screen
+    if (hal_.updater) hal_.updater->restart();
   }
   // Its own sound keeps the speaker busy, so it gives way to what takes the screen, not to that.
   // An open list stays under it, as under the low battery alert.
@@ -494,6 +573,10 @@ json::Value App::power_value() const {
   if (p.battery_percent) value.set("battery_percent", *p.battery_percent);
   if (p.charging) value.set("charging", *p.charging);
   if (p.external_power) value.set("external_power", *p.external_power);
+  if (shutdown_at_ && !shutdown_sent_) {
+    const int32_t left = static_cast<int32_t>(shutdown_at_ - now());
+    value.set("shutdown_in_s", static_cast<int64_t>(std::max<int32_t>(0, (left + 999) / 1000)));
+  }
   return value;
 }
 

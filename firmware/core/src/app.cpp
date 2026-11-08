@@ -219,9 +219,9 @@ void App::load_settings() {
   int vol = std::atoi(setting("volume", "70").c_str());
   volume_ = static_cast<uint8_t>(std::max(0, std::min(100, vol)));
   if (hal_.speaker) hal_.speaker->set_volume(volume_);
-  brightness_ = static_cast<uint8_t>(std::max(5, std::min(100, std::atoi(setting("brightness", "100").c_str()))));
+  brightness_ = static_cast<uint8_t>(std::max(5, std::min(100, std::atoi(setting("brightness", std::to_string(profile_.default_brightness)).c_str()))));
   // The panel level itself is applied once, below, after the sleep flags clear.
-  screen_timeout_ms_ = static_cast<uint32_t>(std::max(0, std::min(3600, std::atoi(setting("screen_timeout", "0").c_str())))) * 1000;
+  screen_timeout_ms_ = static_cast<uint32_t>(std::max(0, std::min(3600, std::atoi(setting("screen_timeout", std::to_string(profile_.default_screen_timeout_s)).c_str())))) * 1000;
   const std::string indicator = setting("battery_display", "off");
   battery_display_ = indicator == "icon" ? BatteryIndicator::Icon
                        : indicator == "percentage" ? BatteryIndicator::Percentage
@@ -1105,6 +1105,7 @@ bool App::can_talk() const { return phase_ == Phase::Online && paired_ && ota_ !
 void App::h_turn_start(const json::Value& m) {
   wake_display();
   active_turn_ = m["turn"].as_string();
+  if (silenced_ && active_turn_ != silenced_turn_) silenced_ = false;  // Tiny: a new turn is heard
   turn_done_ = false;
   turn_started_ = true;
   reply_final_ = false;
@@ -1184,6 +1185,13 @@ void App::h_reply(const json::Value& m) {
 
 void App::h_audio_start(const json::Value& m) {
   if (face_down_) return;  // face down mutes Hermes; the stream is never begun, its frames are dropped
+  // Tiny: the turn this speech belongs to. PWR silenced one; its later speech stays quiet too.
+  const std::string speech_turn = m["turn"].is_string() ? m["turn"].as_string() : active_turn_;
+  if (silenced_) {
+    if (speech_turn == silenced_turn_) return;
+    silenced_ = false;
+  }
+  speech_turn_ = speech_turn;
   alarm_ringing_ = false;  // Hermes speaks now: the alarm stays on screen, quiet
   close_setup_screens();
   wake_display();
@@ -1637,6 +1645,7 @@ void App::on_button(Button button, bool pressed, bool touch) {
 }
 
 void App::start_listening(bool hands_free) {
+  silenced_ = false;  // a new question: its answer is heard
   stop_playback();
   dismiss_overlay();
   if (alarm_) dismiss_alarm();
@@ -2803,6 +2812,9 @@ json::Value App::status_value() const {
     s.set("tailnet", tn);
   }
   s.set("display_sleeping", display_sleeping_);
+  s.set("screen_timeout_s", static_cast<int64_t>(screen_timeout_ms_ / 1000));
+  s.set("brightness", static_cast<int64_t>(brightness_));
+  if (settings_open()) s.set("menu", model_.detail);
   if (can_sleep_face_down()) s.set("face_down", face_down_);
   // The language the screen is in, and whether it follows Hermes's (`language` auto).
   s.set("language", i18n::info(lang_).code).set("language_auto", lang_auto_);

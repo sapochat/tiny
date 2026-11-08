@@ -136,6 +136,12 @@ namespace hg::i18n {
   X(InputCheckRunning,      "Press a button. Release Cancel to leave.") \
   X(ButtonPressed,          "{0} pressed") \
   X(PowerOffConfirm,        "Select again to power off. Cancel goes back.") \
+  X(RestartItem,            "Restart") \
+  X(RestartIntro,           "Restart the board. Settings and pairing are kept.") \
+  X(RestartConfirm,         "Select again to restart. Cancel goes back.") \
+  X(BatteryEmptyTitle,      "Battery empty") \
+  X(BatteryEmptyBody,       "Turning off in {0} seconds. Plug in USB to stay on.") \
+  X(ChargingStayingOn,      "Charging. Staying on.") \
   X(PowerOffRequested,      "Power-off requested") \
   X(PowerOffFailed,         "Power-off failed. Try the physical PWR key.") \
   X(ToneFinished,           "Tone finished. Did you hear it?") \

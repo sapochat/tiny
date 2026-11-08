@@ -17,7 +17,7 @@ from typing import Callable
 
 from .. import __version__, png
 from .audio_io import Microphone, Speaker, load_wav
-from .native import BUTTONS, NativeDevice
+from .native import BUTTONS, NativeDevice, TinyDefaults
 from .transport import WsTransport
 
 log = logging.getLogger("hermes_gadget.sim")
@@ -40,6 +40,7 @@ class Board:
     round: bool = False  # circular panel: pixels outside the circle are not shown
     touch: bool = False  # touchscreen: hold to talk, tap to answer yes, swipe down to cancel
     motion: bool = False  # accelerometer: face-down sleep
+    tiny: TinyDefaults | None = None  # Tiny's board behaviour (screen rest, shutdown, PWR Silence)
 
 
 BOARDS = {
@@ -64,6 +65,10 @@ BOARDS = {
     # A 1.75" round 466x466 AMOLED touch board (e.g. ESP32-S3-Touch-AMOLED-1.75): no scroll buttons.
     "sim-466x466-round": Board("sim-466x466-round", 466, 466, scroll_buttons=False, round=True, touch=True,
                                motion=True),
+    # Tiny: the Waveshare AMOLED 1.75C as Tiny runs it: the round board above with a PWR key,
+    # a 60 s screen rest at 80%, and a clean power-off at 5% on battery.
+    "sim-466x466-amoled": Board("sim-466x466-amoled", 466, 466, scroll_buttons=False, round=True, touch=True,
+                                motion=True, tiny=TinyDefaults()),
     # A 1.8" rectangular 368x448 AMOLED touch board (e.g. ESP32-S3-Touch-AMOLED-1.8): no scroll buttons.
     "sim-368x448": Board("sim-368x448", 368, 448, scroll_buttons=False, touch=True),
     # The 2.06" 410x502 AMOLED watch (ESP32-S3-Touch-AMOLED-2.06), as the firmware draws it:
@@ -193,7 +198,7 @@ class Simulator:
             server_url=url, access_token=token, mic=b.mic, speaker=b.speaker, backlight=b.backlight,
             scroll_buttons=b.scroll_buttons, library=library, button_labels=button_labels,
             round_panel=b.round, touch_screen=b.touch, update_capacity=UPDATE_SLOT_BYTES,
-            update_pending=update_pending, power=True, motion=b.motion)
+            update_pending=update_pending, power=True, motion=b.motion, tiny=b.tiny)
         self._round_spans = _circle_spans(b.width, b.height) if b.round else None
         self._register_actions()
 

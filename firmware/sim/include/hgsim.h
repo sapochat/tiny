@@ -22,7 +22,7 @@ extern "C" {
 #define HGSIM_API __attribute__((visibility("default")))
 #endif
 
-#define HGSIM_ABI_VERSION 8
+#define HGSIM_ABI_VERSION 9
 
 typedef struct hgsim hgsim;
 
@@ -98,13 +98,20 @@ typedef struct hgsim_config {
   int update_pending;     /* this boot runs an installed update that isn't confirmed yet */
   int has_power;         /* explicitly supplied simulated power readings */
   int motion;            /* an accelerometer feeds hgsim_motion (face-down sleep) */
+  /* Tiny (see hg::DeviceProfile): 0 keeps the upstream defaults. */
+  int default_screen_timeout_s;
+  int default_brightness;
+  int shutdown_percent;
+  int pwr_silence;
 } hgsim_config;
 
 /* Action handler: fill `result_json` (a JSON object) and return 1, or write an
  * error message into it and return 0. */
 typedef int (*hgsim_action_fn)(void* user, const char* args_json, char* result_json, size_t cap);
 
-enum { HGSIM_BUTTON_TALK = 0, HGSIM_BUTTON_CANCEL = 1, HGSIM_BUTTON_UP = 2, HGSIM_BUTTON_DOWN = 3 };
+enum { HGSIM_BUTTON_TALK = 0, HGSIM_BUTTON_CANCEL = 1, HGSIM_BUTTON_UP = 2, HGSIM_BUTTON_DOWN = 3,
+       /* A power key only the PMIC sees (hg::Power::take_key_press); needs config.has_power. */
+       HGSIM_BUTTON_POWER = 4 };
 
 HGSIM_API int hgsim_abi_version(void);
 HGSIM_API hgsim* hgsim_create(const hgsim_config* config, const hgsim_host* host);
@@ -132,6 +139,8 @@ HGSIM_API void hgsim_set_sensor(hgsim* sim, const char* name, double value);
  * Returns 0 without mutation for invalid input, NULL, or no configured power device. */
 HGSIM_API int hgsim_set_power(hgsim* sim, int available, int battery_present, int battery_mv,
                              int battery_percent, int charging, int external_power);
+/* How many times the core asked the simulated power device to power off. */
+HGSIM_API int hgsim_power_offs(hgsim* sim);
 HGSIM_API void hgsim_emit_event(hgsim* sim, const char* name, const char* data_json, int notify_agent);
 
 /* Serial-console command; returns the response length (written into out). */

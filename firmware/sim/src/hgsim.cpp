@@ -21,7 +21,14 @@ class SimPower final : public hg::Power {
     return status ? status->external_power : std::nullopt;
   }
   bool can_power_off() const override { return false; }
-  bool power_off() override { return false; }
+  bool power_off() override { ++power_offs; return true; }
+  bool take_key_press() override {
+    const bool pressed = key_pending;
+    key_pending = false;
+    return pressed;
+  }
+  bool key_pending = false;
+  int power_offs = 0;
 };
 
 class SimHal final : public hg::Display,
@@ -250,6 +257,10 @@ hgsim* hgsim_create(const hgsim_config* cfg, const hgsim_host* host) {
     profile.extra_settings = {"touch_cancel"};
   }
   profile.motion_sensor = cfg->motion != 0;
+  if (cfg->default_screen_timeout_s > 0) profile.default_screen_timeout_s = static_cast<uint16_t>(cfg->default_screen_timeout_s);
+  if (cfg->default_brightness > 0) profile.default_brightness = static_cast<uint8_t>(cfg->default_brightness);
+  profile.shutdown_percent = static_cast<uint8_t>(cfg->shutdown_percent > 0 ? cfg->shutdown_percent : 0);
+  profile.pwr_silence = cfg->pwr_silence != 0;
   profile.colour_face_alloc = std::malloc;
   profile.recording_alloc = std::malloc;  // like a board with PSRAM: a lost connection keeps the recording
   sim->app = std::make_unique<hg::App>(sim->hal, profile);
@@ -310,6 +321,10 @@ void hgsim_transport_binary(hgsim* sim, const uint8_t* data, size_t len) {
 }
 void hgsim_transport_closed(hgsim* sim, const char* reason) { sim->app->on_transport_closed(reason ? reason : ""); }
 void hgsim_button(hgsim* sim, int button, int pressed) {
+  if (button == HGSIM_BUTTON_POWER) {
+    if (pressed && sim->hal.power) sim->power.key_pending = true;
+    return;
+  }
   if (button < HGSIM_BUTTON_TALK || button > HGSIM_BUTTON_DOWN) return;
   sim->app->on_button(static_cast<hg::Button>(button), pressed != 0);
 }
@@ -325,6 +340,7 @@ void hgsim_submit_text(hgsim* sim, const char* text) { sim->app->submit_text(tex
 void hgsim_set_sensor(hgsim* sim, const char* name, double value) {
   if (name) sim->app->set_sensor(name, value);
 }
+int hgsim_power_offs(hgsim* sim) { return sim ? sim->power.power_offs : 0; }
 int hgsim_set_power(hgsim* sim, int available, int battery_present, int battery_mv,
                     int battery_percent, int charging, int external_power) {
   if (!sim || !sim->hal.power || available < 0 || available > 1 ||
