@@ -135,6 +135,57 @@ hg::json::Value i2c_scan() {
   return found;
 }
 
+// Tiny: read-only registers of chips that answered the scan: identity, plus the PMIC's key
+// interrupt state. Settles a board's IMU address and whether PWR's short-press flag is
+// armed without a serial cable. Nothing is written.
+hg::json::Value chip_registers(const hg::json::Value& found) {
+  struct Probe {
+    uint16_t addr;
+    const char* chip;
+    uint8_t count;
+    uint8_t regs[8];
+  };
+  // QMI8658: WHO_AM_I 0x00 (0x05), revision 0x01. AXP2101: chip id 0x03, IRQ/off level 0x27,
+  // INTEN1-3 0x40-0x42, INTSTS1-3 0x48-0x4a.
+  static constexpr Probe probes[] = {
+      {0x6a, "qmi8658?", 2, {0x00, 0x01}},
+      {0x6b, "qmi8658?", 2, {0x00, 0x01}},
+      {0x34, "axp2101", 8, {0x03, 0x27, 0x40, 0x41, 0x42, 0x48, 0x49, 0x4a}},
+  };
+  hg::json::Value out = hg::json::Value::object();
+  if (!g_parts.i2c) return out;
+  for (const auto& p : probes) {
+    char addr[8];
+    std::snprintf(addr, sizeof(addr), "0x%02x", p.addr);
+    bool present = false;
+    for (size_t i = 0; i < found.size(); ++i) present = present || found[i].as_string() == addr;
+    if (!present) continue;
+    i2c_device_config_t cfg = {};
+    cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    cfg.device_address = p.addr;
+    cfg.scl_speed_hz = 400000;
+    i2c_master_dev_handle_t dev = nullptr;
+    if (i2c_master_bus_add_device(g_parts.i2c, &cfg, &dev) != ESP_OK) continue;
+    hg::json::Value regs = hg::json::Value::object();
+    regs.set("chip", p.chip);
+    for (uint8_t i = 0; i < p.count; ++i) {
+      const uint8_t reg = p.regs[i];
+      uint8_t value = 0;
+      char key[8], val[8];
+      std::snprintf(key, sizeof(key), "0x%02x", reg);
+      if (i2c_master_transmit_receive(dev, &reg, 1, &value, 1, 20) == ESP_OK) {
+        std::snprintf(val, sizeof(val), "0x%02x", value);
+        regs.set(key, val);
+      } else {
+        regs.set(key, "error");
+      }
+    }
+    i2c_master_bus_rm_device(dev);
+    out.set(addr, regs);
+  }
+  return out;
+}
+
 hg::json::Value stacks() {
   hg::json::Value out = hg::json::Value::array();
 #if CONFIG_FREERTOS_USE_TRACE_FACILITY
@@ -191,6 +242,7 @@ void report(hg::json::Value& r) {
   hg::json::Value build = hg::json::Value::object();
   build.set("idf", app->idf_ver).set("date", app->date).set("time", app->time).set("elf_sha256", elf);
   hg::json::Value parts = hg::json::Value::object();
+  const hg::json::Value found = i2c_scan();
   parts.set("display", g_parts.display)
       .set("microphone", g_parts.mic)
       .set("speaker", g_parts.speaker)
@@ -204,7 +256,8 @@ void report(hg::json::Value& r) {
       .set("memory", memory())
       .set("wifi", wifi())
       .set("parts", parts)
-      .set("i2c", i2c_scan())
+      .set("i2c", found)
+      .set("chips", chip_registers(found))
       .set("stacks", stacks());
   if (g_parts.motion) {
     int16_t x = 0, y = 0, z = 0;
