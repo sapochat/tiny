@@ -1,0 +1,10 @@
+# Two 8 MB app slots for boards with 32 MB of flash (AMOLED 1.75C). NVS, otadata and
+# phy_init keep the offsets of partitions.csv, so a USB flash with this table keeps the
+# device's settings and key. A board still on partitions.csv must be flashed over USB
+# once to get it: an over-the-air update can't change the table.
+# Name,   Type, SubType, Offset,   Size
+nvs,      data, nvs,     0x9000,   0x6000
+otadata,  data, ota,     0xf000,   0x2000
+phy_init, data, phy,     0x11000,  0x1000
+ota_0,    app,  ota_0,   0x20000,  0x800000
+ota_1,    app,  ota_1,   0x820000, 0x800000
